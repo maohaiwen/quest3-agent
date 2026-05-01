@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+*.db.bak
+chroma_db/
+
+# Logs
+server_log*.txt
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Test artifacts
+test_github_repo/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Backup/patch files
+*.backup
+*.utf8
+*_patch.txt
+_test_parse.ps1
+
+# Cached skills (imported from external)
+cached_skills/
+skills/cached/
+
+# Misc temp files
+calculation.py
+calculator.py
+quick_test.py
+simple_test.py
+verify_final.py
+verify_implementation.py
+run_tests.py
+create_test_github_repo.py
+test_agent_skill_integration.py
+test_e2e_agent_config.py
+test_git.py
+test_github_import.py
+test_skill_system.py
+test_skills.py
+杭州一日游攻略.txt
+杭州旅游攻略.txt

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>连接测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f5f7fa;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        button {
+            padding: 10px 20px;
+            margin: 10px 5px 10px 0;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .result {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f0f2f5;
+            border-radius: 4px;
+            pre {
+                white-space: pre-wrap;
+                word-wrap: break-word;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>API 连接测试</h1>
+
+        <div>
+            <h3>基础测试</h3>
+            <button onclick="testHealth()">测试健康检查</button>
+            <button onclick="testTools()">测试工具列表</button>
+            <button onclick="testSessions()">测试会话列表</button>
+            <button onclick="testCreateSession()">创建新会话</button>
+        </div>
+
+        <div>
+            <h3>MCP 服务器测试</h3>
+            <button onclick="testMCPServers()">测试 MCP 服务器列表</button>
+        </div>
+
+        <div class="result" id="result">
+            <p>点击上方按钮进行测试...</p>
+        </div>
+    </div>
+
+    <script>
+        const BASE_URL = 'http://localhost:8000';
+
+        async function showResult(title, data) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `
+                <h3>${title}</h3>
+                <pre>${JSON.stringify(data, null, 2)}</pre>
+            `;
+        }
+
+        async function testHealth() {
+            try {
+                const response = await fetch(`${BASE_URL}/health`);
+                const data = await response.json();
+                showResult('健康检查', data);
+            } catch (error) {
+                showResult('健康检查失败', { error: error.message });
+            }
+        }
+
+        async function testTools() {
+            try {
+                const response = await fetch(`${BASE_URL}/tools`);
+                const data = await response.json();
+                showResult('工具列表', data);
+            } catch (error) {
+                showResult('工具列表失败', { error: error.message });
+            }
+        }
+
+        async function testSessions() {
+            try {
+                const response = await fetch(`${BASE_URL}/api/sessions/list/all`);
+                const data = await response.json();
+                showResult('会话列表', data);
+            } catch (error) {
+                showResult('会话列表失败', { error: error.message });
+            }
+        }
+
+        async function testCreateSession() {
+            try {
+                const response = await fetch(`${BASE_URL}/api/sessions/create`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                const data = await response.json();
+                showResult('创建会话', data);
+            } catch (error) {
+                showResult('创建会话失败', { error: error.message });
+            }
+        }
+
+        async function testMCPServers() {
+            try {
+                const response = await fetch(`${BASE_URL}/api/mcp/servers`);
+                const data = await response.json();
+                showResult('MCP 服务器列表', data);
+            } catch (error) {
+                showResult('MCP 服务器列表失败', { error: error.message });
+            }
+        }
+
+        // 自动运行基本测试
+        window.onload = function() {
+            testHealth();
+        };
+    </script>
+</body>
+</html>

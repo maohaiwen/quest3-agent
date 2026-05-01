@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skill 编辑器 - Quest3 Agent</title>
+    <!-- CodeMirror 6 from CDN -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.css">
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/markdown/markdown.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/python/python.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/javascript/javascript.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        /* Header */
+        .header {
+            background: rgba(255,255,255,0.95);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .back-btn {
+            background: #f0f2f5;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        .back-btn:hover { background: #e0e2e5; }
+        .skill-name {
+            font-size: 20px;
+            font-weight: 600;
+            color: #333;
+        }
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .btn-primary { background: #667eea; color: white; }
+        .btn-primary:hover { background: #5568d3; }
+        .btn-secondary { background: #f0f2f5; color: #333; }
+        .btn-secondary:hover { background: #e0e2e5; }
+        .btn-success { background: #4caf50; color: white; }
+        .btn-success:hover { background: #45a049; }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* Sidebar - File Tree */
+        .sidebar {
+            width: 280px;
+            background: white;
+            border-right: 1px solid #e5e7eb;
+            display: flex;
+            flex-direction: column;
+        }
+        .sidebar-header {
+            padding: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .sidebar-title {
+            font-weight: 600;
+            color: #333;
+        }
+        .add-file-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+        }
+        .file-tree {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+        .file-item {
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 2px;
+            transition: background 0.2s;
+        }
+        .file-item:hover { background: #f0f2f5; }
+        .file-item.active { background: #e8f0fd; color: #667eea; }
+        .file-icon { font-size: 16px; }
+        .file-name { font-size: 14px; }
+
+        /* Editor Area */
+        .editor-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #f8f9fa;
+        }
+        .editor-tabs {
+            background: white;
+            padding: 8px 16px 0;
+            display: flex;
+            border-bottom: 1px solid #e5e7eb;
+            overflow-x: auto;
+        }
+        .editor-tab {
+            padding: 8px 16px;
+            border: 1px solid #e5e7eb;
+            border-bottom: none;
+            border-radius: 8px 8px 0 0;
+            background: #f9fafb;
+            cursor: pointer;
+            margin-right: 4px;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+        .editor-tab.active {
+            background: white;
+            border-bottom: 1px solid white;
+            margin-bottom: -1px;
+        }
+        .editor-container {
+            flex: 1;
+            padding: 16px;
+            overflow: hidden;
+            display: flex;
+        }
+        .code-editor-wrapper {
+            width: 100%;
+            height: 100%;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        /* Fix CodeMirror height */
+        .CodeMirror {
+            height: 100%;
+            font-size: 14px;
+            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+        }
+
+        /* AI Assistant Sidebar */
+        .ai-sidebar {
+            width: 340px;
+            background: white;
+            border-left: 1px solid #e5e7eb;
+            display: flex;
+            flex-direction: column;
+        }
+        .ai-header {
+            padding: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .ai-title {
+            font-weight: 600;
+            font-size: 16px;
+        }
+        .ai-description {
+            font-size: 12px;
+            opacity: 0.9;
+            margin-top: 4px;
+        }
+        .ai-actions {
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .ai-action-btn {
+            padding: 10px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            text-align: left;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+        .ai-action-btn:hover {
+            background: #f0f2f5;
+            border-color: #667eea;
+        }
+        .ai-action-btn span {
+            font-weight: 500;
+            display: block;
+        }
+        .ai-action-btn small {
+            color: #666;
+            font-size: 11px;
+        }
+        .ai-chat {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .ai-chat-messages {
+            flex: 1;
+            padding: 12px;
+            overflow-y: auto;
+            min-height: 0; /* Important for flexbox scrolling */
+        }
+        .chat-message {
+            padding: 10px 14px;
+            border-radius: 12px;
+            margin-bottom: 12px;
+            max-width: 100%;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        .chat-message.user {
+            background: #e8f0fd;
+            margin-left: 20px;
+            border-bottom-right-radius: 4px;
+        }
+        .chat-message.assistant {
+            background: #f0f2f5;
+            margin-right: 20px;
+            border-bottom-left-radius: 4px;
+        }
+
+        .chat-message.assistant.loading {
+            background: linear-gradient(90deg, #f0f2f5 25%, #e8f0fd 50%, #f0f2f5 75%);
+            background-size: 200% 100%;
+            animation: loading-shimmer 1.5s ease-in-out infinite;
+        }
+
+        @keyframes loading-shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        .ai-input-area {
+            padding: 12px;
+            border-top: 1px solid #e5e7eb;
+        }
+        .ai-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 14px;
+            resize: none;
+        }
+        .ai-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .ai-send-btn {
+            margin-top: 8px;
+            width: 100%;
+        }
+
+        /* Test Panel */
+        .test-panel {
+            background: white;
+            border-top: 1px solid #e5e7eb;
+            max-height: 300px;
+            display: none;
+        }
+        .test-panel.open {
+            display: block;
+        }
+        .test-header {
+            padding: 12px 16px;
+            background: #f9fafb;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .test-title {
+            font-weight: 600;
+        }
+        .test-toggle {
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+        }
+        .test-content {
+            padding: 16px;
+            display: flex;
+            gap: 16px;
+        }
+        .test-input-section {
+            flex: 1;
+        }
+        .test-output-section {
+            flex: 1;
+            background: #f9fafb;
+            border-radius: 8px;
+            padding: 12px;
+        }
+        .test-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        .test-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 12px;
+        }
+        .test-output {
+            font-family: monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+        }
+
+        /* Template Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: white;
+            border-radius: 16px;
+            max-width: 700px;
+            width: 90%;
+            max-height: 85vh;
+            overflow-y: auto;
+        }
+        .modal-header {
+            padding: 24px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .modal-title {
+            font-size: 22px;
+            font-weight: 600;
+        }
+        .modal-body {
+            padding: 24px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .template-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 12px;
+        }
+        .template-card {
+            padding: 16px;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .template-card:hover {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+        .template-card.selected {
+            border-color: #667eea;
+            background: #e8f0fd;
+        }
+        .template-icon { font-size: 32px; margin-bottom: 8px; }
+        .template-name { font-weight: 600; margin-bottom: 4px; }
+        .template-desc { color: #666; font-size: 13px; }
+        .modal-actions {
+            padding: 16px 24px 24px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: #333;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 3000;
+        }
+        .toast.show { opacity: 1; }
+        .toast.success { background: #4caf50; }
+        .toast.error { background: #f44336; }
+        .toast.info { background: #2196f3; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-left">
+                <button class="back-btn" onclick="goBack()">← 返回</button>
+                <div class="skill-name" id="skillName">新 Skill</div>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-secondary" onclick="toggleTestPanel()">🧪 测试</button>
+                <button class="btn btn-primary" onclick="saveSkill()">💾 保存</button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- File Tree Sidebar -->
+            <div class="sidebar">
+                <div class="sidebar-header">
+                    <span class="sidebar-title">📁 文件</span>
+                    <button class="add-file-btn" onclick="addNewFile()">+</button>
+                </div>
+                <div class="file-tree" id="fileTree">
+                    <!-- Files will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Editor Area -->
+            <div class="editor-area">
+                <div class="editor-tabs" id="editorTabs">
+                    <!-- Tabs will be loaded here -->
+                </div>
+                <div class="editor-container">
+                    <div class="code-editor-wrapper">
+                        <textarea id="codeEditor"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Assistant Sidebar -->
+            <div class="ai-sidebar">
+                <div class="ai-header">
+                    <div class="ai-title">🤖 AI 助手</div>
+                    <div class="ai-description">帮助你编写更好的 Skill</div>
+                </div>
+                <div class="ai-actions" style="padding: 12px;">
+                    <div style="font-size: 13px; color: #666; margin-bottom: 8px;">
+                        💡 提示：直接跟AI对话，它会帮你编辑文件！
+                    </div>
+                </div>
+                <div class="ai-chat">
+                    <div class="ai-chat-messages" id="aiChatMessages">
+                        <div class="chat-message assistant">
+                            你好！我是你的 AI 助手。跟我对话，我会帮你编辑 skill.md 和 main.py 文件！
+                        </div>
+                    </div>
+                    <div class="ai-input-area">
+                        <textarea class="ai-input" id="aiInput" placeholder="告诉 AI 你需要什么...">帮我按照描述完善这个skill</textarea>
+                        <button class="btn btn-primary ai-send-btn" onclick="sendAiMessage()">发送</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Test Panel -->
+        <div class="test-panel" id="testPanel">
+            <div class="test-header">
+                <span class="test-title">🧪 测试 Skill</span>
+                <button class="test-toggle" onclick="toggleTestPanel()">×</button>
+            </div>
+            <div class="test-content">
+                <div class="test-input-section">
+                    <label class="test-label">测试输入（JSON）</label>
+                    <textarea class="test-input" id="testInput" rows="5">{"name": "World"}</textarea>
+                    <button class="btn btn-success" onclick="runSkillTest()">▶️ 运行测试</button>
+                </div>
+                <div class="test-output-section">
+                    <label class="test-label">输出</label>
+                    <div class="test-output" id="testOutput">等待运行测试...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Template Modal -->
+    <div class="modal" id="templateModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">创建新 Skill</h2>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Skill 名称</label>
+                    <input type="text" id="newSkillName" placeholder="例如：my_awesome_skill">
+                </div>
+                <div class="form-group">
+                    <label>描述</label>
+                    <textarea id="newSkillDesc" placeholder="简单描述这个 Skill 的功能"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>作者</label>
+                    <input type="text" id="newSkillAuthor" placeholder="你的名字">
+                </div>
+                <div class="form-group">
+                    <label>选择模板</label>
+                    <div class="template-grid" id="templateGrid">
+                        <!-- Templates will be loaded here -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeTemplateModal()">取消</button>
+                <button class="btn btn-primary" onclick="createFromTemplate()">创建</button>
+            </div>
+        </div>
+        </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // State
+        let currentSkillName = null;
+        let currentFile = null;
+        let currentFileContent = {};
+        let selectedTemplate = 'basic';
+        let isNewSkill = false;
+        let codeMirror = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            const skillName = params.get('skill');
+            const mode = params.get('mode');
+
+            if (mode === 'create' || !skillName) {
+                isNewSkill = true;
+                showTemplateModal();
+            } else {
+                loadSkill(skillName);
+            }
+        });
+
+        function initCodeMirror() {
+            const textarea = document.getElementById('codeEditor');
+            codeMirror = CodeMirror.fromTextArea(textarea, {
+                lineNumbers: true,
+                mode: 'markdown',
+                theme: 'default',
+                lineWrapping: true,
+                indentUnit: 2,
+                tabSize: 2,
+                indentWithTabs: false
+            });
+            codeMirror.on('change', () => {
+                if (currentFile) {
+                    currentFileContent[currentFile] = codeMirror.getValue();
+                }
+            });
+        }
+
+        function getModeForFile(filename) {
+            if (filename.endsWith('.md')) return 'markdown';
+            if (filename.endsWith('.py')) return 'python';
+            if (filename.endsWith('.js')) return 'javascript';
+            return 'markdown';
+        }
+
+        function goBack() {
+            window.location.href = '/static/skill_manager.html';
+        }
+
+        async function showTemplateModal() {
+            await loadTemplates();
+            document.getElementById('templateModal').classList.add('active');
+        }
+
+        function closeTemplateModal() {
+            if (isNewSkill && !currentSkillName) {
+                goBack();
+            }
+            document.getElementById('templateModal').classList.remove('active');
+        }
+
+        async function loadTemplates() {
+            try {
+                const response = await fetch('/api/skills/templates');
+                const data = await response.json();
+                const grid = document.getElementById('templateGrid');
+                grid.innerHTML = data.templates.map(t => `
+                    <div class="template-card ${t.id === selectedTemplate ? 'selected' : ''}"
+                         onclick="selectTemplate('${t.id}')">
+                        <div class="template-icon">${t.icon}</div>
+                        <div class="template-name">${t.name}</div>
+                        <div class="template-desc">${t.description}</div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to load templates', e);
+            }
+        }
+
+        function selectTemplate(templateId) {
+            selectedTemplate = templateId;
+            loadTemplates();
+        }
+
+        async function createFromTemplate() {
+            const name = document.getElementById('newSkillName').value.trim();
+            const description = document.getElementById('newSkillDesc').value.trim();
+            const author = document.getElementById('newSkillAuthor').value.trim();
+
+            if (!name) {
+                showToast('请输入 Skill 名称', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/skills/scaffold', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name, description, author,
+                        template: selectedTemplate,
+                        tags: ['custom']
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    currentSkillName = name;
+                    document.getElementById('skillName').textContent = name;
+                    closeTemplateModal();
+                    isNewSkill = false;
+                    await loadSkill(name);
+                    showToast('Skill 创建成功！', 'success');
+                } else {
+                    const errorData = await response.json();
+                    showToast(errorData.detail || '创建失败', 'error');
+                }
+            } catch (e) {
+                showToast('创建失败', 'error');
+            }
+        }
+
+        async function loadSkill(skillName) {
+            currentSkillName = skillName;
+            document.getElementById('skillName').textContent = skillName;
+
+            if (!codeMirror) {
+                initCodeMirror();
+            }
+
+            // Clear current file content before loading
+            currentFileContent = {};
+            currentFile = null;
+
+            try {
+                const response = await fetch(`/api/skills/${skillName}/files`);
+
+                if (!response.ok) {
+                    console.error(`Failed to load skill files: ${response.status}`);
+                    showToast('加载文件列表失败', 'error');
+                    return;
+                }
+
+                const data = await response.json();
+
+                if (data.files && data.files.length > 0) {
+                    // Load all files in parallel
+                    await Promise.all(data.files.map(file =>
+                        loadFileContent(skillName, file.path)
+                    ));
+                    renderFileTree(data.files);
+                    selectFile(data.files[0].path);
+                    console.log('Loaded files:', Object.keys(currentFileContent));
+                } else {
+                    showToast('没有找到文件', 'info');
+                }
+            } catch (e) {
+                console.error('Failed to load skill', e);
+                showToast('加载失败: ' + e.message, 'error');
+            }
+        }
+
+        async function loadFileContent(skillName, filePath) {
+            try {
+                const encodedPath = encodeURIComponent(filePath);
+                const response = await fetch(`/api/skills/${skillName}/files/${encodedPath}`);
+
+                if (!response.ok) {
+                    console.error(`Failed to load file ${filePath}: ${response.status}`);
+                    return;
+                }
+
+                const data = await response.json();
+                currentFileContent[filePath] = data.content;
+            } catch (e) {
+                console.error(`Failed to load file ${filePath}:`, e);
+            }
+        }
+
+        function renderFileTree(files) {
+            const tree = document.getElementById('fileTree');
+            const allFiles = files.length > 0 ? files : Object.keys(currentFileContent).map(p => ({
+                path: p,
+                name: p.split('/').pop()
+            }));
+
+            tree.innerHTML = allFiles.map(f => `
+                <div class="file-item ${f.path === currentFile ? 'active' : ''}"
+                     onclick="selectFile('${f.path}')">
+                    <span class="file-icon">${getFileIcon(f.path)}</span>
+                    <span class="file-name">${f.name}</span>
+                </div>
+            `).join('');
+
+            const tabs = document.getElementById('editorTabs');
+            tabs.innerHTML = allFiles.map(f => `
+                <div class="editor-tab ${f.path === currentFile ? 'active' : ''}"
+                     onclick="selectFile('${f.path}')">${f.name}</div>
+            `).join('');
+        }
+
+        function getFileIcon(filename) {
+            if (filename.endsWith('.md')) return '📝';
+            if (filename.endsWith('.py')) return '🐍';
+            if (filename.endsWith('.txt')) return '📄';
+            if (filename.endsWith('.json')) return '📋';
+            if (filename.endsWith('.yaml') || filename.endsWith('.yml')) return '⚙️';
+            return '📄';
+        }
+
+        function selectFile(filePath) {
+            currentFile = filePath;
+            renderFileTree([]);
+            if (codeMirror) {
+                codeMirror.setValue(currentFileContent[filePath] || '');
+                codeMirror.setOption('mode', getModeForFile(filePath));
+            }
+        }
+
+        async function addNewFile() {
+            const filename = prompt('请输入文件名（例如：utils.py）');
+            if (!filename) return;
+
+            currentFileContent[filename] = '';
+            renderFileTree([]);
+            selectFile(filename);
+        }
+
+        async function saveSkill() {
+            if (!currentSkillName) {
+                showToast('没有可保存的技能', 'error');
+                return;
+            }
+
+            if (currentFile && codeMirror) {
+                currentFileContent[currentFile] = codeMirror.getValue();
+            }
+
+            for (const [filePath, content] of Object.entries(currentFileContent)) {
+                try {
+                    const response = await fetch(`/api/skills/${currentSkillName}/files/${encodeURIComponent(filePath)}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain' },
+                        body: content
+                    });
+                    if (!response.ok) {
+                        console.error(`Failed to save ${filePath}`);
+                    }
+                } catch (e) {
+                    console.error(`Error saving ${filePath}`, e);
+                }
+            }
+
+            showToast('保存成功！', 'success');
+        }
+
+        function toggleTestPanel() {
+            const panel = document.getElementById('testPanel');
+            panel.classList.toggle('open');
+        }
+
+        async function runSkillTest() {
+            if (!currentSkillName) return;
+
+            const inputStr = document.getElementById('testInput').value;
+            const outputDiv = document.getElementById('testOutput');
+
+            try {
+                const inputData = JSON.parse(inputStr);
+
+                const response = await fetch('/api/skills/llm/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        skill_name: currentSkillName,
+                        input: inputData
+                    })
+                });
+
+                const data = await response.json();
+                outputDiv.textContent = JSON.stringify(data, null, 2);
+            } catch (e) {
+                outputDiv.textContent = `Error: ${e.message}`;
+            }
+        }
+
+
+        let aiLoadingDiv = null;
+
+        async function sendAiMessage() {
+            const input = document.getElementById('aiInput').value;
+            if (!input.trim()) return;
+
+            addAiMessage('user', input);
+            document.getElementById('aiInput').value = '';
+
+            // 显示AI正在思考的状态
+            const messagesDiv = document.getElementById('aiChatMessages');
+            aiLoadingDiv = document.createElement('div');
+            aiLoadingDiv.className = 'chat-message assistant loading';
+            aiLoadingDiv.innerHTML = '<span style="font-size: 18px;">🤔</span> AI 正在思考并编辑文件，请稍候...';
+            messagesDiv.appendChild(aiLoadingDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+            try {
+                // Collect chat history
+                const messageElements = messagesDiv.querySelectorAll('.chat-message');
+                const messages = Array.from(messageElements)
+                    .filter(el => el !== aiLoadingDiv) // 排除加载状态
+                    .map(el => ({
+                        role: el.classList.contains('user') ? 'user' : 'assistant',
+                        content: el.textContent
+                    }));
+
+                const response = await fetch('/api/skills/llm/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messages: messages,
+                        skill_name: currentSkillName,
+                        current_file: currentFile,
+                        file_content: currentFile ? (currentFileContent[currentFile] || '') : ''
+                    })
+                });
+
+                // 移除加载状态
+                if (aiLoadingDiv && aiLoadingDiv.parentNode) {
+                    aiLoadingDiv.parentNode.removeChild(aiLoadingDiv);
+                    aiLoadingDiv = null;
+                }
+
+                if (response.ok) {
+                    const data = await response.json();
+
+                    // Add AI response to chat
+                    addAiMessage('assistant', data.content);
+
+                    // If files were edited, reload the skill
+                    if (data.files_edited && data.files_edited.length > 0) {
+                        await loadSkill(currentSkillName);
+                        showToast('文件已更新！', 'success');
+                    }
+                } else {
+                    addAiMessage('assistant', '抱歉，我遇到了一些问题。');
+                }
+            } catch (e) {
+                // 移除加载状态
+                if (aiLoadingDiv && aiLoadingDiv.parentNode) {
+                    aiLoadingDiv.parentNode.removeChild(aiLoadingDiv);
+                    aiLoadingDiv = null;
+                }
+                addAiMessage('assistant', '网络错误：' + e.message);
+            }
+        }
+
+        function addAiMessage(role, content) {
+            const messagesDiv = document.getElementById('aiChatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chat-message ${role}`;
+            messageDiv.textContent = content;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
