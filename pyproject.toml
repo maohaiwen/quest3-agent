@@ -1,7 +1,7 @@
 [project]
 name = "quest3-agent"
 version = "0.1.0"
-description = "AI智能体聊天应用，支持多轮对话和长短期记忆"
+description = "多智能体协作平台，支持多种协作模式、MCP工具集成、技能系统和深度思考"
 requires-python = ">=3.12"
 dependencies = [
     # Web框架
