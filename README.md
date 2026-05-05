@@ -1,12 +1,12 @@
 # Quest3 Agent
 
-多智能体协作平台，支持多种协作模式、MCP工具集成、技能系统和深度思考。
+多智能体协作平台，支持多种协作模式、MCP工具集成、技能系统、在线配置和用户管理。
 
 ## 功能特性
 
 ### 智能体管理
 - 多智能体配置：每个智能体可独立配置模型、system_prompt、执行模式、工具、MCP服务器
-- 执行模式：direct（直接对话）、plan（规划执行）、react（推理行动）、react_cot（推理+思维链）、thinking_while_doing（边想边做）
+- 执行模式：direct（直接对话）、plan（规划执行）、react（推理行动）、react_cot（推理+思维链）
 - 深度思考：集成火山引擎深度推理，支持 configurable reasoning effort
 
 ### 多智能体协作
@@ -30,8 +30,16 @@
 - 支持从GitHub仓库导入技能
 
 ### 记忆系统
-- 短期记忆：会话级别的消息历史管理
-- 长期记忆：基于ChromaDB向量数据库的语义搜索记忆
+- 工作记忆：会话级别的消息历史管理与自动摘要
+- 长期记忆：基于ChromaDB向量数据库的Agent级语义搜索记忆
+- 参数可在线配置（最大消息数、摘要阈值、重要性阈值等）
+
+### 在线设置与用户管理
+- 系统设置页面：LLM/记忆/搜索参数在线编辑，修改后热生效
+- API Key 等敏感字段脱敏显示
+- 用户管理：admin/普通用户角色，admin 可修改配置
+- 首次使用检测：未配置 API Key 时弹窗引导到设置页
+- 默认账号：admin / admin123
 
 ### A2A协议
 - 支持Google Agent-to-Agent协议
@@ -41,17 +49,19 @@
 
 | 页面 | 路径 | 功能 |
 |------|------|------|
-| 主页 | `/static/index.html` | 聊天对话界面 |
-| 智能体管理 | `/static/agent_manager.html` | 创建/编辑/删除智能体 |
+| 登录 | `/static/login.html` | 用户登录 |
+| 智能体管理 | `/static/agent_manager.html` | 创建/编辑/删除智能体，聊天入口 |
 | 协作Playground | `/static/collaboration_playground.html` | 可视化多智能体协作 |
 | 协作编辑器 | `/static/collaboration_editor.html` | 配置协作模式和智能体 |
 | MCP管理 | `/static/mcp_manager.html` | 管理MCP服务器连接 |
 | 技能管理 | `/static/skill_manager.html` | 管理和编辑技能 |
+| 系统设置 | `/static/settings.html` | 在线配置LLM/记忆/搜索，用户管理 |
+| 移动端 | `/m` | H5移动端页面 |
 
 ## 技术栈
 
 - **Web框架**: FastAPI + Uvicorn
-- **LLM**: 火山引擎（Volcengine/DeepSeek）+ Anthropic Claude
+- **LLM**: 火山引擎（Volcengine/DeepSeek）
 - **向量数据库**: ChromaDB
 - **数据库**: SQLite (aiosqlite)
 - **MCP协议**: 标准MCP + Streamable HTTP
@@ -78,24 +88,7 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-### 3. 配置环境变量
-
-```bash
-cp .env.example .env
-```
-
-编辑 `.env` 文件，配置必要的API密钥：
-
-```env
-# 火山引擎（深度思考 + 工具调用）
-VOLCENGINE_API_KEY=your_volcengine_api_key
-VOLCENGINE_MODEL=deepseek-v3-2-251201
-
-# 网络搜索
-WEB_SEARCH_API_KEY=your_web_search_api_key
-```
-
-### 4. 启动应用
+### 3. 启动应用
 
 ```bash
 python main.py
@@ -103,13 +96,23 @@ python main.py
 
 应用将在 `http://localhost:8000` 启动。
 
+### 4. 首次配置
+
+1. 访问 `http://localhost:8000`，使用默认账号登录：**admin / admin123**
+2. 首次登录会提示未配置，点击前往设置页
+3. 填写火山引擎 API Key，点击保存
+4. 点击"测试 LLM 连接"验证配置
+5. 返回主页开始使用
+
+> 配置存储在数据库中，也可通过 `.env` 文件预设（数据库配置优先）
+
 ## 项目结构
 
 ```
 quest3-agent/
 ├── app/
 │   ├── main.py                 # FastAPI应用入口
-│   ├── config.py               # 配置管理
+│   ├── config.py               # 配置管理（支持数据库热刷新）
 │   ├── api/                    # API接口层
 │   │   ├── agents.py           # 智能体CRUD
 │   │   ├── chat.py             # 聊天对话
@@ -119,58 +122,36 @@ quest3-agent/
 │   │   ├── mcp_servers.py      # MCP服务器管理
 │   │   ├── skills.py           # 技能管理
 │   │   ├── sessions.py         # 会话管理
-│   │   └── memory.py           # 记忆管理
+│   │   ├── memory.py           # 记忆管理
+│   │   ├── settings.py         # 系统设置API
+│   │   └── users.py            # 用户管理API
 │   ├── core/                   # 核心执行引擎
 │   │   ├── react_cot_executor.py    # ReAct+CoT执行器
 │   │   ├── react_executor.py        # ReAct执行器
 │   │   ├── decision.py              # 任务决策引擎
 │   │   ├── execution.py             # 执行引擎
 │   │   ├── strategy_router.py       # 策略路由
-│   │   ├── thinking_while_doing_executor.py  # 边想边做执行器
 │   │   └── tool_manager.py          # 统一工具管理器
 │   ├── models/                 # 数据模型
-│   │   ├── agent.py            # 智能体模型
-│   │   ├── collaboration.py    # 协作模型
-│   │   ├── a2a.py              # A2A协议模型
-│   │   ├── skill.py            # 技能模型
-│   │   ├── chat.py             # 聊天模型
-│   │   ├── session.py          # 会话模型
-│   │   └── memory.py           # 记忆模型
 │   ├── services/               # 服务层
-│   │   ├── collaboration_engine.py  # 协作执行引擎（5种模式）
-│   │   ├── collaboration_service.py # 协作配置管理
-│   │   ├── a2a_adapter.py            # A2A协议适配器
-│   │   ├── agent_registry.py         # 智能体注册表
-│   │   ├── agent_service.py          # 智能体服务
-│   │   ├── llm_service.py            # LLM服务（火山引擎）
-│   │   ├── mcp_pool.py               # MCP服务器连接池
-│   │   ├── mcp_service.py            # MCP服务
-│   │   ├── planning_chat_service.py  # 规划聊天服务
-│   │   ├── memory_service.py         # 记忆服务
-│   │   └── vector_service.py         # 向量服务
+│   │   ├── collaboration/           # 协作引擎（5种模式）
+│   │   ├── agent_service.py         # 智能体服务
+│   │   ├── agent_memory_service.py  # Agent长期记忆
+│   │   ├── session_working_memory.py# 会话工作记忆
+│   │   ├── llm_service.py           # LLM服务（火山引擎）
+│   │   ├── settings_service.py      # 配置管理服务
+│   │   ├── user_service.py          # 用户管理服务
+│   │   ├── mcp_pool.py              # MCP服务器连接池
+│   │   └── vector_service.py        # 向量服务
 │   ├── skills/                 # 技能系统
-│   │   ├── registry.py         # 技能注册表
-│   │   ├── loader.py           # 技能加载器
-│   │   ├── executor.py         # 技能执行器
-│   │   ├── writer.py           # 技能编写器
-│   │   ├── importer.py         # GitHub技能导入
-│   │   └── templates.py        # 技能模板
 │   ├── tools/                  # 本地工具
-│   │   ├── web_search.py       # 网络搜索（火山引擎）
-│   │   ├── filesystem.py       # 文件系统操作
-│   │   └── base.py             # 工具基类
 │   └── database/               # 数据库层
-│       ├── connection.py       # 数据库连接
-│       ├── repositories.py     # 通用仓储
-│       ├── mcp_schema.py       # MCP数据表
-│       └── skill_repository.py # 技能数据仓储
-├── skills/                     # 技能文件
-│   ├── builtin/                # 内置技能
-│   └── user/                   # 用户自定义技能
 ├── static/                     # 前端静态文件
+│   ├── core/                   # 核心JS（Router/Auth/API）
+│   ├── modules/                # 功能模块（Chat/Agent/MCP）
+│   └── components/             # UI组件
+├── skills/                     # 技能文件
 ├── doc/                        # 设计文档
-├── docs/                       # 使用文档
-├── main.py                     # 应用入口
 └── pyproject.toml              # 项目配置
 ```
 
@@ -187,22 +168,29 @@ quest3-agent/
 - `POST /api/collaborations` - 创建协作
 - `POST /api/collaborations/{id}/execute` - 执行协作（同步）
 - `GET /api/collaborations/{id}/execute_sse` - 执行协作（SSE流式）
-- `GET /api/collaborations/templates/list` - 列出协作模板
 
 ### 聊天
 - `POST /api/chat/chat` - 发送聊天消息
-- `WS /api/chat/stream` - WebSocket流式聊天
+- `POST /api/chat/stream` - 流式聊天
 
 ### MCP
 - `GET /api/mcp/servers` - 列出MCP服务器
 - `POST /api/mcp/servers` - 添加MCP服务器
 - `POST /api/mcp/servers/{id}/connect` - 连接MCP服务器
-- `POST /api/mcp/tools/call` - 调用MCP工具
 
 ### 技能
 - `GET /api/skills` - 列出所有技能
 - `POST /api/skills` - 创建技能
 - `POST /api/skills/import/github` - 从GitHub导入技能
+
+### 设置与用户
+- `GET /api/settings` - 获取系统配置
+- `PUT /api/settings` - 更新配置（需admin）
+- `GET /api/settings/init-status` - 检查是否已初始化
+- `POST /api/settings/test-llm` - 测试LLM连接
+- `POST /api/users/login` - 用户登录
+- `GET /api/users` - 用户列表（需admin）
+- `POST /api/users` - 创建用户（需admin）
 
 ## 许可证
 
