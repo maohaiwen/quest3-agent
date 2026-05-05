@@ -684,6 +684,10 @@
         _thinkingBuffer: '',
         _stepType: 'thinking',
         _renderThrottle: null,
+        _thinkingContentEl: null,
+        _thinkingStepsEl: null,
+        _thinkingCountEl: null,
+        _thinkingStatusEl: null,
 
         // ── Init ──────────────────────────
         async init() {
@@ -1107,6 +1111,9 @@
             this._thinkingBuffer = '';
             this._stepType = 'thinking';
             this._thinkingContentEl = null;
+            this._thinkingStepsEl = null;
+            this._thinkingCountEl = null;
+            this._thinkingStatusEl = null;
             this.planningCard = null;
             this.planningSteps = {};
         },
@@ -1189,6 +1196,9 @@
             this._thinkingBuffer = '';
             this._stepType = 'thinking';
             this._thinkingContentEl = null;
+            this._thinkingStepsEl = null;
+            this._thinkingCountEl = null;
+            this._thinkingStatusEl = null;
             this.planningCard = null;
             this.setInputEnabled(true);
         },
@@ -1208,21 +1218,61 @@
 
             var card = document.createElement('div');
             card.className = 'thinking-card';
-            card.innerHTML =
-                '<div class="thinking-card-header" onclick="this.parentElement.classList.toggle(\'collapsed\')">' +
-                    '<span class="thinking-card-icon">\uD83E\uDDE0</span>' +
-                    '<span class="thinking-card-title">深度思考</span>' +
-                    '<span class="thinking-card-count" id="tc-count">0字</span>' +
-                    '<span class="thinking-card-status active" id="tc-status">\u23F3 思考中</span>' +
-                    '<span class="thinking-card-toggle">\u25BC</span>' +
-                '</div>' +
-                '<div class="thinking-card-body">' +
-                    '<div class="thinking-content" id="tc-content"></div>' +
-                    '<div class="thinking-step-list" id="tc-steps"></div>' +
-                '</div>';
+
+            // Build header
+            var header = document.createElement('div');
+            header.className = 'thinking-card-header';
+            header.onclick = function() { card.classList.toggle('collapsed'); };
+
+            var iconSpan = document.createElement('span');
+            iconSpan.className = 'thinking-card-icon';
+            iconSpan.textContent = '\uD83E\uDDE0';
+
+            var titleSpan = document.createElement('span');
+            titleSpan.className = 'thinking-card-title';
+            titleSpan.textContent = '深度思考';
+
+            var countSpan = document.createElement('span');
+            countSpan.className = 'thinking-card-count';
+            countSpan.textContent = '0字';
+
+            var statusSpan = document.createElement('span');
+            statusSpan.className = 'thinking-card-status active';
+            statusSpan.textContent = '\u23F3 思考中';
+
+            var toggleSpan = document.createElement('span');
+            toggleSpan.className = 'thinking-card-toggle';
+            toggleSpan.textContent = '\u25BC';
+
+            header.appendChild(iconSpan);
+            header.appendChild(titleSpan);
+            header.appendChild(countSpan);
+            header.appendChild(statusSpan);
+            header.appendChild(toggleSpan);
+
+            // Build body
+            var body = document.createElement('div');
+            body.className = 'thinking-card-body';
+
+            var contentDiv = document.createElement('div');
+            contentDiv.className = 'thinking-content';
+
+            var stepsDiv = document.createElement('div');
+            stepsDiv.className = 'thinking-step-list';
+
+            body.appendChild(contentDiv);
+            body.appendChild(stepsDiv);
+
+            card.appendChild(header);
+            card.appendChild(body);
             area.appendChild(card);
+
+            // Store direct references (no getElementById!)
             this.thinkingCard = card;
-            this._thinkingContentEl = document.getElementById('tc-content');
+            this._thinkingContentEl = contentDiv;
+            this._thinkingStepsEl = stepsDiv;
+            this._thinkingCountEl = countSpan;
+            this._thinkingStatusEl = statusSpan;
             this.thinkingSteps = [];
             this._thinkingBuffer = '';
             this._stepType = 'thinking';
@@ -1269,13 +1319,12 @@
 
         /** Update the character count badge */
         _updateThinkingCount() {
-            var el = document.getElementById('tc-count');
-            if (!el) return;
+            if (!this._thinkingCountEl) return;
             var len = this._thinkingBuffer.length;
             if (len < 1000) {
-                el.textContent = len + '字';
+                this._thinkingCountEl.textContent = len + '字';
             } else {
-                el.textContent = (len / 1000).toFixed(1) + 'k字';
+                this._thinkingCountEl.textContent = (len / 1000).toFixed(1) + 'k字';
             }
         },
 
@@ -1286,17 +1335,28 @@
             // Complete any previous running step
             this._completeRunningStepRows();
 
-            var stepsEl = document.getElementById('tc-steps');
-            if (!stepsEl) return;
+            if (!this._thinkingStepsEl) return;
 
             var icon = type === 'tool' ? '\uD83D\uDD27' : '\uD83D\uDCAD';
             var row = document.createElement('div');
             row.className = 'thinking-step-row';
-            row.innerHTML =
-                '<span class="thinking-step-row-icon">' + icon + '</span>' +
-                '<span class="thinking-step-row-text">' + this.escHtml(text) + '</span>' +
-                '<span class="thinking-step-row-status running" id="tcs-' + this.thinkingSteps.length + '">\u23F3</span>';
-            stepsEl.appendChild(row);
+
+            var iconSpan = document.createElement('span');
+            iconSpan.className = 'thinking-step-row-icon';
+            iconSpan.textContent = icon;
+
+            var textSpan = document.createElement('span');
+            textSpan.className = 'thinking-step-row-text';
+            textSpan.textContent = text;
+
+            var statusSpan = document.createElement('span');
+            statusSpan.className = 'thinking-step-row-status running';
+            statusSpan.textContent = '\u23F3';
+
+            row.appendChild(iconSpan);
+            row.appendChild(textSpan);
+            row.appendChild(statusSpan);
+            this._thinkingStepsEl.appendChild(row);
             this.thinkingSteps.push(row);
             this._stepType = type;
             this._updateThinkingCount();
@@ -1355,10 +1415,9 @@
             this._completeRunningStepRows();
 
             // Update status badge
-            var statusEl = document.getElementById('tc-status');
-            if (statusEl) {
-                statusEl.textContent = '\u2705 完成';
-                statusEl.className = 'thinking-card-status';
+            if (this._thinkingStatusEl) {
+                this._thinkingStatusEl.textContent = '\u2705 完成';
+                this._thinkingStatusEl.className = 'thinking-card-status';
             }
             // Auto-collapse when done
             if (this.thinkingCard) this.thinkingCard.classList.add('collapsed');
