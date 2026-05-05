@@ -4,16 +4,16 @@ const ChatModule = {
     _handlersBound: false,
     _lockedAgentId: null,
 
-    init() {
+    async init() {
         // Parse URL params for locked agent_id (params are in hash, e.g., #chat?agent_id=xxx)
         const hash = window.location.hash || '';
         const hashParams = new URLSearchParams(hash.split('?')[1] || '');
         this._lockedAgentId = hashParams.get('agent_id');
 
-        // Load agents
-        this.loadAgents();
+        // Load agents FIRST (must complete before sessions, so currentAgentId is set)
+        await this.loadAgents();
 
-        // Load sessions
+        // Then load sessions (which may auto-select and connect WebSocket)
         this.loadSessions();
 
         // Bind WebSocket handlers only once
@@ -42,8 +42,8 @@ const ChatModule = {
 
     destroy() {
         // Don't disconnect WebSocket on route change - keep connection alive
-        // Just clear the message handlers reference
-        this._handlersBound = false;
+        // Don't reset _handlersBound - handlers are already bound to ChatService
+        // and should persist across route changes to avoid duplicate registrations
     },
 
     bindHandlers() {
@@ -51,42 +51,82 @@ const ChatModule = {
             ChatView.updateConnectionStatus('connected', '已连接');
             ChatView.setInputsEnabled(true);
             ChatView.showTypingIndicator(false);
+        });
 
-            // Load history if we have a session
-            if (AppState.get('currentSessionId')) {
-                this.loadHistory(AppState.get('currentSessionId'));
+        ChatService.on('history', (data) => {
+            // Server sends history via WebSocket after connection
+            ChatView.clearMessages();
+            if (data.messages && data.messages.length > 0) {
+                data.messages.forEach(msg => {
+                    // Map "assistant" role from backend to "ai" for frontend rendering
+                    const sender = msg.role === 'assistant' ? 'ai' : msg.role;
+                    ChatView.addMessage(sender, msg.content, msg.created_at);
+                });
+            }
+            // Show "load more" button if there are older messages
+            if (data.has_more) {
+                ChatView.showLoadMoreButton();
+            }
+        });
+
+        ChatService.on('more_history', (data) => {
+            if (data.messages && data.messages.length > 0) {
+                ChatView.prependMessages(data.messages);
+            }
+            if (!data.has_more) {
+                ChatView.hideLoadMoreButton();
             }
         });
 
         ChatService.on('disconnected', () => {
             ChatView.updateConnectionStatus('disconnected', '已断开');
+            // If AI was responding when disconnected, finalize the message
+            // to prevent input being permanently greyed out
+            if (ChatView._aiResponding) {
+                ChatView.finalizeAiMessage();
+            }
             ChatView.setInputsEnabled(false);
         });
 
+        // Direct mode streaming
         ChatService.on('message', (data) => {
             ChatView.showTypingIndicator(false);
-            ChatView.createAiMessage();
+            if (!ChatView._aiResponding) {
+                ChatView.startAiResponse();
+            }
             ChatView.updateAiMessage(data.content);
         });
 
+        // End of response (all modes)
         ChatService.on('end', () => {
-            ChatView.endAiMessage();
             ChatView.showTypingIndicator(false);
+            ChatView.finalizeAiMessage();
         });
 
         ChatService.on('error', (data) => {
             ChatView.showTypingIndicator(false);
-            ChatView.addMessage('ai', `错误: ${data.content}`);
+            if (ChatView._aiResponding) {
+                ChatView.finalizeAiMessage();
+            }
+            ChatView.addMessage('ai', `错误: ${data.content || data.message || '未知错误'}`);
         });
 
+        // Plan/React mode
         ChatService.on('planning', (data) => {
+            if (!ChatView._aiResponding) {
+                ChatView.startAiResponse();
+            }
             ChatView.showPlanningCard(data.plan);
         });
 
         ChatService.on('step_start', (data) => {
             const step = data.step || data;
-            if (step.step_number && step.total_steps) {
-                ChatView.addPlanningStep(step, step.step_number, step.total_steps);
+            // Add step to planning card if there's a steps container
+            const hasStepsContainer = document.querySelector('.planning-steps-container:last-of-type');
+            if (hasStepsContainer) {
+                const stepNumber = step.step_number || 1;
+                const totalSteps = step.total_steps || 1;
+                ChatView.addPlanningStep(step, stepNumber, totalSteps);
             }
             ChatView.updateStepStatus(step.step_id, 'running', '⏳ 执行中');
         });
@@ -100,20 +140,76 @@ const ChatModule = {
 
         ChatService.on('step_error', (data) => {
             ChatView.updateStepStatus(data.step_id, 'error', '❌ 失败');
+            if (data.error) {
+                ChatView.updateStepResult(data.step_id, `错误: ${data.error}`);
+            }
         });
 
         ChatService.on('thinking_start', () => {
-            ChatView.showDeepThinkingContainer();
+            if (!ChatView._aiResponding) {
+                ChatView.startAiResponse();
+            }
+            // Don't create deep-thinking container here — it will be created
+            // lazily when actual thinking content arrives
         });
 
         ChatService.on('thinking_content', (data) => {
             if (data.content) {
+                if (!ChatView._cotContainer) {
+                    ChatView.showDeepThinkingContainer();
+                }
                 ChatView.updateDeepThinkingContent(data.content);
+            }
+        });
+
+        ChatService.on('thinking', (data) => {
+            // Handle thinking events from strategy_router (direct mode)
+            const content = data.content || data.message;
+            if (content) {
+                if (!ChatView._cotContainer) {
+                    ChatView.showDeepThinkingContainer();
+                }
+                ChatView.updateDeepThinkingContent(content);
             }
         });
 
         ChatService.on('thinking_end', () => {
             // Keep thinking visible
+        });
+
+        // COT mode (ReActCotExecutor)
+        ChatService.on('cot_step_start', (data) => {
+            if (!ChatView._aiResponding) {
+                ChatView.startAiResponse();
+            }
+            ChatView.showDeepThinkingContainer();
+        });
+
+        ChatService.on('cot_phase', (data) => {
+            ChatView.updateThinkingPhase(data.phase);
+        });
+
+        ChatService.on('cot_thinking', (data) => {
+            if (data.content) {
+                ChatView.updateDeepThinkingContent(data.content);
+            }
+        });
+
+        ChatService.on('cot_action', (data) => {
+            ChatView.addThinkingToolCall(data.tool_name, data.tool_args);
+        });
+
+        ChatService.on('cot_observation', (data) => {
+            ChatView.updateThinkingToolResult(data.result);
+        });
+
+        ChatService.on('cot_complete', (data) => {
+            ChatView.updateThinkingPhase('complete');
+            ChatView.showTypingIndicator(false);
+            if (data.message && !data.streamed) {
+                // 内容未流式发送（答案在 thinking 中），一次性设置
+                ChatView.setAiMessage(data.message);
+            }
         });
     },
 
@@ -177,7 +273,8 @@ const ChatModule = {
             const data = await API.get(`/api/sessions/${sessionId}/history`);
             if (data.messages && data.messages.length > 0) {
                 data.messages.forEach(msg => {
-                    ChatView.addMessage(msg.role, msg.content, msg.created_at);
+                    const sender = msg.role === 'assistant' ? 'ai' : msg.role;
+                    ChatView.addMessage(sender, msg.content, msg.created_at);
                 });
             }
         } catch (error) {
@@ -190,8 +287,10 @@ const ChatModule = {
             const postData = {
                 title: `会话 ${new Date().toLocaleString('zh-CN')}`
             };
-            if (this._lockedAgentId) {
-                postData.agent_id = this._lockedAgentId;
+            // Include the currently selected agent (locked or from dropdown)
+            const agentId = this._lockedAgentId || AppState.get('currentAgentId');
+            if (agentId) {
+                postData.agent_id = agentId;
             }
             const data = await API.post('/api/sessions/create', postData);
             if (data.session_id) {
@@ -211,15 +310,26 @@ const ChatModule = {
         const sessions = AppState.get('sessions') || [];
         ChatView.renderSessions(sessions);
 
+        // Get agent_id: from current selection, or from the session's associated agent
+        let agentId = AppState.get('currentAgentId');
+        if (!agentId) {
+            const session = sessions.find(s => s.id === sessionId);
+            if (session && session.agent_id) {
+                agentId = session.agent_id;
+                AppState.set('currentAgentId', agentId);
+            }
+        }
+
         // Connect WebSocket
-        ChatService.connect(sessionId, AppState.get('currentAgentId'));
+        ChatService.connect(sessionId, agentId);
     },
 
     async sendMessage() {
         const input = document.getElementById('messageInput');
-        const deepThinkingToggle = document.getElementById('deepThinkingToggle');
         const message = input.value.trim();
-        const deepThinking = deepThinkingToggle ? deepThinkingToggle.checked : false;
+        // Read deep thinking toggle (only relevant for direct mode)
+        const deepThinkingCheckbox = document.getElementById('deepThinkingCheckbox');
+        const deepThinking = deepThinkingCheckbox ? deepThinkingCheckbox.checked : false;
 
         if (!message) return;
 
@@ -236,6 +346,7 @@ const ChatModule = {
         // Add user message
         ChatView.addMessage('user', message);
         input.value = '';
+        ChatView._setSendEnabled(false);
         ChatView.showTypingIndicator(true);
 
         const sent = ChatService.send(message, deepThinking);
@@ -248,15 +359,23 @@ const ChatModule = {
     onAgentChanged(agentId) {
         if (this._lockedAgentId) return;
 
-        AppState.set('currentAgentId', agentId);
+        AppState.set('currentAgentId', agentId || null);
         ChatService.setAgent(agentId);
 
         // Update agent info display
-        const agents = AppState.get('agents') || [];
-        const agent = agents.find(a => a.id === agentId);
-        ChatView.renderActiveAgentInfo(agent);
+        if (agentId) {
+            const agents = AppState.get('agents') || [];
+            const agent = agents.find(a => a.id === agentId);
+            ChatView.renderActiveAgentInfo(agent);
+        } else {
+            ChatView.renderActiveAgentInfo(null);
+        }
 
         // Clear messages when switching agent
         ChatView.clearMessages();
+    },
+
+    loadMoreHistory() {
+        ChatService.loadMoreHistory(40);
     }
 };

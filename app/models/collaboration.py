@@ -10,7 +10,6 @@ class CollaborationMode(str, Enum):
     SUPERVISOR = "supervisor"
     PIPELINE = "pipeline"
     VOTING = "voting"
-    ADVERSARIAL_GEN_DIS = "adversarial_generate_discriminate"
     ADVERSARIAL_GAME = "adversarial_game"
 
 
@@ -24,11 +23,7 @@ class CollaborationAgentRole(str, Enum):
     # Voting mode
     VOTER = "voter"
     AGGREGATOR = "aggregator"
-    # Adversarial generate-discriminate mode
-    GENERATOR = "generator"
-    DISCRIMINATOR = "discriminator"
-    JUDGE = "judge"
-    # Adversarial game mode
+    # Game mode
     REFEREE = "referee"
     PARTICIPANT = "participant"
     # Legacy roles (kept for backwards compatibility)
@@ -57,18 +52,15 @@ class SupervisorConfig(BaseModel):
     )
 
 
-class AdversarialGenDisConfig(BaseModel):
-    """Configuration for generate-discriminate adversarial mode"""
-    max_rounds: int = Field(default=3, description="Maximum adversarial rounds")
-    judge_enabled: bool = Field(default=False, description="Whether to use a judge agent")
-    termination_on_pass: bool = Field(default=True, description="Stop when discriminator passes")
-
-
 class AdversarialGameConfig(BaseModel):
     """Configuration for adversarial game mode"""
     turn_strategy: str = Field(
         default="simultaneous",
-        description="Turn strategy: 'simultaneous' (all act at once, e.g. rock-paper-scissors) or 'turn_based' (take turns, e.g. chess)"
+        description="Turn strategy: 'simultaneous' (all act at once) or 'sequential' (act in order, one round = all participants act once)"
+    )
+    referee_timing: str = Field(
+        default="per_round",
+        description="When referee judges: 'per_round' (after each round) or 'final' (once after all rounds)"
     )
     max_rounds: int = Field(default=10, description="Maximum game rounds")
     game_rules: str = Field(
@@ -77,7 +69,7 @@ class AdversarialGameConfig(BaseModel):
     )
     participant_order: List[str] = Field(
         default_factory=list,
-        description="Order of participants for turn_based strategy (role identifiers)"
+        description="Order of participants for sequential strategy (role identifiers)"
     )
     shared_state: Dict[str, Any] = Field(
         default_factory=dict,
@@ -89,15 +81,11 @@ class AdversarialGameConfig(BaseModel):
     )
     referee_prompt: Optional[str] = Field(
         default=None,
-        description="Custom prompt template for referee (uses default if not provided)"
+        description="Custom prompt for referee (used as prefix, system appends context automatically)"
     )
     round_input_template: Optional[str] = Field(
         default=None,
-        description="[Legacy] Template for constructing input for each participant. Use game_rules instead."
-    )
-    termination_conditions: List[Dict[str, Any]] = Field(
-        default_factory=list,
-        description="Legacy termination conditions. With referee_enabled, the referee determines game over."
+        description="Custom instruction for each participant (used as prefix, system appends context automatically)"
     )
 
 
@@ -105,7 +93,7 @@ class PipelineConfig(BaseModel):
     """Configuration for pipeline mode"""
     step_prompt_template: Optional[str] = Field(
         default=None,
-        description="Custom prompt template for each pipeline step. Variables: {input}, {step_description}, {prev_output}"
+        description="Custom instruction for each pipeline step (used as prefix, system appends context automatically)"
     )
     pass_context: bool = Field(
         default=True,
@@ -117,11 +105,11 @@ class VotingConfig(BaseModel):
     """Configuration for voting/ensemble mode"""
     strategy: str = Field(
         default="majority",
-        description="Aggregation strategy: 'majority' (most common answer), 'weighted' (weighted by priority), 'best_of' (aggregator picks best)"
+        description="Aggregation strategy: 'majority' (most common answer)"
     )
     aggregator_prompt: Optional[str] = Field(
         default=None,
-        description="Custom prompt for the aggregator (used when strategy='best_of')"
+        description="Custom prompt for the aggregator"
     )
 
 
@@ -204,23 +192,9 @@ TEMPLATES = {
             "summary_prompt": None,
         }
     ),
-    "adversarial_gen_dis": CollaborationTemplate(
-        name="生成-判别对抗模式",
-        description="1个生成Agent + 1个判别Agent，生成内容后由判别器校验，循环优化",
-        mode=CollaborationMode.ADVERSARIAL_GEN_DIS,
-        default_agents=[
-            {"role": "generator", "description": "生成Agent，产出内容"},
-            {"role": "discriminator", "description": "判别Agent，校验内容质量"},
-        ],
-        default_config={
-            "max_rounds": 3,
-            "judge_enabled": False,
-            "termination_on_pass": True,
-        }
-    ),
     "simultaneous_game": CollaborationTemplate(
         name="同时行动博弈（如石头剪刀布）",
-        description="所有参与者同时行动，裁判裁决每轮胜负，适用于石头剪刀布、拍卖等场景",
+        description="所有参与者同时行动，裁判每轮裁决，适用于石头剪刀布、拍卖等场景",
         mode=CollaborationMode.ADVERSARIAL_GAME,
         default_agents=[
             {"role": "participant", "description": "参与者1"},
@@ -229,6 +203,7 @@ TEMPLATES = {
         ],
         default_config={
             "turn_strategy": "simultaneous",
+            "referee_timing": "per_round",
             "max_rounds": 10,
             "game_rules": "",
             "referee_enabled": True,
@@ -236,9 +211,9 @@ TEMPLATES = {
             "shared_state": {},
         }
     ),
-    "turn_based_game": CollaborationTemplate(
-        name="轮流行动博弈（如下棋）",
-        description="参与者按顺序轮流行动，裁判判定胜负，适用于棋类、扑克等场景",
+    "sequential_game": CollaborationTemplate(
+        name="顺序行动博弈（如下棋）",
+        description="参与者按顺序行动，裁判每轮裁决，适用于棋类、扑克等场景",
         mode=CollaborationMode.ADVERSARIAL_GAME,
         default_agents=[
             {"role": "participant", "description": "先手玩家"},
@@ -246,9 +221,30 @@ TEMPLATES = {
             {"role": "referee", "description": "裁判，判定胜负和游戏结束"},
         ],
         default_config={
-            "turn_strategy": "turn_based",
+            "turn_strategy": "sequential",
+            "referee_timing": "per_round",
             "participant_order": ["participant_0", "participant_1"],
             "max_rounds": 50,
+            "game_rules": "",
+            "referee_enabled": True,
+            "referee_prompt": None,
+            "shared_state": {},
+        }
+    ),
+    "debate": CollaborationTemplate(
+        name="辩论模式",
+        description="正反双方交替发言辩论，所有轮次结束后裁判终裁胜负",
+        mode=CollaborationMode.ADVERSARIAL_GAME,
+        default_agents=[
+            {"role": "participant", "description": "正方辩手"},
+            {"role": "participant", "description": "反方辩手"},
+            {"role": "referee", "description": "裁判，辩论结束后评判胜负"},
+        ],
+        default_config={
+            "turn_strategy": "sequential",
+            "referee_timing": "final",
+            "participant_order": ["participant_0", "participant_1"],
+            "max_rounds": 3,
             "game_rules": "",
             "referee_enabled": True,
             "referee_prompt": None,
@@ -279,7 +275,7 @@ TEMPLATES = {
             {"role": "aggregator", "description": "聚合器：汇总投票结果"},
         ],
         default_config={
-            "strategy": "best_of",
+            "strategy": "majority",
         }
     ),
 }

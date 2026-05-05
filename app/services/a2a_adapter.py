@@ -46,8 +46,7 @@ class A2AAdapter:
         )
 
     def _build_agent_config_dict(self) -> Dict[str, Any]:
-        """Build agent config dict for execution engines (same format as chat.py uses)"""
-        # Build skill system prompt addition
+        """Build agent config dict for execution engines"""
         skill_prompt = ""
         if hasattr(self.agent, 'skills') and self.agent.skills:
             try:
@@ -74,28 +73,19 @@ class A2AAdapter:
         }
 
     async def handle_task(self, task: A2ATask) -> A2ATask:
-        """Handle an A2A task by calling the appropriate execution engine.
-
-        Routes to the correct execution mode (direct, plan, react, react_cot)
-        matching the behavior of the chat API.
-        """
+        """Handle an A2A task by calling the appropriate execution engine."""
         try:
             logger.info(f"Agent {self.agent.name} handling task {task.id}: {task.input[:50]}...")
 
             execution_mode = getattr(self.agent, 'execution_mode', 'direct')
             agent_config_dict = self._build_agent_config_dict()
 
-            full_response = ""
-
-            if execution_mode == "react_cot":
-                full_response = await self._execute_react_cot(task.input, agent_config_dict)
-            elif execution_mode in ("plan", "react"):
-                full_response = await self._execute_planning(task.input, agent_config_dict, execution_mode)
-            else:
-                # direct mode - simple LLM call
+            if execution_mode == "direct":
                 full_response = await self._execute_direct(task.input, agent_config_dict)
+            else:
+                # react_cot, plan, and react all use ReActCotExecutor
+                full_response = await self._execute_react(task.input, agent_config_dict)
 
-            # Update task with result
             task.set_completed(full_response)
             task.add_message(A2AMessageRole.AGENT, full_response)
 
@@ -126,31 +116,8 @@ class A2AAdapter:
             max_tokens=max_tokens,
         )
 
-    async def _execute_react_cot(self, task_input: str, agent_config: Dict[str, Any]) -> str:
-        """ReAct + Chain of Thought execution mode"""
-        from app.core.react_cot_executor import ReActCotExecutor
-
-        executor = ReActCotExecutor(agent_config=agent_config)
-        full_response = ""
-
-        async for event in executor.execute(
-            task_input,
-            conversation_history=None,
-            deep_thinking=True
-        ):
-            if event.get("type") == "cot_complete":
-                full_response = event.get("message", "")
-
-        return full_response or ""
-
-    async def _execute_planning(self, task_input: str, agent_config: Dict[str, Any], execution_mode: str) -> str:
-        """Plan or React execution mode
-
-        Uses ReActCotExecutor which supports Volcengine LLM + tools,
-        since planning_chat_service depends on Anthropic SDK which may not be configured.
-        """
-        # Use ReActCotExecutor for both react and plan modes
-        # It supports tool calling, thinking, and works with Volcengine
+    async def _execute_react(self, task_input: str, agent_config: Dict[str, Any]) -> str:
+        """ReAct + CoT execution mode (used for react_cot, plan, and react modes)"""
         from app.core.react_cot_executor import ReActCotExecutor
 
         executor = ReActCotExecutor(agent_config=agent_config)

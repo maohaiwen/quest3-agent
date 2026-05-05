@@ -40,7 +40,6 @@ class SkillLoader:
         self.skill_dirs = skill_dirs or []
         self._skills_cache: Dict[str, Skill] = {}
         self._summaries_cache: Dict[str, SkillSummary] = {}
-        self._github_skills: Dict[str, Skill] = {}  # GitHub imported skills
 
     def add_skill_dir(self, dir_path: str) -> None:
         """Add a directory to scan for skills"""
@@ -285,8 +284,6 @@ class SkillLoader:
             skills: List of Skill objects from GitHub
         """
         for skill in skills:
-            # Override if exists
-            self._github_skills[skill.name] = skill
             self._skills_cache[skill.name] = skill
             self._summaries_cache[skill.name] = self._create_summary(skill)
             logger.info(f"Added GitHub skill: {skill.name}")

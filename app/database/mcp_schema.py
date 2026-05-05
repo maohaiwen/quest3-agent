@@ -1,8 +1,4 @@
 """MCP server database schema"""
-from sqlalchemy import (
-    Column, String, Integer, Boolean, DateTime, Text
-)
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def create_mcp_tables(db):
@@ -142,7 +138,7 @@ async def create_mcp_tables(db):
     await db.commit()
 
 
-async def migrate_mcp_servers_from_settings(db: AsyncSession):
+async def migrate_mcp_servers_from_settings(db):
     """Migrate MCP servers from settings (if any)
 
     Args:

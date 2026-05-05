@@ -1,23 +1,21 @@
 """Memory management API endpoints"""
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 import logging
 
-from app.models.memory import (
-    MemoryStoreRequest, MemorySearchRequest,
-    MemoryStoreResponse, MemorySearchResponse,
-    MemoryItem
+from app.models.agent_memory import (
+    AgentMemoryCreate, AgentMemorySearchRequest,
+    AgentMemorySearchResponse, AgentMemoryProfile, AgentMemoryStats
 )
-from app.database.repositories import MemoryRepository
+from app.models.memory import MemoryStoreResponse
+from app.services.agent_memory_service import agent_memory_service
 from app.services.vector_service import VectorService
+from app.config import settings
+from app.database.connection import DatabaseConnection
+from app.database.repositories import AgentMemoryRepository
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/memory", tags=["memory"])
-
-
-def get_memory_repo():
-    from app.main import memory_repo
-    return memory_repo
 
 
 def get_vector_service():
@@ -25,91 +23,93 @@ def get_vector_service():
     return vector_service
 
 
-@router.post("/store", response_model=MemoryStoreResponse)
-async def store_memory(
-    request: MemoryStoreRequest,
-    memory_repo: MemoryRepository = Depends(get_memory_repo),
-    vector_service: VectorService = Depends(get_vector_service)
-):
-    """Store content to long-term memory"""
-    try:
-        # Store in database
-        memory_id = await memory_repo.create(
-            session_id=request.session_id,
-            content=request.content,
-            metadata=request.metadata
-        )
+# ---- Agent-level long-term memory API ----
 
-        # Store in vector store for search
+@router.post("/agent/store", response_model=MemoryStoreResponse)
+async def store_agent_memory(request: AgentMemoryCreate):
+    """Store content to agent-level long-term memory"""
+    try:
+        memory_id = await agent_memory_service.store_manual(
+            agent_id=request.agent_id,
+            content=request.content,
+            memory_type=request.memory_type.value,
+            importance=request.importance
+        )
+        return MemoryStoreResponse(memory_id=memory_id)
+    except Exception as e:
+        logger.error(f"Error storing agent memory: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/agent/search", response_model=AgentMemorySearchResponse)
+async def search_agent_memory(request: AgentMemorySearchRequest):
+    """Search agent-level long-term memory"""
+    try:
+        results = await agent_memory_service.recall(
+            agent_id=request.agent_id,
+            query=request.query,
+            n=request.n,
+            min_importance=request.min_importance
+        )
+        return AgentMemorySearchResponse(
+            results=results,
+            query=request.query,
+            count=len(results)
+        )
+    except Exception as e:
+        logger.error(f"Error searching agent memory: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/agent/{agent_id}/profile", response_model=AgentMemoryProfile)
+async def get_agent_memory_profile(agent_id: str):
+    """Get agent memory profile (high-importance preferences and facts)"""
+    try:
+        return await agent_memory_service.get_agent_profile(agent_id)
+    except Exception as e:
+        logger.error(f"Error getting agent profile: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/agent/{agent_id}/consolidate")
+async def consolidate_agent_memory(agent_id: str):
+    """Trigger memory consolidation for an agent"""
+    try:
+        stats = await agent_memory_service.consolidate(agent_id)
+        return {"agent_id": agent_id, "consolidation_stats": stats}
+    except Exception as e:
+        logger.error(f"Error consolidating agent memory: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/agent/{agent_id}/stats", response_model=AgentMemoryStats)
+async def get_agent_memory_stats(agent_id: str):
+    """Get memory statistics for an agent"""
+    try:
+        return await agent_memory_service.get_stats(agent_id)
+    except Exception as e:
+        logger.error(f"Error getting agent memory stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/agent/{agent_id}/{memory_id}")
+async def delete_agent_memory(agent_id: str, memory_id: str):
+    """Delete a specific agent memory"""
+    repo = AgentMemoryRepository(DatabaseConnection(settings.DATABASE_URL))
+    try:
+        await repo.delete(memory_id)
+        # Also delete from ChromaDB
+        vector_service = get_vector_service()
         if vector_service.is_available():
             try:
-                vector_service.add(
-                    session_id=request.session_id,
-                    content=request.content,
-                    metadata=request.metadata or {}
-                )
-            except Exception as e:
-                logger.warning(f"Failed to store in vector store: {e}")
-
-        return MemoryStoreResponse(memory_id=memory_id)
-
+                vector_service.delete(agent_id, memory_id)
+            except Exception:
+                pass
+        # Invalidate profile cache
+        agent_memory_service._profile_cache.pop(agent_id, None)
+        return {"message": "Agent memory deleted successfully"}
     except Exception as e:
-        logger.error(f"Error storing memory: {e}")
+        logger.error(f"Error deleting agent memory: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/search", response_model=MemorySearchResponse)
-async def search_memory(
-    request: MemorySearchRequest,
-    vector_service: VectorService = Depends(get_vector_service)
-):
-    """Search long-term memory"""
-    try:
-        if not vector_service.is_available():
-            return MemorySearchResponse(
-                results=[],
-                query=request.query,
-                count=0
-            )
-
-        # Search in vector store
-        results = vector_service.search(
-            session_id=request.session_id,
-            query=request.query,
-            n_results=request.limit
-        )
-
-        # Format results
-        memory_items = []
-        for result in results:
-            memory_items.append(MemoryItem(
-                id=result.get("id", ""),
-                session_id=request.session_id,
-                content=result.get("content", ""),
-                metadata=result.get("metadata"),
-                created_at=None
-            ))
-
-        return MemorySearchResponse(
-            results=memory_items,
-            query=request.query,
-            count=len(memory_items)
-        )
-
-    except Exception as e:
-        logger.error(f"Error searching memory: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.delete("/{memory_id}")
-async def delete_memory(
-    memory_id: str,
-    memory_repo: MemoryRepository = Depends(get_memory_repo)
-):
-    """Delete memory item"""
-    try:
-        await memory_repo.delete(memory_id)
-        return {"message": "Memory deleted successfully"}
-    except Exception as e:
-        logger.error(f"Error deleting memory: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await repo.db.disconnect()

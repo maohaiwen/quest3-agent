@@ -69,14 +69,6 @@ class SkillExecutionResult(BaseModel):
     logs: List[str] = Field(default_factory=list, description="执行日志")
 
 
-class SkillExecutionStatus(str):
-    """执行状态（枚举）"""
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
 
 # ============================================
 # Skill Runner 基类
@@ -407,12 +399,6 @@ class ScriptRunner(SkillRunner):
         entry_path = Path(skill.entrypoint)
         if not entry_path.exists():
             raise FileNotFoundError(f"Entrypoint not found: {skill.entrypoint}")
-
-        # 添加 skill 目录到 path
-        dir_path = entry_path.parent
-        dir_str = str(dir_path)
-        if dir_str not in sys.path:
-            sys.path.insert(0, dir_str)
 
         # 动态导入
         module_name = f"skill_{skill.name.replace('-', '_').replace('.', '_')}"

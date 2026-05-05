@@ -31,9 +31,11 @@ async def create_session(
 
 @router.get("/list/all")
 async def list_all_sessions(
+    limit: int = 50,
+    offset: int = 0,
     session_repo: SessionRepository = Depends(get_session_repo)
 ):
-    """List all sessions"""
+    """List all sessions with pagination"""
     from app.database.connection import DatabaseConnection
     from app.config import settings
 
@@ -41,8 +43,12 @@ async def list_all_sessions(
     await db.connect()
 
     try:
-        sql = "SELECT * FROM sessions ORDER BY created_at DESC"
-        rows = await db.fetch_all(sql)
+        # Get total count
+        count_row = await db.fetch_one("SELECT COUNT(*) as count FROM sessions")
+        total = count_row["count"] if count_row else 0
+
+        sql = "SELECT * FROM sessions ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        rows = await db.fetch_all(sql, (limit, offset))
 
         sessions = []
         for row in rows:
@@ -62,7 +68,7 @@ async def list_all_sessions(
                 "updated_at": row["updated_at"]
             })
 
-        return {"sessions": sessions}
+        return {"sessions": sessions, "total": total, "limit": limit, "offset": offset}
 
     finally:
         await db.disconnect()
@@ -71,9 +77,11 @@ async def list_all_sessions(
 @router.get("/list/by-agent/{agent_id}")
 async def list_sessions_by_agent(
     agent_id: str,
+    limit: int = 50,
+    offset: int = 0,
     session_repo: SessionRepository = Depends(get_session_repo)
 ):
-    """List sessions for a specific agent"""
+    """List sessions for a specific agent with pagination"""
     from app.database.connection import DatabaseConnection
     from app.config import settings
 
@@ -81,8 +89,12 @@ async def list_sessions_by_agent(
     await db.connect()
 
     try:
-        sql = "SELECT * FROM sessions WHERE agent_id = ? ORDER BY created_at DESC"
-        rows = await db.fetch_all(sql, (agent_id,))
+        # Get total count
+        count_row = await db.fetch_one("SELECT COUNT(*) as count FROM sessions WHERE agent_id = ?", (agent_id,))
+        total = count_row["count"] if count_row else 0
+
+        sql = "SELECT * FROM sessions WHERE agent_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        rows = await db.fetch_all(sql, (agent_id, limit, offset))
 
         sessions = []
         for row in rows:
@@ -102,7 +114,7 @@ async def list_sessions_by_agent(
                 "updated_at": row["updated_at"]
             })
 
-        return {"sessions": sessions}
+        return {"sessions": sessions, "total": total, "limit": limit, "offset": offset}
 
     finally:
         await db.disconnect()

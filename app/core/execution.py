@@ -426,8 +426,10 @@ class ToolExecutionEngine:
                     "message": f"执行工具 {step.tool_name}..."
                 })
 
-                # Execute tool via mcp_client_pool
-                result = await mcp_client_pool.call_tool(
+                # Execute tool via unified tool manager
+                from app.core.tool_manager import get_tool_manager
+                tool_manager = get_tool_manager()
+                result = await tool_manager.call_tool(
                     step.tool_name,
                     step.arguments
                 )

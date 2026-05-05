@@ -11,85 +11,212 @@
             box-sizing: border-box;
         }
 
+        :root {
+            /* Primary Colors - matching main page */
+            --primary: #667eea;
+            --primary-dark: #5568d3;
+            --secondary: #764ba2;
+            --gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+
+            /* Backgrounds */
+            --bg-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --container-bg: white;
+            --sidebar-bg: #f8f9fa;
+            --panel-bg: #fafbfc;
+
+            /* Text */
+            --text-primary: #333;
+            --text-secondary: #666;
+            --text-muted: #999;
+
+            /* Borders */
+            --border-color: #e0e0e0;
+            --border-focus: #667eea;
+
+            /* Status */
+            --success-bg: #d4edda;
+            --success-color: #155724;
+            --error-bg: #fee;
+            --error-color: #dc3545;
+            --warning-bg: #fff3cd;
+            --warning-color: #856404;
+            --info-bg: #e8f4fd;
+            --info-color: #0c5460;
+
+            /* Shadows */
+            --container-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            --card-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+            --hover-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+
+            /* Radius */
+            --radius-lg: 16px;
+            --radius: 12px;
+            --radius-sm: 8px;
+            --radius-full: 9999px;
+
+            /* Accent for running state */
+            --accent-running: #00d4ff;
+            --accent-success: #4caf50;
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: #0f0f1a;
-            color: #e0e0e0;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-gradient);
+            color: var(--text-primary);
             height: 100vh;
             display: flex;
-            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
             overflow: hidden;
         }
 
-        /* Header */
+        /* ========== App Container (matching main page) ========== */
+        .app-container {
+            width: 100%;
+            max-width: 1400px;
+            background: var(--container-bg);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--container-shadow);
+            display: flex;
+            flex-direction: column;
+            height: 90vh;
+            overflow: hidden;
+        }
+
+        /* ========== Header (matching main page) ========== */
         .header {
-            background: #1a1a2e;
-            padding: 12px 24px;
+            background: var(--gradient);
+            color: white;
+            padding: 16px 24px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            border-bottom: 1px solid #2a2a4a;
             flex-shrink: 0;
         }
 
-        .header h1 {
-            font-size: 18px;
-            color: #00d4ff;
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header-brand h1 {
+            font-size: 20px;
             font-weight: 600;
         }
 
         .header-actions {
             display: flex;
-            gap: 12px;
+            gap: 8px;
             align-items: center;
         }
 
+        .nav-btn {
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: var(--radius-full);
+            cursor: pointer;
+            font-size: 14px;
+            font-family: inherit;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            text-decoration: none;
+        }
+
+        .nav-btn:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        .nav-btn.active {
+            background: rgba(255, 255, 255, 0.3);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        /* ========== Buttons ========== */
         .btn {
             padding: 8px 16px;
-            border: 1px solid #3a3a5a;
-            background: #2a2a4a;
-            color: #e0e0e0;
-            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            background: white;
+            color: var(--text-primary);
+            border-radius: var(--radius-sm);
             cursor: pointer;
             font-size: 13px;
+            font-family: inherit;
             transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
         }
 
         .btn:hover {
-            background: #3a3a6a;
-            border-color: #00d4ff;
+            background: #f0f0f0;
+            transform: translateY(-1px);
         }
 
         .btn-primary {
-            background: #0066cc;
-            border-color: #0088ff;
+            background: var(--primary);
+            border-color: var(--primary);
             color: white;
         }
 
         .btn-primary:hover {
-            background: #0088ff;
+            background: var(--primary-dark);
+            border-color: var(--primary-dark);
         }
 
-        /* Main Layout - Three Panels */
+        .btn-success {
+            background: #4caf50;
+            border-color: #4caf50;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #43a047;
+            border-color: #43a047;
+        }
+
+        .btn-danger {
+            color: var(--error-color);
+            border-color: var(--error-color);
+        }
+
+        .btn-danger:hover {
+            background: var(--error-bg);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* ========== Main Layout ========== */
         .main-container {
             display: flex;
             flex: 1;
             overflow: hidden;
         }
 
-        /* Left Panel - Topology */
+        /* ========== Left Panel - Topology ========== */
         .topology-panel {
-            width: 280px;
+            width: 260px;
             display: flex;
             flex-direction: column;
-            background: #12121e;
+            background: var(--sidebar-bg);
             flex-shrink: 0;
-            border-right: 1px solid #2a2a4a;
+            border-right: 1px solid var(--border-color);
         }
 
         .topology-panel.collapsed {
             width: 0;
             overflow: hidden;
+            border-right: none;
         }
 
         .topology-content {
@@ -113,45 +240,51 @@
 
         .topo-parallel {
             display: flex;
-            gap: 20px;
+            gap: 12px;
             position: relative;
+            flex-wrap: wrap;
+            justify-content: center;
         }
 
         .topo-node {
             padding: 10px 14px;
-            background: #1a1a2e;
-            border: 2px solid #2a2a4a;
-            border-radius: 8px;
+            background: white;
+            border: 2px solid var(--border-color);
+            border-radius: var(--radius-sm);
             text-align: center;
-            min-width: 100px;
-            transition: border-color 0.3s, box-shadow 0.3s;
+            min-width: 90px;
+            transition: all 0.3s;
             position: relative;
         }
 
+        .topo-node:hover {
+            box-shadow: var(--hover-shadow);
+        }
+
         .topo-node.thinking {
-            border-color: #00d4ff;
-            box-shadow: 0 0 12px rgba(0, 212, 255, 0.4);
+            border-color: var(--primary);
+            box-shadow: 0 0 12px rgba(102, 126, 234, 0.3);
             animation: thinkingPulse 1.5s infinite;
         }
 
         .topo-node.done {
-            border-color: #00ff88;
-            box-shadow: 0 0 8px rgba(0, 255, 136, 0.2);
+            border-color: var(--accent-success);
+            box-shadow: 0 0 8px rgba(76, 175, 80, 0.2);
         }
 
         .topo-node.error {
-            border-color: #ff4444;
+            border-color: var(--error-color);
         }
 
         @keyframes thinkingPulse {
-            0%, 100% { box-shadow: 0 0 8px rgba(0, 212, 255, 0.3); }
-            50% { box-shadow: 0 0 20px rgba(0, 212, 255, 0.6); }
+            0%, 100% { box-shadow: 0 0 8px rgba(102, 126, 234, 0.2); }
+            50% { box-shadow: 0 0 20px rgba(102, 126, 234, 0.5); }
         }
 
         .topo-node-name {
             font-size: 12px;
             font-weight: 600;
-            color: #e0e0e0;
+            color: var(--text-primary);
             margin-bottom: 4px;
         }
 
@@ -162,21 +295,46 @@
             display: inline-block;
         }
 
+        /* Topology status indicator on node */
+        .topo-node-status {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ccc;
+            border: 2px solid white;
+        }
+
+        .topo-node-status.thinking {
+            background: var(--primary);
+            animation: pulse 1.5s infinite;
+        }
+
+        .topo-node-status.done {
+            background: var(--accent-success);
+        }
+
+        .topo-node-status.error {
+            background: var(--error-color);
+        }
+
         /* Connectors */
         .topo-connector {
             width: 2px;
             height: 20px;
-            background: #2a2a4a;
+            background: var(--border-color);
             transition: background 0.3s;
         }
 
         .topo-connector.active {
-            background: #00d4ff;
+            background: var(--primary);
         }
 
         .topo-label {
             font-size: 10px;
-            color: #6060a0;
+            color: var(--text-muted);
             text-align: center;
             padding: 2px 0;
         }
@@ -185,7 +343,7 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            color: #6060a0;
+            color: var(--text-muted);
             font-size: 18px;
             padding: 0 8px;
         }
@@ -200,23 +358,24 @@
         .topo-turn-indicator {
             text-align: center;
             font-size: 11px;
-            color: #00d4ff;
+            color: var(--primary);
             padding: 4px 0;
             min-height: 20px;
         }
 
-        /* Center Panel - Chat Flow */
+        /* ========== Center Panel - Chat Flow ========== */
         .chat-panel {
             flex: 1;
             display: flex;
             flex-direction: column;
             min-width: 300px;
+            background: white;
         }
 
         .panel-header {
             padding: 12px 16px;
-            background: #1a1a2e;
-            border-bottom: 1px solid #2a2a4a;
+            background: var(--sidebar-bg);
+            border-bottom: 1px solid var(--border-color);
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -226,12 +385,12 @@
 
         .panel-header h3 {
             font-size: 14px;
-            color: #a0a0c0;
+            color: var(--text-secondary);
             font-weight: 500;
         }
 
         .panel-header .collapse-icon {
-            color: #6060a0;
+            color: var(--text-muted);
             font-size: 12px;
             transition: transform 0.2s;
         }
@@ -256,21 +415,21 @@
         /* Round Containers */
         .round-container {
             margin-bottom: 4px;
-            border-left: 3px solid #2a2a4a;
+            border-left: 3px solid var(--border-color);
             padding-left: 12px;
             transition: border-color 0.3s;
         }
 
         .round-container.active {
-            border-left-color: #00d4ff;
+            border-left-color: var(--primary);
         }
 
         .round-container.completed {
-            border-left-color: #00ff88;
+            border-left-color: var(--accent-success);
         }
 
         .round-container.failed {
-            border-left-color: #ff4444;
+            border-left-color: var(--error-color);
         }
 
         .round-header {
@@ -279,49 +438,49 @@
             gap: 8px;
             padding: 4px 8px;
             margin-bottom: 8px;
-            background: #1a1a2e;
+            background: var(--sidebar-bg);
             border-radius: 4px;
             cursor: pointer;
             user-select: none;
         }
 
         .round-header:hover {
-            background: #22223a;
+            background: #eef0f2;
         }
 
         .round-number {
             font-size: 12px;
             font-weight: 600;
-            color: #a0a0c0;
+            color: var(--text-secondary);
         }
 
         .round-progress {
             font-size: 11px;
-            color: #606080;
+            color: var(--text-muted);
         }
 
         .round-status-dot {
             width: 6px;
             height: 6px;
             border-radius: 50%;
-            background: #333;
+            background: #ccc;
         }
 
         .round-status-dot.active {
-            background: #00d4ff;
+            background: var(--primary);
             animation: pulse 1.5s infinite;
         }
 
         .round-status-dot.done {
-            background: #00ff88;
+            background: var(--accent-success);
         }
 
         .round-footer {
             font-size: 11px;
-            color: #8080a0;
+            color: var(--text-muted);
             padding: 4px 8px;
             margin-top: 6px;
-            border-top: 1px solid #1a1a2e;
+            border-top: 1px solid var(--sidebar-bg);
         }
 
         .round-messages {
@@ -337,17 +496,17 @@
         .task-separator {
             text-align: center;
             padding: 8px;
-            border-top: 1px dashed #2a2a4a;
-            border-bottom: 1px dashed #2a2a4a;
+            border-top: 1px dashed var(--border-color);
+            border-bottom: 1px dashed var(--border-color);
             margin: 8px 0;
             font-size: 11px;
-            color: #606080;
+            color: var(--text-muted);
         }
 
-        /* Message Styles */
+        /* ========== Message Styles ========== */
         .message {
             padding: 12px;
-            border-radius: 8px;
+            border-radius: var(--radius-sm);
             max-width: 85%;
             animation: fadeIn 0.3s ease;
         }
@@ -358,32 +517,32 @@
         }
 
         .message.user {
-            background: #1a3a5a;
-            border: 1px solid #2a5a8a;
+            background: rgba(102, 126, 234, 0.1);
+            border: 1px solid rgba(102, 126, 234, 0.2);
             align-self: flex-end;
         }
 
         .message.agent {
-            background: #1a2a3a;
-            border: 1px solid #2a3a5a;
-            border-left: 3px solid var(--agent-color, #2a3a5a);
+            background: var(--sidebar-bg);
+            border: 1px solid var(--border-color);
+            border-left: 3px solid var(--agent-color, var(--primary));
             align-self: flex-start;
         }
 
         .message.system {
-            background: #2a2a2a;
-            border: 1px solid #3a3a3a;
+            background: var(--info-bg);
+            border: 1px solid #b8daff;
             align-self: center;
             font-size: 12px;
-            color: #808080;
+            color: var(--info-color);
             max-width: 90%;
         }
 
         .message.error {
-            background: #3a1a1a;
-            border: 1px solid #5a2a2a;
+            background: var(--error-bg);
+            border: 1px solid #f5c6cb;
             align-self: center;
-            color: #ff6666;
+            color: var(--error-color);
         }
 
         .message-header {
@@ -401,26 +560,28 @@
             font-weight: 600;
         }
 
-        .agent-role.supervisor { background: #4a2a8a; color: #c0a0ff; }
-        .agent-role.child { background: #2a6a4a; color: #a0ffc0; }
-        .agent-role.worker { background: #3a2a8a; color: #a0a0ff; }
-        .agent-role.voter { background: #8a6a2a; color: #ffe0a0; }
-        .agent-role.aggregator { background: #8a2a4a; color: #ffa0c0; }
-        .agent-role.generator { background: #8a4a2a; color: #ffc0a0; }
-        .agent-role.discriminator { background: #8a2a4a; color: #ffa0c0; }
-        .agent-role.judge { background: #6a6a2a; color: #ffffa0; }
-        .agent-role.game { background: #2a8a6a; color: #a0ffd0; }
-        .agent-role.player_black { background: #1a1a2e; color: #c0c0d0; }
-        .agent-role.player_white { background: #3a3a4e; color: #e0e0f0; }
-        .agent-role.referee { background: #8a6a2a; color: #ffe0a0; }
-        .agent-role.summary { background: #2a4a6a; color: #a0d0ff; }
+        .agent-role.supervisor { background: rgba(102, 126, 234, 0.15); color: var(--primary); }
+        .agent-role.child { background: rgba(76, 175, 80, 0.15); color: #2e7d32; }
+        .agent-role.worker { background: rgba(63, 81, 181, 0.15); color: #303f9f; }
+        .agent-role.voter { background: rgba(255, 152, 0, 0.15); color: #e65100; }
+        .agent-role.aggregator { background: rgba(156, 39, 176, 0.15); color: #7b1fa2; }
+        .agent-role.generator { background: rgba(255, 87, 34, 0.15); color: #d84315; }
+        .agent-role.discriminator { background: rgba(233, 30, 99, 0.15); color: #c2185b; }
+        .agent-role.judge { background: rgba(255, 193, 7, 0.15); color: #f57f17; }
+        .agent-role.game { background: rgba(0, 150, 136, 0.15); color: #00695c; }
+        .agent-role.player_black { background: rgba(66, 66, 66, 0.15); color: #212121; }
+        .agent-role.player_white { background: rgba(189, 189, 189, 0.15); color: #616161; }
+        .agent-role.referee { background: rgba(255, 152, 0, 0.15); color: #e65100; }
+        .agent-role.summary { background: rgba(33, 150, 243, 0.15); color: #1565c0; }
+        .agent-role.participant { background: rgba(0, 150, 136, 0.15); color: #00695c; }
 
         .round-badge {
-            background: #333;
+            background: var(--sidebar-bg);
             padding: 2px 6px;
             border-radius: 3px;
             font-size: 10px;
-            color: #aaa;
+            color: var(--text-muted);
+            border: 1px solid var(--border-color);
         }
 
         .message-content {
@@ -428,13 +589,15 @@
             line-height: 1.6;
             white-space: pre-wrap;
             word-break: break-word;
+            color: var(--text-primary);
         }
 
         .message-content.collapsible {
-            max-height: 100px;
+            max-height: 120px;
             overflow: hidden;
             position: relative;
             cursor: pointer;
+            transition: max-height 0.3s ease;
         }
 
         .message-content.collapsible::after {
@@ -442,7 +605,7 @@
             position: absolute;
             bottom: 0;
             right: 0;
-            background: linear-gradient(transparent, var(--msg-bg, #1a2a3a));
+            background: linear-gradient(transparent, var(--msg-bg, var(--sidebar-bg)));
             padding: 0 8px;
         }
 
@@ -460,9 +623,9 @@
             align-items: center;
             gap: 8px;
             padding: 8px 12px;
-            background: #1a1a2e;
+            background: var(--sidebar-bg);
             border-radius: 6px;
-            border-left: 3px solid #00d4ff;
+            border-left: 3px solid var(--primary);
         }
 
         .thinking-dots {
@@ -474,7 +637,7 @@
             width: 6px;
             height: 6px;
             border-radius: 50%;
-            background: #00d4ff;
+            background: var(--primary);
             animation: dotPulse 1.2s infinite;
         }
 
@@ -488,22 +651,23 @@
 
         .thinking-label {
             font-size: 12px;
-            color: #6080a0;
+            color: var(--text-secondary);
         }
 
-        /* Right Panel - Config */
+        /* ========== Right Panel - Config ========== */
         .config-panel {
             width: 320px;
             display: flex;
             flex-direction: column;
-            background: #12121e;
+            background: var(--sidebar-bg);
             flex-shrink: 0;
-            border-left: 1px solid #2a2a4a;
+            border-left: 1px solid var(--border-color);
         }
 
         .config-panel.collapsed {
             width: 0;
             overflow: hidden;
+            border-left: none;
         }
 
         .config-content {
@@ -522,9 +686,10 @@
 
         .config-section h4 {
             font-size: 12px;
-            color: #8080a0;
+            color: var(--text-muted);
             margin-bottom: 10px;
             letter-spacing: 0.5px;
+            text-transform: uppercase;
         }
 
         .config-item {
@@ -534,7 +699,7 @@
         .config-item label {
             display: block;
             font-size: 11px;
-            color: #707090;
+            color: var(--text-secondary);
             margin-bottom: 4px;
         }
 
@@ -542,17 +707,18 @@
         .config-item input {
             width: 100%;
             padding: 6px 10px;
-            background: #1a1a2e;
-            border: 1px solid #2a2a4a;
+            background: white;
+            border: 1px solid var(--border-color);
             border-radius: 4px;
-            color: #e0e0e0;
+            color: var(--text-primary);
             font-size: 12px;
+            font-family: inherit;
         }
 
         .config-item select:focus,
         .config-item input:focus {
             outline: none;
-            border-color: #00d4ff;
+            border-color: var(--border-focus);
         }
 
         .agent-list {
@@ -563,12 +729,17 @@
 
         .agent-card {
             padding: 10px;
-            background: #1a1a2e;
-            border: 1px solid #2a2a4a;
+            background: white;
+            border: 1px solid var(--border-color);
             border-radius: 6px;
             display: flex;
             align-items: center;
             gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .agent-card:hover {
+            box-shadow: var(--hover-shadow);
         }
 
         .agent-card-header {
@@ -582,20 +753,20 @@
         .agent-card-name {
             font-size: 13px;
             font-weight: 500;
-            color: #e0e0e0;
+            color: var(--text-primary);
         }
 
         .agent-card-role {
             font-size: 10px;
             padding: 2px 6px;
             border-radius: 3px;
-            background: #2a2a4a;
-            color: #a0a0c0;
+            background: rgba(102, 126, 234, 0.1);
+            color: var(--primary);
         }
 
         .agent-card-desc {
             font-size: 11px;
-            color: #707090;
+            color: var(--text-muted);
             line-height: 1.4;
         }
 
@@ -603,30 +774,31 @@
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background: #333;
+            background: #ccc;
             flex-shrink: 0;
         }
 
         .agent-card-status.thinking {
-            background: #00d4ff;
+            background: var(--primary);
             animation: pulse 1.5s infinite;
         }
 
         .agent-card-status.done {
-            background: #00ff88;
+            background: var(--accent-success);
         }
 
         .agent-card-status.error {
-            background: #ff4444;
+            background: var(--error-color);
         }
 
         /* Shared State Viewer */
         .shared-state-viewer {
             font-size: 11px;
-            color: #8080a0;
-            background: #0a0a15;
+            color: var(--text-secondary);
+            background: white;
             padding: 10px;
             border-radius: 6px;
+            border: 1px solid var(--border-color);
             overflow-x: auto;
             white-space: pre-wrap;
             max-height: 200px;
@@ -635,13 +807,13 @@
         }
 
         .shared-state-viewer.flash {
-            background: #1a1a2e;
+            background: var(--sidebar-bg);
         }
 
-        /* Edit Mode Panel */
+        /* ========== Edit Mode Panel ========== */
         .edit-tabs {
             display: flex;
-            border-bottom: 1px solid #2a2a4a;
+            border-bottom: 1px solid var(--border-color);
             flex-shrink: 0;
         }
 
@@ -652,21 +824,22 @@
             font-size: 12px;
             font-weight: 500;
             cursor: pointer;
-            color: #606080;
+            color: var(--text-muted);
             background: transparent;
             border: none;
             border-bottom: 2px solid transparent;
             transition: all 0.2s;
+            font-family: inherit;
         }
 
         .edit-tab:hover {
-            color: #a0a0c0;
-            background: #1a1a2e;
+            color: var(--text-secondary);
+            background: var(--sidebar-bg);
         }
 
         .edit-tab.active {
-            color: #00d4ff;
-            border-bottom-color: #00d4ff;
+            color: var(--primary);
+            border-bottom-color: var(--primary);
         }
 
         .edit-tab.has-changes::after {
@@ -675,7 +848,7 @@
             width: 6px;
             height: 6px;
             border-radius: 50%;
-            background: #ff6666;
+            background: var(--error-color);
             margin-left: 6px;
             vertical-align: middle;
         }
@@ -693,8 +866,8 @@
             align-items: center;
             gap: 8px;
             padding: 10px;
-            background: #1a1a2e;
-            border: 1px solid #2a2a4a;
+            background: white;
+            border: 1px solid var(--border-color);
             border-radius: 6px;
             margin-bottom: 8px;
         }
@@ -712,16 +885,17 @@
         .role-slot select {
             flex: 1;
             padding: 6px 10px;
-            background: #0a0a1a;
-            border: 1px solid #2a2a4a;
+            background: white;
+            border: 1px solid var(--border-color);
             border-radius: 4px;
-            color: #e0e0e0;
+            color: var(--text-primary);
             font-size: 12px;
+            font-family: inherit;
         }
 
         .role-slot select:focus {
             outline: none;
-            border-color: #00d4ff;
+            border-color: var(--border-focus);
         }
 
         .role-slot-remove {
@@ -729,7 +903,7 @@
             height: 24px;
             border: none;
             background: transparent;
-            color: #606080;
+            color: var(--text-muted);
             cursor: pointer;
             border-radius: 4px;
             font-size: 14px;
@@ -740,8 +914,8 @@
         }
 
         .role-slot-remove:hover {
-            background: #3a1a1a;
-            color: #ff6666;
+            background: var(--error-bg);
+            color: var(--error-color);
         }
 
         /* Delete button in collab cards */
@@ -750,7 +924,7 @@
             height: 28px;
             border: none;
             background: transparent;
-            color: #606080;
+            color: var(--text-muted);
             cursor: pointer;
             border-radius: 4px;
             font-size: 14px;
@@ -762,8 +936,8 @@
         }
 
         .collab-delete-btn:hover {
-            background: #3a1a1a;
-            color: #ff6666;
+            background: var(--error-bg);
+            color: var(--error-color);
         }
 
         .view-delete-btn {
@@ -771,17 +945,17 @@
             margin-top: 16px;
             padding: 8px;
             background: transparent;
-            border: 1px solid #5a2a2a;
+            border: 1px solid var(--error-color);
             border-radius: 6px;
-            color: #ff6666;
+            color: var(--error-color);
             cursor: pointer;
             font-size: 12px;
+            font-family: inherit;
             transition: all 0.2s;
         }
 
         .view-delete-btn:hover {
-            background: #3a1a1a;
-            border-color: #ff4444;
+            background: var(--error-bg);
         }
 
         .role-add-btn {
@@ -791,20 +965,21 @@
             gap: 6px;
             padding: 8px;
             background: transparent;
-            border: 1px dashed #3a3a5a;
+            border: 1px dashed var(--border-color);
             border-radius: 6px;
-            color: #606080;
+            color: var(--text-muted);
             cursor: pointer;
             font-size: 12px;
             width: 100%;
             margin-bottom: 8px;
             transition: all 0.2s;
+            font-family: inherit;
         }
 
         .role-add-btn:hover {
-            border-color: #00d4ff;
-            color: #00d4ff;
-            background: #0a1a2a;
+            border-color: var(--primary);
+            color: var(--primary);
+            background: rgba(102, 126, 234, 0.05);
         }
 
         .edit-actions {
@@ -826,7 +1001,7 @@
         .mode-param-group label {
             display: block;
             font-size: 11px;
-            color: #707090;
+            color: var(--text-secondary);
             margin-bottom: 4px;
         }
 
@@ -835,34 +1010,35 @@
         .mode-param-group textarea {
             width: 100%;
             padding: 6px 10px;
-            background: #1a1a2e;
-            border: 1px solid #2a2a4a;
+            background: white;
+            border: 1px solid var(--border-color);
             border-radius: 4px;
-            color: #e0e0e0;
+            color: var(--text-primary);
             font-size: 12px;
+            font-family: inherit;
         }
 
         .mode-param-group textarea {
             min-height: 60px;
             resize: vertical;
-            font-family: inherit;
         }
 
         .mode-param-group select:focus,
         .mode-param-group input:focus,
         .mode-param-group textarea:focus {
             outline: none;
-            border-color: #00d4ff;
+            border-color: var(--border-focus);
         }
 
         .btn-save {
-            background: #10b981;
-            border-color: #059669;
+            background: var(--accent-success);
+            border-color: var(--accent-success);
             color: white;
         }
 
         .btn-save:hover {
-            background: #059669;
+            background: #43a047;
+            border-color: #43a047;
         }
 
         .btn-save.has-changes {
@@ -870,15 +1046,15 @@
         }
 
         @keyframes savePulse {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-            50% { box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.3); }
+            0%, 100% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0); }
+            50% { box-shadow: 0 0 0 4px rgba(76, 175, 80, 0.3); }
         }
 
-        /* Input Bar */
+        /* ========== Input Bar ========== */
         .input-bar {
-            padding: 12px 16px;
-            background: #1a1a2e;
-            border-top: 1px solid #2a2a4a;
+            padding: 16px 24px;
+            background: white;
+            border-top: 1px solid var(--border-color);
             display: flex;
             gap: 10px;
             align-items: flex-end;
@@ -889,7 +1065,7 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 4px;
         }
 
         .input-bar textarea {
@@ -897,54 +1073,92 @@
             min-height: 40px;
             max-height: 120px;
             padding: 10px 14px;
-            background: #0a0a1a;
-            border: 1px solid #2a2a4a;
-            border-radius: 8px;
-            color: #e0e0e0;
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
             font-size: 13px;
             font-family: inherit;
-            resize: vertical;
+            resize: none;
+            transition: border-color 0.2s;
         }
 
         .input-bar textarea:focus {
             outline: none;
-            border-color: #00d4ff;
+            border-color: var(--border-focus);
         }
 
         .input-bar textarea::placeholder {
-            color: #505070;
+            color: var(--text-muted);
+        }
+
+        .input-hint {
+            font-size: 11px;
+            color: var(--text-muted);
+            padding-left: 2px;
         }
 
         .send-btn {
             padding: 10px 24px;
-            background: #0066cc;
+            background: var(--primary);
             border: none;
-            border-radius: 8px;
+            border-radius: var(--radius-sm);
             color: white;
             font-size: 13px;
             font-weight: 500;
             cursor: pointer;
-            transition: background 0.2s;
+            transition: all 0.2s;
             height: 40px;
+            font-family: inherit;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
         }
 
         .send-btn:hover {
-            background: #0088ff;
+            background: var(--primary-dark);
+            transform: translateY(-1px);
         }
 
         .send-btn:disabled {
-            background: #333;
-            color: #666;
+            background: #ccc;
+            color: #999;
             cursor: not-allowed;
+            transform: none;
         }
 
-        /* Status Bar */
+        .stop-btn {
+            padding: 10px 20px;
+            background: var(--error-color);
+            border: none;
+            border-radius: var(--radius-sm);
+            color: white;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            height: 40px;
+            font-family: inherit;
+            display: none;
+        }
+
+        .stop-btn.visible {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .stop-btn:hover {
+            background: #c82333;
+        }
+
+        /* ========== Status Bar ========== */
         .status-bar {
-            padding: 6px 16px;
-            background: #0a0a15;
-            border-top: 1px solid #1a1a2a;
+            padding: 8px 24px;
+            background: var(--sidebar-bg);
+            border-top: 1px solid var(--border-color);
             font-size: 11px;
-            color: #606080;
+            color: var(--text-muted);
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -961,16 +1175,16 @@
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background: #333;
+            background: #ccc;
         }
 
         .status-dot.active {
-            background: #00ff88;
+            background: var(--accent-success);
             animation: pulse 1.5s infinite;
         }
 
         .status-dot.error {
-            background: #ff4444;
+            background: var(--error-color);
         }
 
         @keyframes pulse {
@@ -978,7 +1192,21 @@
             50% { opacity: 0.5; }
         }
 
-        /* Modal for Collab Selector */
+        .collab-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .collab-mode-badge {
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 3px;
+            background: rgba(102, 126, 234, 0.1);
+            color: var(--primary);
+        }
+
+        /* ========== Modal ========== */
         .modal-overlay {
             display: none;
             position: fixed;
@@ -986,7 +1214,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(0, 0, 0, 0.5);
             z-index: 1000;
             justify-content: center;
             align-items: center;
@@ -999,38 +1227,53 @@
         .modal-content {
             width: 600px;
             max-height: 80vh;
-            background: #0f0f1a;
-            border-radius: 12px;
+            background: white;
+            border-radius: var(--radius-lg);
             overflow: hidden;
             display: flex;
             flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            animation: modalSlideIn 0.3s ease;
+        }
+
+        @keyframes modalSlideIn {
+            from { transform: translateY(-50px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
         }
 
         .modal-header {
-            padding: 12px 20px;
-            background: #1a1a2e;
+            padding: 16px 24px;
+            background: var(--gradient);
+            color: white;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-bottom: 1px solid #2a2a4a;
         }
 
         .modal-header h2 {
-            font-size: 16px;
-            color: #e0e0e0;
+            font-size: 18px;
+            color: white;
+        }
+
+        .modal-header-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
         }
 
         .modal-close {
-            background: none;
+            background: rgba(255, 255, 255, 0.15);
             border: none;
-            color: #808080;
-            font-size: 24px;
+            color: white;
+            font-size: 20px;
             cursor: pointer;
-            padding: 0 8px;
+            padding: 4px 10px;
+            border-radius: var(--radius-full);
+            transition: background 0.2s;
         }
 
         .modal-close:hover {
-            color: #e0e0e0;
+            background: rgba(255, 255, 255, 0.3);
         }
 
         .modal-body {
@@ -1040,31 +1283,105 @@
             overflow-y: auto;
         }
 
-        /* Scrollbar Styles */
+        /* Search in modal */
+        .modal-search {
+            margin-bottom: 16px;
+        }
+
+        .modal-search input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            font-family: inherit;
+            color: var(--text-primary);
+            transition: border-color 0.2s;
+        }
+
+        .modal-search input:focus {
+            outline: none;
+            border-color: var(--border-focus);
+        }
+
+        .modal-search input::placeholder {
+            color: var(--text-muted);
+        }
+
+        /* Collab card in modal */
+        .collab-card {
+            padding: 14px;
+            background: var(--sidebar-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .collab-card:hover {
+            box-shadow: var(--hover-shadow);
+            border-color: var(--primary);
+        }
+
+        .collab-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .collab-card-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .collab-card-mode {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 3px;
+            background: rgba(102, 126, 234, 0.1);
+            color: var(--primary);
+        }
+
+        .collab-card-desc {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+
+        .collab-card-meta {
+            margin-top: 8px;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        /* ========== Scrollbar ========== */
         ::-webkit-scrollbar {
             width: 6px;
         }
 
         ::-webkit-scrollbar-track {
-            background: #0a0a1a;
+            background: transparent;
         }
 
         ::-webkit-scrollbar-thumb {
-            background: #2a2a4a;
+            background: #ccc;
             border-radius: 3px;
         }
 
         ::-webkit-scrollbar-thumb:hover {
-            background: #3a3a6a;
+            background: #aaa;
         }
 
-        /* Loading spinner */
+        /* ========== Loading spinner ========== */
         .loading {
             display: inline-block;
             width: 16px;
             height: 16px;
-            border: 2px solid #2a2a4a;
-            border-top-color: #00d4ff;
+            border: 2px solid var(--border-color);
+            border-top-color: var(--primary);
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
         }
@@ -1073,14 +1390,14 @@
             to { transform: rotate(360deg); }
         }
 
-        /* Empty State */
+        /* ========== Empty State ========== */
         .empty-state {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             height: 100%;
-            color: #505070;
+            color: var(--text-muted);
             text-align: center;
             padding: 40px;
         }
@@ -1096,13 +1413,13 @@
             line-height: 1.6;
         }
 
-        /* Task Progress */
+        /* ========== Task Progress ========== */
         .task-progress {
             padding: 8px 16px;
-            background: #1a1a2e;
-            border-bottom: 1px solid #2a2a4a;
+            background: var(--sidebar-bg);
+            border-bottom: 1px solid var(--border-color);
             font-size: 12px;
-            color: #8080a0;
+            color: var(--text-secondary);
             display: none;
         }
 
@@ -1113,7 +1430,7 @@
         .progress-bar {
             width: 100%;
             height: 3px;
-            background: #2a2a4a;
+            background: var(--border-color);
             border-radius: 2px;
             margin-top: 6px;
             overflow: hidden;
@@ -1121,141 +1438,201 @@
 
         .progress-bar-fill {
             height: 100%;
-            background: linear-gradient(90deg, #0066cc, #00d4ff);
+            background: var(--gradient);
             border-radius: 2px;
             transition: width 0.3s;
             width: 0%;
         }
+
+        /* ========== Toast ========== */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .toast {
+            padding: 12px 20px;
+            border-radius: var(--radius-sm);
+            color: white;
+            font-size: 14px;
+            animation: toastSlideIn 0.3s ease;
+            box-shadow: var(--hover-shadow);
+            max-width: 360px;
+        }
+
+        @keyframes toastSlideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .toast-success { background: #4caf50; }
+        .toast-error { background: #dc3545; }
+        .toast-warning { background: #ff9800; }
+
+        /* ========== Config pre/code blocks ========== */
+        .config-pre {
+            font-size: 11px;
+            color: var(--text-secondary);
+            background: white;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
     </style>
 </head>
 <body>
-    <!-- Header -->
-    <div class="header">
-        <h1>多智能体协作平台</h1>
-        <div class="header-actions">
-            <button class="btn" id="btnSelectCollab" onclick="showCollabSelector()">
-                选择协作配置
-            </button>
-            <button class="btn" id="btnNewCollab" onclick="startNewCollab()">
-                新建配置
-            </button>
-            <button class="btn" id="btnRefresh" onclick="loadCollabs()">
-                刷新
-            </button>
-        </div>
-    </div>
-
-    <!-- Main Container - Three Panels -->
-    <div class="main-container">
-        <!-- Left: Topology Panel -->
-        <div class="topology-panel" id="topologyPanel">
-            <div class="panel-header" onclick="togglePanel('topology')">
-                <h3>协作拓扑</h3>
-                <span class="collapse-icon" id="topologyCollapseIcon">&#9650;</span>
+    <!-- App Container -->
+    <div class="app-container">
+        <!-- Header (matching main page) -->
+        <div class="header">
+            <div class="header-brand">
+                <a href="/static/agent_manager.html" class="nav-btn" title="返回Agent管理">
+                    &#8592; 返回
+                </a>
+                <h1>多智能体协作平台</h1>
             </div>
-            <div class="topology-content" id="topologyContent">
-                <div class="empty-state" style="padding: 20px;">
-                    <div class="icon" style="font-size: 36px;">&#9698;</div>
-                    <p style="font-size: 12px;">选择协作配置后显示拓扑关系</p>
-                </div>
+            <div class="header-actions">
+                <button class="nav-btn" id="btnSelectCollab" onclick="showCollabSelector()">
+                    &#128203; 选择配置
+                </button>
+                <button class="nav-btn" id="btnNewCollab" onclick="startNewCollab()">
+                    &#10010; 新建配置
+                </button>
+                <button class="nav-btn" id="btnRefresh" onclick="loadCollabs()">
+                    &#8635; 刷新
+                </button>
             </div>
         </div>
 
-        <!-- Center: Chat Flow -->
-        <div class="chat-panel" id="chatPanel">
-            <div class="panel-header" onclick="togglePanel('chat')">
-                <h3>协作流程</h3>
-                <span class="collapse-icon" id="chatCollapseIcon">&#9650;</span>
-            </div>
-            <div class="task-progress" id="taskProgress">
-                <span id="progressText">运行中...</span>
-                <div class="progress-bar">
-                    <div class="progress-bar-fill" id="progressBarFill"></div>
+        <!-- Main Container - Three Panels -->
+        <div class="main-container">
+            <!-- Left: Topology Panel -->
+            <div class="topology-panel" id="topologyPanel">
+                <div class="panel-header" onclick="togglePanel('topology')">
+                    <h3>协作拓扑</h3>
+                    <span class="collapse-icon" id="topologyCollapseIcon">&#9650;</span>
                 </div>
-            </div>
-            <div class="chat-messages" id="chatMessages">
-                <div class="empty-state">
-                    <div class="icon">&#128640;</div>
-                    <p style="margin-bottom: 16px;">欢迎使用多智能体协作平台</p>
-                    <div style="display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;">
-                        <button class="btn" onclick="showCollabSelector()" style="background: #0066cc; color: white; border-color: #0088ff;">
-                            选择已有配置
-                        </button>
-                        <button class="btn" onclick="startNewCollab()" style="background: #10b981; color: white; border-color: #059669;">
-                            新建协作配置
-                        </button>
-                    </div>
-                    <p style="margin-top: 16px; font-size: 12px; color: #606080;">
-                        选择已有配置，或新建一个多智能体协作任务
-                    </p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Right: Config/Edit Panel -->
-        <div class="config-panel" id="configPanel">
-            <div class="panel-header" onclick="togglePanel('config')">
-                <h3>配置面板</h3>
-                <span class="collapse-icon" id="configCollapseIcon">&#9650;</span>
-            </div>
-            <div class="edit-tabs" id="editTabs">
-                <button class="edit-tab active" id="tabView" onclick="switchTab('view')">查看</button>
-                <button class="edit-tab" id="tabEdit" onclick="switchTab('edit')">编辑</button>
-            </div>
-            <div class="config-content" id="configContent">
-                <!-- View Mode -->
-                <div class="edit-panel active" id="viewPanel">
+                <div class="topology-content" id="topologyContent">
                     <div class="empty-state" style="padding: 20px;">
-                        <div class="icon">&#9881;</div>
-                        <p>请选择协作配置以查看详情</p>
+                        <div class="icon" style="font-size: 36px;">&#128279;</div>
+                        <p style="font-size: 12px;">选择协作配置后显示拓扑关系</p>
                     </div>
                 </div>
-                <!-- Edit Mode -->
-                <div class="edit-panel" id="editPanel">
-                    <div class="empty-state" style="padding: 20px;">
-                        <div class="icon">&#9998;</div>
-                        <p>选择"新建配置"或切换到编辑标签</p>
+            </div>
+
+            <!-- Center: Chat Flow -->
+            <div class="chat-panel" id="chatPanel">
+                <div class="panel-header" onclick="togglePanel('chat')">
+                    <h3>协作流程</h3>
+                    <span class="collapse-icon" id="chatCollapseIcon">&#9650;</span>
+                </div>
+                <div class="task-progress" id="taskProgress">
+                    <span id="progressText">运行中...</span>
+                    <div class="progress-bar">
+                        <div class="progress-bar-fill" id="progressBarFill"></div>
+                    </div>
+                </div>
+                <div class="chat-messages" id="chatMessages">
+                    <div class="empty-state">
+                        <div class="icon">&#128640;</div>
+                        <p style="margin-bottom: 16px;">欢迎使用多智能体协作平台</p>
+                        <div style="display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;">
+                            <button class="btn btn-primary" onclick="showCollabSelector()">
+                                选择已有配置
+                            </button>
+                            <button class="btn btn-success" onclick="startNewCollab()">
+                                新建协作配置
+                            </button>
+                        </div>
+                        <p style="margin-top: 16px; font-size: 12px; color: var(--text-muted);">
+                            选择已有配置，或新建一个多智能体协作任务
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Config/Edit Panel -->
+            <div class="config-panel" id="configPanel">
+                <div class="panel-header" onclick="togglePanel('config')">
+                    <h3>配置面板</h3>
+                    <span class="collapse-icon" id="configCollapseIcon">&#9650;</span>
+                </div>
+                <div class="edit-tabs" id="editTabs">
+                    <button class="edit-tab active" id="tabView" onclick="switchTab('view')">查看</button>
+                    <button class="edit-tab" id="tabEdit" onclick="switchTab('edit')">编辑</button>
+                </div>
+                <div class="config-content" id="configContent">
+                    <!-- View Mode -->
+                    <div class="edit-panel active" id="viewPanel">
+                        <div class="empty-state" style="padding: 20px;">
+                            <div class="icon">&#9881;</div>
+                            <p>请选择协作配置以查看详情</p>
+                        </div>
+                    </div>
+                    <!-- Edit Mode -->
+                    <div class="edit-panel" id="editPanel">
+                        <div class="empty-state" style="padding: 20px;">
+                            <div class="icon">&#9998;</div>
+                            <p>选择"新建配置"或切换到编辑标签</p>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
+
+        <!-- Input Bar -->
+        <div class="input-bar">
+            <div class="input-wrapper">
+                <textarea
+                    id="inputText"
+                    placeholder="输入多智能体协作任务..."
+                    rows="1"
+                    onkeydown="handleKeyDown(event)"
+                    oninput="autoResize(this)"
+                ></textarea>
+                <span class="input-hint">Enter 发送 / Shift+Enter 换行</span>
+            </div>
+            <button class="send-btn" id="sendBtn" onclick="executeTask()">&#9654; 执行</button>
+            <button class="stop-btn" id="stopBtn" onclick="stopExecution()">&#9632; 停止</button>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <div class="status-indicator">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">就绪</span>
+            </div>
+            <div class="collab-info">
+                <span id="collabInfo">未选择协作配置</span>
+                <span class="collab-mode-badge" id="collabModeBadge" style="display: none;"></span>
+            </div>
+        </div>
     </div>
 
-    <!-- Input Bar -->
-    <div class="input-bar">
-        <div class="input-wrapper">
-            <textarea
-                id="inputText"
-                placeholder="输入多智能体协作任务..."
-                rows="1"
-                onkeydown="handleKeyDown(event)"
-            ></textarea>
-        </div>
-        <button class="send-btn" id="sendBtn" onclick="executeTask()">执行</button>
-    </div>
-
-    <!-- Status Bar -->
-    <div class="status-bar">
-        <div class="status-indicator">
-            <div class="status-dot" id="statusDot"></div>
-            <span id="statusText">就绪</span>
-        </div>
-        <div>
-            <span id="collabInfo">未选择协作配置</span>
-        </div>
-    </div>
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
 
     <!-- Collab Selector Modal -->
     <div class="modal-overlay" id="collabSelectorModal">
-        <div class="modal-content" style="width: 600px; height: 500px;">
+        <div class="modal-content" style="width: 600px; height: 520px;">
             <div class="modal-header">
                 <h2>选择协作配置</h2>
-                <div style="display:flex; gap:8px; align-items:center;">
-                    <button class="btn" style="background:#0066cc;color:white;border-color:#0088ff;" onclick="startNewCollab(); closeCollabSelector();">+ 新建配置</button>
+                <div class="modal-header-actions">
+                    <button class="nav-btn" style="font-size: 12px; padding: 6px 14px;" onclick="startNewCollab(); closeCollabSelector();">+ 新建配置</button>
                     <button class="modal-close" onclick="closeCollabSelector()">&times;</button>
                 </div>
             </div>
             <div class="modal-body" style="padding: 20px; overflow-y: auto;">
+                <div class="modal-search">
+                    <input type="text" id="collabSearchInput" placeholder="搜索配置名称..." oninput="filterCollabs(this.value)">
+                </div>
                 <div id="collabList" style="display: flex; flex-direction: column; gap: 10px;">
                     <!-- Collab items will be loaded here -->
                 </div>
@@ -1282,7 +1659,7 @@
         let thinkingIndicators = {};
 
         // Agent color assignment
-        const AGENT_COLORS = ['#00d4ff', '#ff6b6b', '#ffd93d', '#6bcb77', '#9b59b6', '#e67e22', '#1abc9c', '#e74c3c'];
+        const AGENT_COLORS = ['#667eea', '#e67e22', '#27ae60', '#e74c3c', '#9b59b6', '#1abc9c', '#f39c12', '#3498db'];
         let agentColorMap = {};
 
         // API base
@@ -1304,22 +1681,25 @@
             'supervisor': ['supervisor', 'child'],
             'pipeline': ['worker'],
             'voting': ['voter', 'aggregator'],
-            'adversarial_generate_discriminate': ['generator', 'discriminator'],
             'adversarial_game': ['participant', 'referee']
         };
         const MODE_ROLE_LABELS = {
             'supervisor': { 'supervisor': '监督者', 'child': '子Agent' },
             'pipeline': { 'worker': '处理步骤' },
             'voting': { 'voter': '投票者', 'aggregator': '聚合器' },
-            'adversarial_generate_discriminate': { 'generator': '生成者', 'discriminator': '判别者' },
             'adversarial_game': { 'participant': '参与者', 'referee': '裁判' }
         };
         const MODE_NAMES = {
             'supervisor': '监督者模式',
             'pipeline': '流水线模式',
             'voting': '投票集成模式',
-            'adversarial_generate_discriminate': '对抗模式',
             'adversarial_game': '博弈模式'
+        };
+        const MODE_ICONS = {
+            'supervisor': '&#128101;',
+            'pipeline': '&#128736;',
+            'voting': '&#127913;',
+            'adversarial_game': '&#9876;'
         };
 
         // Load collaborations on start
@@ -1335,6 +1715,11 @@
                 agentColorMap[agentId] = AGENT_COLORS[idx % AGENT_COLORS.length];
             }
             return agentColorMap[agentId];
+        }
+
+        function getAgentName(agentId) {
+            const agent = agentsCache.find(a => a.id === agentId);
+            return agent ? agent.name : agentId;
         }
 
         function sanitizeForClass(str) {
@@ -1393,8 +1778,9 @@
             switchTab('edit');
             updateStatus('新建协作配置', false);
             document.getElementById('collabInfo').textContent = '新建配置';
+            document.getElementById('collabModeBadge').style.display = 'none';
             // Clear topology and chat
-            document.getElementById('topologyContent').innerHTML = '<div class="empty-state" style="padding:20px;"><p style="font-size:12px;">保存后显示拓扑</p></div>';
+            document.getElementById('topologyContent').innerHTML = '<div class="empty-state" style="padding:20px;"><div class="icon" style="font-size:36px;">&#128279;</div><p style="font-size:12px;">保存后显示拓扑</p></div>';
             document.getElementById('chatMessages').innerHTML = '';
         }
 
@@ -1477,15 +1863,12 @@
             const slot = editRoleSlots[index];
             const roles = MODE_ROLES[mode] || [];
 
-            // Never remove the first/only required role
             if (mode === 'supervisor' && slot.role === 'supervisor') return false;
             if (mode === 'pipeline' && editRoleSlots.filter(s => s.role === 'worker').length <= 2) return false;
             if (mode === 'voting' && slot.role === 'aggregator') return false;
             if (mode === 'voting' && slot.role === 'voter' && editRoleSlots.filter(s => s.role === 'voter').length <= 2) return false;
-            if (mode === 'adversarial_generate_discriminate' && (slot.role === 'generator' || slot.role === 'discriminator')) return false;
             if (mode === 'adversarial_game' && slot.role === 'referee') return false;
             if (mode === 'adversarial_game' && slot.role === 'participant' && editRoleSlots.filter(s => s.role === 'participant').length <= 2) return false;
-            // Don't remove the very last slot
             if (editRoleSlots.length <= 1) return false;
             return true;
         }
@@ -1545,34 +1928,12 @@
                     <div class="mode-param-group">
                         <label>聚合策略</label>
                         <select id="param_strategy" onchange="onParamChange()">
-                            <option value="best_of" ${cfg.strategy === 'best_of' ? 'selected' : ''}>择优选择</option>
                             <option value="majority" ${cfg.strategy === 'majority' ? 'selected' : ''}>多数表决</option>
-                            <option value="weighted" ${cfg.strategy === 'weighted' ? 'selected' : ''}>加权投票</option>
                         </select>
                     </div>
                     <div class="mode-param-group">
                         <label>聚合器提示词</label>
                         <textarea id="param_aggregator_prompt" onchange="onParamChange()" placeholder="自定义聚合器提示词（留空使用默认）">${escapeHtml(cfg.aggregator_prompt || '')}</textarea>
-                    </div>`;
-            } else if (mode === 'adversarial_generate_discriminate') {
-                html = `
-                    <div class="mode-param-group">
-                        <label>最大轮次</label>
-                        <input type="number" id="param_max_rounds" value="${cfg.max_rounds || 3}" min="1" max="20" onchange="onParamChange()">
-                    </div>
-                    <div class="mode-param-group">
-                        <label>启用裁判</label>
-                        <select id="param_judge_enabled" onchange="onParamChange()">
-                            <option value="true" ${cfg.judge_enabled ? 'selected' : ''}>是</option>
-                            <option value="false" ${!cfg.judge_enabled ? 'selected' : ''}>否</option>
-                        </select>
-                    </div>
-                    <div class="mode-param-group">
-                        <label>通过即终止</label>
-                        <select id="param_termination_on_pass" onchange="onParamChange()">
-                            <option value="true" ${cfg.termination_on_pass !== false ? 'selected' : ''}>是</option>
-                            <option value="false" ${cfg.termination_on_pass === false ? 'selected' : ''}>否</option>
-                        </select>
                     </div>`;
             } else if (mode === 'adversarial_game') {
                 html = `
@@ -1580,7 +1941,14 @@
                         <label>回合策略</label>
                         <select id="param_turn_strategy" onchange="onParamChange()">
                             <option value="simultaneous" ${cfg.turn_strategy === 'simultaneous' ? 'selected' : ''}>同时行动</option>
-                            <option value="turn_based" ${cfg.turn_strategy === 'turn_based' ? 'selected' : ''}>轮流行动</option>
+                            <option value="sequential" ${cfg.turn_strategy === 'sequential' || cfg.turn_strategy === 'turn_based' ? 'selected' : ''}>顺序行动</option>
+                        </select>
+                    </div>
+                    <div class="mode-param-group">
+                        <label>裁判时机</label>
+                        <select id="param_referee_timing" onchange="onParamChange()">
+                            <option value="per_round" ${cfg.referee_timing !== 'final' ? 'selected' : ''}>每轮裁决</option>
+                            <option value="final" ${cfg.referee_timing === 'final' ? 'selected' : ''}>终局裁决</option>
                         </select>
                     </div>
                     <div class="mode-param-group">
@@ -1628,9 +1996,7 @@
             const newMode = document.getElementById('editModeType').value;
             if (newMode === editModeType) return;
             editModeType = newMode;
-            // Reassign roles based on new mode
             reassignRolesForMode();
-            // Reset config to mode defaults
             editConfigJson = getDefaultConfigForMode(newMode);
             markEditChanged();
             renderEditPanel();
@@ -1657,13 +2023,6 @@
                     if (!hasSuper && s.role !== 'child') { s.role = 'supervisor'; hasSuper = true; }
                     else { s.role = 'child'; }
                 });
-            } else if (mode === 'adversarial_generate_discriminate') {
-                let hasGen = false, hasDis = false;
-                editRoleSlots.forEach(s => {
-                    if (!hasGen) { s.role = 'generator'; hasGen = true; }
-                    else if (!hasDis) { s.role = 'discriminator'; hasDis = true; }
-                    else { s.role = 'discriminator'; }
-                });
             } else if (mode === 'adversarial_game') {
                 let partCount = 0, hasRef = false;
                 editRoleSlots.forEach(s => {
@@ -1678,9 +2037,8 @@
             switch (mode) {
                 case 'supervisor': return {parallel_execution: true, split_prompt: null, summary_prompt: null};
                 case 'pipeline': return {pass_context: true, step_prompt_template: null};
-                case 'voting': return {strategy: 'best_of', aggregator_prompt: null};
-                case 'adversarial_generate_discriminate': return {max_rounds: 3, judge_enabled: false, termination_on_pass: true};
-                case 'adversarial_game': return {turn_strategy: 'simultaneous', max_rounds: 10, game_rules: '', referee_enabled: true, referee_prompt: null, shared_state: {}};
+                case 'voting': return {strategy: 'majority', aggregator_prompt: null};
+                case 'adversarial_game': return {turn_strategy: 'simultaneous', referee_timing: 'per_round', max_rounds: 10, game_rules: '', referee_enabled: true, referee_prompt: null, shared_state: {}};
                 default: return {};
             }
         }
@@ -1692,7 +2050,6 @@
         }
 
         function onParamChange() {
-            // Read all params back from DOM
             const mode = editModeType;
             if (mode === 'supervisor') {
                 editConfigJson.parallel_execution = document.getElementById('param_parallel').value !== 'false';
@@ -1704,12 +2061,9 @@
             } else if (mode === 'voting') {
                 editConfigJson.strategy = document.getElementById('param_strategy').value;
                 editConfigJson.aggregator_prompt = document.getElementById('param_aggregator_prompt').value || null;
-            } else if (mode === 'adversarial_generate_discriminate') {
-                editConfigJson.max_rounds = parseInt(document.getElementById('param_max_rounds').value) || 3;
-                editConfigJson.judge_enabled = document.getElementById('param_judge_enabled').value === 'true';
-                editConfigJson.termination_on_pass = document.getElementById('param_termination_on_pass').value !== 'false';
             } else if (mode === 'adversarial_game') {
                 editConfigJson.turn_strategy = document.getElementById('param_turn_strategy').value;
+                editConfigJson.referee_timing = document.getElementById('param_referee_timing').value;
                 editConfigJson.max_rounds = parseInt(document.getElementById('param_game_max_rounds').value) || 10;
                 editConfigJson.game_rules = document.getElementById('param_game_rules').value;
                 editConfigJson.referee_enabled = document.getElementById('param_referee_enabled').value !== 'false';
@@ -1736,41 +2090,38 @@
 
         // =================== Save ===================
         async function saveEditCollab() {
-            // Read latest values from DOM
             editName = document.getElementById('editName')?.value || editName;
             editDescription = document.getElementById('editDesc')?.value || editDescription;
 
             if (!editName.trim()) {
-                showToast('请输入协作名称', true);
+                showToast('请输入协作名称', 'error');
                 return;
             }
 
-            // Validate role slots
             const validRoles = MODE_ROLES[editModeType] || [];
             const filledSlots = editRoleSlots.filter(s => s.agent_id);
             if (filledSlots.length === 0) {
-                showToast('请至少为一个角色选择Agent', true);
+                showToast('请至少为一个角色选择Agent', 'error');
                 return;
             }
 
-            // Validate mode requirements
             if (editModeType === 'supervisor' && !filledSlots.some(s => s.role === 'supervisor')) {
-                showToast('监督者模式需要至少一个监督者', true); return;
+                showToast('监督者模式需要至少一个监督者', 'error'); return;
             }
             if (editModeType === 'supervisor' && !filledSlots.some(s => s.role === 'child')) {
-                showToast('监督者模式需要至少一个子Agent', true); return;
+                showToast('监督者模式需要至少一个子Agent', 'error'); return;
             }
             if (editModeType === 'pipeline' && filledSlots.filter(s => s.role === 'worker').length < 2) {
-                showToast('流水线模式需要至少2个步骤', true); return;
+                showToast('流水线模式需要至少2个步骤', 'error'); return;
             }
             if (editModeType === 'voting' && filledSlots.filter(s => s.role === 'voter').length < 2) {
-                showToast('投票模式需要至少2个投票者', true); return;
+                showToast('投票模式需要至少2个投票者', 'error'); return;
             }
             if (editModeType === 'voting' && !filledSlots.some(s => s.role === 'aggregator')) {
-                showToast('投票模式需要至少1个聚合器', true); return;
+                showToast('投票模式需要至少1个聚合器', 'error'); return;
             }
             if (editModeType === 'adversarial_game' && filledSlots.filter(s => s.role === 'participant').length < 2) {
-                showToast('博弈模式需要至少2个参与者', true); return;
+                showToast('博弈模式需要至少2个参与者', 'error'); return;
             }
 
             const agents = filledSlots.map(s => ({
@@ -1797,21 +2148,18 @@
                     result = await apiPost(API_BASE, payload);
                 }
 
-                // Refresh collab list
                 await loadCollabs();
                 clearEditChanged();
 
-                // Select the saved collaboration
                 await selectCollab(result.id);
                 editCollabId = result.id;
 
-                showToast('保存成功');
+                showToast('保存成功', 'success');
 
-                // Auto-jump to execution: switch to view tab and focus input
                 switchTab('view');
                 document.getElementById('inputText').focus();
             } catch (e) {
-                showToast('保存失败: ' + e.message, true);
+                showToast('保存失败: ' + e.message, 'error');
             }
         }
 
@@ -1850,38 +2198,62 @@
             return await resp.json();
         }
 
-        function showToast(message, isError) {
+        // =================== Toast Notification ===================
+        function showToast(message, type) {
+            const container = document.getElementById('toastContainer');
             const toast = document.createElement('div');
-            toast.className = 'toast' + (isError ? ' error' : '');
+            const typeClass = type === 'error' ? 'toast-error' : type === 'warning' ? 'toast-warning' : 'toast-success';
+            toast.className = `toast ${typeClass}`;
             toast.textContent = message;
-            document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 3000);
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                toast.style.transition = 'all 0.3s';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
         }
 
         // =================== Show Collaboration Selector ===================
         function showCollabSelector() {
             const modal = document.getElementById('collabSelectorModal');
-            const list = document.getElementById('collabList');
+            const searchInput = document.getElementById('collabSearchInput');
+            searchInput.value = '';
+            renderCollabList('');
+            modal.classList.add('visible');
+            setTimeout(() => searchInput.focus(), 100);
+        }
 
-            if (!window.collabList || window.collabList.length === 0) {
-                list.innerHTML = '<div class="empty-state"><p>未找到协作配置，请先创建一个。</p></div>';
+        function filterCollabs(query) {
+            renderCollabList(query);
+        }
+
+        function renderCollabList(query) {
+            const list = document.getElementById('collabList');
+            const collabs = window.collabList || [];
+            const filtered = query
+                ? collabs.filter(c => c.name.toLowerCase().includes(query.toLowerCase()))
+                : collabs;
+
+            if (filtered.length === 0) {
+                list.innerHTML = `<div class="empty-state" style="padding: 20px;"><div class="icon">&#128203;</div><p>${query ? '没有匹配的配置' : '未找到协作配置，请先创建一个。'}</p></div>`;
             } else {
-                list.innerHTML = window.collabList.map(c => `
-                    <div class="agent-card" style="cursor: pointer; position: relative;" onclick="selectCollab('${c.id}')">
-                        <div class="agent-card-header">
-                            <span class="agent-card-name">${escapeHtml(c.name)}</span>
-                            <span class="agent-card-role">${escapeHtml(c.mode)}</span>
+                list.innerHTML = filtered.map(c => {
+                    const modeIcon = MODE_ICONS[c.mode] || '&#128203;';
+                    return `
+                    <div class="collab-card" onclick="selectCollab('${c.id}')">
+                        <div class="collab-card-header">
+                            <span class="collab-card-name">${modeIcon} ${escapeHtml(c.name)}</span>
+                            <span class="collab-card-mode">${escapeHtml(MODE_NAMES[c.mode] || c.mode)}</span>
                         </div>
-                        <div class="agent-card-desc">${escapeHtml(c.description || '无描述')}</div>
-                        <div style="margin-top: 6px; font-size: 10px; color: #606080;">
+                        <div class="collab-card-desc">${escapeHtml(c.description || '无描述')}</div>
+                        <div class="collab-card-meta">
                             ${c.agents ? c.agents.length : 0} 个智能体 | 使用次数: ${c.usage_count || 0}
                         </div>
-                        <button class="collab-delete-btn" onclick="event.stopPropagation(); deleteCollab('${c.id}', '${escapeHtml(c.name)}')" title="删除配置">&#10005;</button>
-                    </div>
-                `).join('');
+                        <button class="collab-delete-btn" style="position:absolute;top:8px;right:8px;" onclick="event.stopPropagation(); deleteCollab('${c.id}', '${escapeHtml(c.name)}')" title="删除配置">&#10005;</button>
+                    </div>`;
+                }).join('');
             }
-
-            modal.classList.add('visible');
         }
 
         function closeCollabSelector() {
@@ -1912,8 +2284,10 @@
                 updateConfigPanel(currentCollab);
                 updateStatus(`已选择: ${currentCollab.name}`, false);
 
-                document.getElementById('collabInfo').textContent =
-                    `${currentCollab.name} (${currentCollab.mode})`;
+                document.getElementById('collabInfo').textContent = currentCollab.name;
+                const modeBadge = document.getElementById('collabModeBadge');
+                modeBadge.textContent = MODE_NAMES[currentCollab.mode] || currentCollab.mode;
+                modeBadge.style.display = 'inline';
 
                 // Clear chat
                 const chatMessages = document.getElementById('chatMessages');
@@ -1929,11 +2303,10 @@
         function buildTopology(collab) {
             const container = document.getElementById('topologyContent');
             if (!collab || !collab.agents || collab.agents.length === 0) {
-                container.innerHTML = '<div class="empty-state" style="padding: 20px;"><p style="font-size: 12px;">未配置智能体</p></div>';
+                container.innerHTML = '<div class="empty-state" style="padding: 20px;"><div class="icon" style="font-size:36px;">&#128279;</div><p style="font-size: 12px;">未配置智能体</p></div>';
                 return;
             }
 
-            // Reset topology state
             topologyState = {};
             collab.agents.forEach(a => {
                 topologyState[a.agent_id] = { status: 'idle', role: a.role, name: a.agent_id };
@@ -1949,8 +2322,6 @@
                 html = buildPipelineTopology(collab);
             } else if (mode === 'voting') {
                 html = buildVotingTopology(collab);
-            } else if (mode === 'adversarial_generate_discriminate') {
-                html = buildGenDisTopology(collab);
             } else if (mode === 'adversarial_game') {
                 html = buildGameTopology(collab);
             } else {
@@ -1966,19 +2337,15 @@
             const isParallel = collab.config_json && collab.config_json.parallel_execution !== false;
 
             let html = '<div class="topo-flow">';
-
-            // Input
             html += '<div class="topo-label">&#128230; 任务输入</div>';
             html += '<div class="topo-connector" data-from="input" data-to="supervisor"></div>';
 
-            // Supervisor (split phase)
             if (supervisor) {
                 html += buildTopoNode(supervisor, 'supervisor');
             }
             html += '<div class="topo-label">&#128295; 拆分任务</div>';
             html += '<div class="topo-connector" data-from="supervisor" data-to="children"></div>';
 
-            // Children (parallel or sequential)
             if (children.length > 0) {
                 html += `<div class="topo-label">${isParallel ? '&#9889; 并行执行' : '&#128336; 顺序执行'}</div>`;
                 html += '<div class="topo-parallel">';
@@ -1988,56 +2355,13 @@
                 html += '</div>';
             }
 
-            // Supervisor (summarize phase)
             html += '<div class="topo-connector" data-from="children" data-to="supervisor_summary"></div>';
             html += '<div class="topo-label">&#128203; 汇总结果</div>';
             if (supervisor) {
                 html += buildTopoNode(supervisor, 'supervisor_summary', '汇总');
             }
 
-            // Output
             html += '<div class="topo-connector" data-from="supervisor_summary" data-to="output"></div>';
-            html += '<div class="topo-label">&#128230; 最终输出</div>';
-
-            html += '</div>';
-            return html;
-        }
-
-        function buildGenDisTopology(collab) {
-            const generator = collab.agents.find(a => a.role === 'generator');
-            const discriminator = collab.agents.find(a => a.role === 'discriminator');
-            const judge = collab.agents.find(a => a.role === 'judge');
-            const maxRounds = collab.config_json ? collab.config_json.max_rounds || 3 : 3;
-
-            let html = '<div class="topo-flow">';
-
-            html += '<div class="topo-label">&#128230; 任务输入</div>';
-            html += '<div class="topo-connector" data-from="input" data-to="generator"></div>';
-
-            if (generator) {
-                html += buildTopoNode(generator, 'generator');
-            }
-
-            html += '<div class="topo-connector" data-from="generator" data-to="discriminator"></div>';
-            html += '<div class="topo-label">&#128230; 生成内容</div>';
-
-            if (discriminator) {
-                html += buildTopoNode(discriminator, 'discriminator');
-            }
-
-            html += '<div class="topo-label">&#128260; 未通过则反馈 (最多' + maxRounds + '轮)</div>';
-            html += '<div class="topo-connector" data-from="discriminator" data-to="generator"></div>';
-
-            if (judge) {
-                html += '<div class="topo-label">&#9989; 通过校验</div>';
-                html += '<div class="topo-connector" data-from="discriminator" data-to="judge"></div>';
-                html += buildTopoNode(judge, 'judge');
-                html += '<div class="topo-connector" data-from="judge" data-to="output"></div>';
-            } else {
-                html += '<div class="topo-label">&#9989; 通过校验</div>';
-                html += '<div class="topo-connector" data-from="discriminator" data-to="output"></div>';
-            }
-
             html += '<div class="topo-label">&#128230; 最终输出</div>';
 
             html += '</div>';
@@ -2046,7 +2370,7 @@
 
         function buildPipelineTopology(collab) {
             const workers = collab.agents.filter(a => a.role === 'worker');
-            if (workers.length === 0) return '<div class="empty-state" style="padding:20px;"><p style="font-size:12px;">未配置worker</p></div>';
+            if (workers.length === 0) return '<div class="empty-state" style="padding:20px;"><div class="icon" style="font-size:36px;">&#128736;</div><p style="font-size:12px;">未配置worker</p></div>';
 
             let html = '<div class="topo-flow">';
             html += '<div class="topo-label">&#128230; 任务输入</div>';
@@ -2069,7 +2393,7 @@
         function buildVotingTopology(collab) {
             const voters = collab.agents.filter(a => a.role === 'voter');
             const aggregator = collab.agents.find(a => a.role === 'aggregator');
-            if (voters.length === 0) return '<div class="empty-state" style="padding:20px;"><p style="font-size:12px;">未配置voter</p></div>';
+            if (voters.length === 0) return '<div class="empty-state" style="padding:20px;"><div class="icon" style="font-size:36px;">&#127913;</div><p style="font-size:12px;">未配置voter</p></div>';
 
             let html = '<div class="topo-flow">';
             html += '<div class="topo-label">&#128230; 相同问题</div>';
@@ -2095,7 +2419,8 @@
 
         function buildGameTopology(collab) {
             const config = collab.config_json || {};
-            const turnStrategy = config.turn_strategy || 'simultaneous';
+            const turnStrategy = config.turn_strategy === 'turn_based' ? 'sequential' : (config.turn_strategy || 'simultaneous');
+            const refereeTiming = config.referee_timing || 'per_round';
             const participants = collab.agents.filter(a =>
                 a.role === 'participant' || a.role === 'player_black' || a.role === 'player_white'
             );
@@ -2108,7 +2433,6 @@
             html += '<div class="topo-connector" data-from="input" data-to="game"></div>';
 
             if (turnStrategy === 'simultaneous') {
-                // Simultaneous: all participants side-by-side, then referee below
                 html += '<div class="topo-label">&#9889; 同时行动</div>';
                 html += '<div class="topo-parallel">';
                 participants.forEach((p, i) => {
@@ -2116,30 +2440,24 @@
                     html += buildTopoNode(p, key, `参与者${i + 1}`);
                 });
                 html += '</div>';
-
-                if (refereeEnabled && referee) {
-                    html += '<div class="topo-connector" data-from="participants" data-to="referee"></div>';
-                    html += '<div class="topo-label">&#9878; 裁决</div>';
-                    html += buildTopoNode(referee, 'referee', '裁判');
-                }
             } else {
-                // Turn-based: participants in sequence with referee
-                html += `<div class="topo-label">&#128336; 轮流行动</div>`;
+                html += `<div class="topo-label">&#128336; 顺序行动</div>`;
                 html += '<div class="topo-game-row">';
                 participants.forEach((p, i) => {
                     const key = p.role === 'participant' ? `participant_${i}` : p.role;
                     html += buildTopoNode(p, key, `参与者${i + 1}`);
                     if (i < participants.length - 1) {
-                        html += '<div class="topo-bidi-arrow">&#8596;</div>';
+                        html += '<div class="topo-bidi-arrow">&#8594;</div>';
                     }
                 });
                 html += '</div>';
+            }
 
-                if (refereeEnabled && referee) {
-                    html += '<div class="topo-connector" data-from="participants" data-to="referee"></div>';
-                    html += '<div class="topo-label">&#9878; 裁决</div>';
-                    html += buildTopoNode(referee, 'referee', '裁判');
-                }
+            if (refereeEnabled && referee) {
+                html += '<div class="topo-connector" data-from="participants" data-to="referee"></div>';
+                const timingLabel = refereeTiming === 'final' ? '&#127942; 终局裁决' : '&#9878; 每轮裁决';
+                html += `<div class="topo-label">${timingLabel}</div>`;
+                html += buildTopoNode(referee, 'referee', '裁判');
             }
 
             html += '<div class="topo-turn-indicator" id="topoTurnIndicator"></div>';
@@ -2165,8 +2483,10 @@
         function buildTopoNode(agent, key, overrideRole) {
             const color = getAgentColor(agent.agent_id);
             const roleDisplay = overrideRole || agent.role;
+            const agentName = getAgentName(agent.agent_id);
             return `<div class="topo-node" id="topo_${sanitizeForClass(key)}" data-agent-id="${escapeHtml(agent.agent_id)}" style="--node-color: ${color};">
-                <div class="topo-node-name" style="color: ${color};">${escapeHtml(agent.agent_id)}</div>
+                <div class="topo-node-status" id="topoStatus_${sanitizeForClass(key)}"></div>
+                <div class="topo-node-name" style="color: ${color};">${escapeHtml(agentName)}</div>
                 <div class="topo-node-role agent-role ${agent.role}">${escapeHtml(roleDisplay)}</div>
             </div>`;
         }
@@ -2180,20 +2500,21 @@
             document.querySelectorAll('.topo-node').forEach(node => {
                 node.classList.remove('thinking', 'done', 'error');
             });
+            document.querySelectorAll('.topo-node-status').forEach(s => {
+                s.className = 'topo-node-status';
+            });
             document.querySelectorAll('.topo-connector').forEach(c => {
                 c.classList.remove('active');
             });
             const turnIndicator = document.getElementById('topoTurnIndicator');
             if (turnIndicator) turnIndicator.textContent = '';
 
-            // Reset agent card statuses
             document.querySelectorAll('.agent-card-status').forEach(s => {
                 s.className = 'agent-card-status';
             });
         }
 
         function updateNodeStatus(agentId, status) {
-            // Update topology nodes
             document.querySelectorAll('.topo-node').forEach(node => {
                 if (node.dataset.agentId === agentId) {
                     node.classList.remove('thinking', 'done', 'error');
@@ -2201,12 +2522,18 @@
                 }
             });
 
-            // Update agent card in config panel
+            // Update status dot on node
+            document.querySelectorAll('.topo-node-status').forEach(s => {
+                const parentNode = s.closest('.topo-node');
+                if (parentNode && parentNode.dataset.agentId === agentId) {
+                    s.className = 'topo-node-status ' + status;
+                }
+            });
+
             document.querySelectorAll(`.agent-card[data-agent-id="${agentId}"] .agent-card-status`).forEach(s => {
                 s.className = 'agent-card-status ' + status;
             });
 
-            // Update topology state
             if (topologyState[agentId]) {
                 topologyState[agentId].status = status;
             }
@@ -2244,21 +2571,20 @@
             const isVotingMode = collab.mode === 'voting';
             const gameRules = collab.config_json ? collab.config_json.game_rules || '' : '';
             const turnStrategy = collab.config_json ? collab.config_json.turn_strategy || '' : '';
-            const strategyLabel = turnStrategy === 'turn_based' ? '轮流行动' : '同时行动';
+            const strategyLabel = (turnStrategy === 'sequential' || turnStrategy === 'turn_based') ? '顺序行动' : '同时行动';
             const passContext = collab.config_json ? collab.config_json.pass_context : true;
             const parallelExec = collab.config_json ? collab.config_json.parallel_execution : true;
-            const votingStrategy = collab.config_json ? collab.config_json.strategy || 'best_of' : 'best_of';
-            const votingStrategyNames = { majority: '多数表决', weighted: '加权投票', best_of: '择优选择' };
+            const votingStrategy = collab.config_json ? collab.config_json.strategy || 'majority' : 'majority';
+            const votingStrategyNames = { majority: '多数表决' };
             const modeLabel = MODE_NAMES[collab.mode] || collab.mode;
 
-            // Build agent list with role labels and agent names
             const roleLabels = MODE_ROLE_LABELS[collab.mode] || {};
             const roleCounts = {};
             const agentCardsHtml = (collab.agents || []).map(a => {
                 const rLabel = roleLabels[a.role] || a.role;
                 roleCounts[a.role] = (roleCounts[a.role] || 0) + 1;
                 const displayLabel = roleCounts[a.role] > 1 ? `${rLabel}${roleCounts[a.role]}` : rLabel;
-                const agentName = agentsCache.find(ag => ag.id === a.agent_id)?.name || a.agent_id;
+                const agentName = getAgentName(a.agent_id);
                 return `
                     <div class="agent-card" data-agent-id="${escapeHtml(a.agent_id)}">
                         <div class="agent-card-status"></div>
@@ -2315,20 +2641,20 @@
                 <div class="config-section">
                     <h4>智能体 (${collab.agents ? collab.agents.length : 0})</h4>
                     <div class="agent-list">
-                        ${agentCardsHtml || '<p style="color: #606080; font-size: 12px;">未配置智能体</p>'}
+                        ${agentCardsHtml || '<p style="color: var(--text-muted); font-size: 12px;">未配置智能体</p>'}
                     </div>
                 </div>
 
                 ${isGameMode && gameRules ? `
                 <div class="config-section">
                     <h4>游戏规则</h4>
-                    <pre style="font-size: 11px; color: #b0b0d0; background: #0a0a15; padding: 10px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap;">${escapeHtml(gameRules)}</pre>
+                    <pre class="config-pre">${escapeHtml(gameRules)}</pre>
                 </div>
                 ` : ''}
 
                 <div class="config-section">
                     <h4>配置</h4>
-                    <pre style="font-size: 11px; color: #8080a0; background: #0a0a15; padding: 10px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap;">${escapeHtml(JSON.stringify(collab.config_json, null, 2))}</pre>
+                    <pre class="config-pre">${escapeHtml(JSON.stringify(collab.config_json, null, 2))}</pre>
                 </div>
 
                 ${isGameMode ? `
@@ -2350,31 +2676,29 @@
                 const resp = await fetch(`${API_BASE}/${collabId}`, {method: 'DELETE'});
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
 
-                // If deleting the currently selected collab, clear the state
                 if (currentCollab && currentCollab.id === collabId) {
                     currentCollab = null;
                     agentColorMap = {};
                     topologyState = {};
                     currentRoundContainer = null;
                     thinkingIndicators = {};
-                    document.getElementById('topologyContent').innerHTML = '<div class="empty-state" style="padding:20px;"><div class="icon" style="font-size:36px;">&#9698;</div><p style="font-size:12px;">选择协作配置后显示拓扑关系</p></div>';
-                    document.getElementById('chatMessages').innerHTML = '<div class="empty-state"><div class="icon">&#128640;</div><p style="margin-bottom: 16px;">欢迎使用多智能体协作平台</p><div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;"><button class="btn" onclick="showCollabSelector()" style="background:#0066cc;color:white;border-color:#0088ff;">选择已有配置</button><button class="btn" onclick="startNewCollab()" style="background:#10b981;color:white;border-color:#059669;">新建协作配置</button></div><p style="margin-top:16px;font-size:12px;color:#606080;">选择已有配置，或新建一个多智能体协作任务</p></div>';
+                    document.getElementById('topologyContent').innerHTML = '<div class="empty-state" style="padding:20px;"><div class="icon" style="font-size:36px;">&#128279;</div><p style="font-size:12px;">选择协作配置后显示拓扑关系</p></div>';
+                    document.getElementById('chatMessages').innerHTML = '<div class="empty-state"><div class="icon">&#128640;</div><p style="margin-bottom: 16px;">欢迎使用多智能体协作平台</p><div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;"><button class="btn btn-primary" onclick="showCollabSelector()">选择已有配置</button><button class="btn btn-success" onclick="startNewCollab()">新建协作配置</button></div><p style="margin-top:16px;font-size:12px;color:var(--text-muted);">选择已有配置，或新建一个多智能体协作任务</p></div>';
                     document.getElementById('viewPanel').innerHTML = '<div class="empty-state" style="padding:20px;"><div class="icon">&#9881;</div><p>请选择协作配置以查看详情</p></div>';
                     document.getElementById('collabInfo').textContent = '未选择协作配置';
+                    document.getElementById('collabModeBadge').style.display = 'none';
                     updateStatus('就绪', false);
                 }
 
-                // Refresh list
                 await loadCollabs();
-                showToast('已删除: ' + collabName);
+                showToast('已删除: ' + collabName, 'success');
 
-                // Re-render selector if open
                 const modal = document.getElementById('collabSelectorModal');
                 if (modal.classList.contains('visible')) {
                     showCollabSelector();
                 }
             } catch (e) {
-                showToast('删除失败: ' + e.message, true);
+                showToast('删除失败: ' + e.message, 'error');
             }
         }
 
@@ -2382,11 +2706,9 @@
         function createRoundContainer(round, max) {
             const chatMessages = document.getElementById('chatMessages');
 
-            // Remove empty state if present
             const emptyState = chatMessages.querySelector('.empty-state');
             if (emptyState) emptyState.remove();
 
-            // Mark previous round as completed
             if (currentRoundContainer) {
                 currentRoundContainer.classList.remove('active');
                 currentRoundContainer.classList.add('completed');
@@ -2429,7 +2751,6 @@
         }
 
         function ensureRoundContainer(round, max) {
-            // Find existing container for this round
             const existing = document.querySelector(`.round-container[data-round="${round}"]`);
             if (existing) {
                 currentRoundContainer = existing.querySelector('.round-messages');
@@ -2467,12 +2788,13 @@
             }
 
             const color = getAgentColor(agentId);
+            const displayName = getAgentName(agentId);
             const div = document.createElement('div');
             div.className = 'thinking-indicator';
             div.dataset.agentId = agentId;
             div.innerHTML = `
                 <div class="thinking-dots"><span></span><span></span><span></span></div>
-                <span class="thinking-label" style="color: ${color};">${escapeHtml(agentName)} (${role}) 思考中...</span>
+                <span class="thinking-label" style="color: ${color};">${escapeHtml(displayName)} (${role}) 思考中...</span>
             `;
 
             currentRoundContainer.appendChild(div);
@@ -2503,28 +2825,28 @@
         // =================== Execute Task ===================
         async function executeTask() {
             if (!currentCollab) {
-                alert('请先选择协作配置');
+                showToast('请先选择协作配置', 'warning');
                 return;
             }
 
             const inputText = document.getElementById('inputText').value.trim();
             if (!inputText) {
-                alert('请输入任务');
+                showToast('请输入任务', 'warning');
                 return;
             }
 
             if (isRunning) {
-                alert('已有任务正在运行');
+                showToast('已有任务正在运行', 'warning');
                 return;
             }
 
-            // Start execution
             isRunning = true;
             updateStatus('运行中...', false, true);
             document.getElementById('sendBtn').disabled = true;
+            document.getElementById('sendBtn').style.display = 'none';
+            document.getElementById('stopBtn').classList.add('visible');
             document.getElementById('taskProgress').classList.add('visible');
 
-            // Reset
             resetTopology();
             currentRoundContainer = null;
             currentRound = 0;
@@ -2532,7 +2854,6 @@
 
             const chatMessages = document.getElementById('chatMessages');
 
-            // Add task separator if there are existing messages
             if (chatMessages.children.length > 0) {
                 const sep = document.createElement('div');
                 sep.className = 'task-separator';
@@ -2540,17 +2861,16 @@
                 chatMessages.appendChild(sep);
             }
 
-            // Remove empty state
             const emptyState = chatMessages.querySelector('.empty-state');
             if (emptyState) emptyState.remove();
 
-            // Create round 0 container for user message
             ensureRoundContainer(0);
-
-            // Add user message
             addMessage('user', inputText, '用户', null, null);
 
-            // Start SSE stream
+            // Clear input
+            document.getElementById('inputText').value = '';
+            autoResize(document.getElementById('inputText'));
+
             const url = `${API_BASE}/${currentCollab.id}/execute_sse?input=${encodeURIComponent(inputText)}`;
 
             if (eventSource) {
@@ -2562,10 +2882,7 @@
             eventSource.onmessage = (event) => {
                 if (event.data === '[DONE]') {
                     eventSource.close();
-                    isRunning = false;
-                    updateStatus('已完成', false);
-                    document.getElementById('sendBtn').disabled = false;
-                    document.getElementById('taskProgress').classList.remove('visible');
+                    finishExecution();
                     closeCurrentRound();
                     return;
                 }
@@ -2583,11 +2900,29 @@
                 eventSource.close();
                 isRunning = false;
                 updateStatus('发生错误', true);
-                document.getElementById('sendBtn').disabled = false;
-                document.getElementById('taskProgress').classList.remove('visible');
+                finishExecution();
                 closeCurrentRound('failed');
                 addMessage('error', '连接错误，请重试。', '系统', null, null);
             };
+        }
+
+        function stopExecution() {
+            if (eventSource) {
+                eventSource.close();
+            }
+            isRunning = false;
+            finishExecution();
+            closeCurrentRound('failed');
+            addMessage('system', '用户手动停止执行', '系统', null, null);
+            updateStatus('已停止', true);
+        }
+
+        function finishExecution() {
+            isRunning = false;
+            document.getElementById('sendBtn').disabled = false;
+            document.getElementById('sendBtn').style.display = '';
+            document.getElementById('stopBtn').classList.remove('visible');
+            document.getElementById('taskProgress').classList.remove('visible');
         }
 
         // =================== Handle SSE Events ===================
@@ -2621,13 +2956,8 @@
                 }
 
                 case 'agent_message': {
-                    // Ensure round container exists
                     if (data.round !== undefined && data.round !== null) {
-                        if (data.round >= 900) {
-                            ensureRoundContainer(data.round);
-                        } else {
-                            ensureRoundContainer(data.round);
-                        }
+                        ensureRoundContainer(data.round);
                     }
                     removeThinkingIndicator(data.agent_id);
                     updateNodeStatus(data.agent_id, 'done');
@@ -2655,10 +2985,9 @@
                 }
 
                 case 'game_start':
-                    const strategyLabel = data.turn_strategy === 'turn_based' ? '轮流行动' : '同时行动';
+                    const strategyLabel = data.turn_strategy === 'sequential' ? '顺序行动' : '同时行动';
                     const refereeLabel = data.referee_enabled ? '，裁判: 开启' : '';
                     addMessage('system', `游戏开始，参与者: ${data.participants.join(', ')}，策略: ${strategyLabel}${refereeLabel}`, '系统', null, null);
-                    // Show shared state section if hidden
                     const section = document.getElementById('sharedStateSection');
                     if (section) section.style.display = '';
                     break;
@@ -2674,7 +3003,6 @@
                 case 'task_complete':
                     addMessage('system', `任务执行成功！`, '系统', null, null);
                     closeCurrentRound('passed');
-                    // Mark all nodes as done
                     Object.keys(topologyState).forEach(id => {
                         updateNodeStatus(id, 'done');
                     });
@@ -2697,7 +3025,6 @@
                     break;
             }
 
-            // Scroll to bottom
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
 
@@ -2705,14 +3032,12 @@
         function addMessage(type, content, sender, round, role) {
             const chatMessages = document.getElementById('chatMessages');
 
-            // Remove empty state if present
             const emptyState = chatMessages.querySelector('.empty-state');
             if (emptyState) emptyState.remove();
 
             const msgDiv = document.createElement('div');
             msgDiv.className = `message ${type}`;
 
-            // Agent color
             if (type === 'agent' && sender) {
                 const color = getAgentColor(sender);
                 msgDiv.style.setProperty('--agent-color', color);
@@ -2721,7 +3046,8 @@
             let headerHtml = '';
             if (type === 'agent') {
                 const roleClass = role || 'default';
-                const color = sender ? getAgentColor(sender) : '#e0e0e0';
+                const color = sender ? getAgentColor(sender) : 'var(--primary)';
+                const displayName = getAgentName(sender);
                 let roundLabel = '';
                 if (round !== null && round !== undefined) {
                     if (round >= 900) {
@@ -2732,7 +3058,7 @@
                 }
                 headerHtml = `
                     <div class="message-header">
-                        <span style="color: ${color}; font-weight: 600;">${escapeHtml(sender)}</span>
+                        <span style="color: ${color}; font-weight: 600;">${escapeHtml(displayName)}</span>
                         <span class="agent-role ${roleClass}">${escapeHtml(role || '')}</span>
                         ${roundLabel}
                     </div>
@@ -2740,25 +3066,24 @@
             } else if (type === 'error') {
                 headerHtml = `
                     <div class="message-header">
-                        <span style="color: #ff6666;">${escapeHtml(sender)}</span>
+                        <span style="color: var(--error-color); font-weight: 600;">${escapeHtml(sender)}</span>
                     </div>
                 `;
             } else if (type === 'system') {
                 headerHtml = `
                     <div class="message-header">
-                        <span style="color: #6080a0; font-size: 11px;">${escapeHtml(sender)}</span>
+                        <span style="color: var(--text-muted); font-size: 11px;">${escapeHtml(sender)}</span>
                     </div>
                 `;
             }
 
-            const isLong = content && content.length > 300;
+            const isLong = content && content.length > 500;
             const collapsibleClass = isLong ? 'collapsible' : '';
 
-            // Determine the background for the gradient overlay
-            let msgBg = '#1a2a3a';
-            if (type === 'user') msgBg = '#1a3a5a';
-            else if (type === 'system') msgBg = '#2a2a2a';
-            else if (type === 'error') msgBg = '#3a1a1a';
+            let msgBg = 'var(--sidebar-bg)';
+            if (type === 'user') msgBg = 'rgba(102, 126, 234, 0.1)';
+            else if (type === 'system') msgBg = 'var(--info-bg)';
+            else if (type === 'error') msgBg = 'var(--error-bg)';
 
             msgDiv.innerHTML = `
                 ${headerHtml}
@@ -2767,7 +3092,6 @@
                 </div>
             `;
 
-            // Append to current round container or directly to chat
             if (currentRoundContainer) {
                 currentRoundContainer.appendChild(msgDiv);
             } else {
@@ -2831,7 +3155,11 @@
             text.textContent = `第 ${current} 轮 / 共 ${max} 轮`;
         }
 
-        // =================== Keyboard ===================
+        // =================== Textarea Auto Resize ===================
+        function autoResize(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+        }
 
         // =================== Keyboard ===================
         function handleKeyDown(event) {

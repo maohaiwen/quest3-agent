@@ -7,12 +7,29 @@ const ChatService = {
     maxReconnectAttempts: 3,
     messageHandlers: {},
     isConnected: false,
+    _reconnectTimer: null,
+    _intentionalClose: false,
 
     connect(sessionId, agentId) {
+        // Cancel any pending reconnection timer
+        if (this._reconnectTimer) {
+            clearTimeout(this._reconnectTimer);
+            this._reconnectTimer = null;
+        }
+
         this.sessionId = sessionId;
         this.agentId = agentId;
+        this._intentionalClose = false;
 
         if (this.ws) {
+            // Mark as intentional close to prevent onclose from reconnecting
+            this._intentionalClose = true;
+            // Remove event handlers before closing to prevent onclose
+            // from triggering reconnection
+            this.ws.onopen = null;
+            this.ws.onmessage = null;
+            this.ws.onclose = null;
+            this.ws.onerror = null;
             this.ws.close();
         }
 
@@ -31,6 +48,7 @@ const ChatService = {
     _bindEvents() {
         this.ws.onopen = () => {
             this.reconnectAttempts = 0;
+            this._intentionalClose = false;
             this.isConnected = true;
             this._triggerHandler('connected', {
                 sessionId: this.sessionId,
@@ -58,15 +76,30 @@ const ChatService = {
             this.isConnected = false;
             this._triggerHandler('disconnected', {});
 
+            // Don't reconnect if we intentionally closed the connection
+            if (this._intentionalClose) {
+                this._intentionalClose = false;
+                return;
+            }
+
+            // Cancel any existing reconnect timer before scheduling a new one
+            if (this._reconnectTimer) {
+                clearTimeout(this._reconnectTimer);
+                this._reconnectTimer = null;
+            }
+
             if (this.reconnectAttempts < this.maxReconnectAttempts) {
                 this.reconnectAttempts++;
-                setTimeout(() => this.connect(this.sessionId, this.agentId), 3000);
+                this._reconnectTimer = setTimeout(() => {
+                    this._reconnectTimer = null;
+                    this.connect(this.sessionId, this.agentId);
+                }, 3000);
             }
         };
 
         this.ws.onerror = (error) => {
             console.error('WebSocket error:', error);
-            this._triggerHandler('error', { error: error.message });
+            this._triggerHandler('error', { error: error.message || 'WebSocket error' });
         };
     },
 
@@ -75,6 +108,17 @@ const ChatService = {
             this.ws.send(JSON.stringify({
                 message,
                 deep_thinking: deepThinking
+            }));
+            return true;
+        }
+        return false;
+    },
+
+    loadMoreHistory(count = 40) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({
+                action: "load_more_history",
+                before: count
             }));
             return true;
         }
@@ -105,7 +149,20 @@ const ChatService = {
     },
 
     disconnect() {
+        // Cancel any pending reconnection timer
+        if (this._reconnectTimer) {
+            clearTimeout(this._reconnectTimer);
+            this._reconnectTimer = null;
+        }
+
+        this._intentionalClose = true;
+
         if (this.ws) {
+            // Remove event handlers before closing to prevent reconnection
+            this.ws.onopen = null;
+            this.ws.onmessage = null;
+            this.ws.onclose = null;
+            this.ws.onerror = null;
             this.ws.close();
             this.ws = null;
         }

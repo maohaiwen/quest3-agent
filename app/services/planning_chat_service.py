@@ -4,7 +4,6 @@ import json
 from typing import Optional, AsyncGenerator, List, Dict, Any
 from datetime import datetime
 
-from anthropic import AsyncAnthropic
 from app.config import settings
 from app.core.decision import decision_engine
 from app.core.execution import execution_engine, ExecutionStep, ExecutionPlan, ExecutionStrategy
@@ -102,26 +101,28 @@ class ChatEvent:
 class PlanningChatService:
     """Chat service with planning and execution capabilities"""
 
-    def __init__(self, api_key: Optional[str] = None):
-        """Initialize service
-
-        Args:
-            api_key: Anthropic API key
-        """
-        self.api_key = api_key or settings.ANTHROPIC_API_KEY
-        self.model = settings.LLM_MODEL
+    def __init__(self):
+        """Initialize service"""
+        self.model = settings.VOLCENGINE_MODEL
         self.temperature = settings.LLM_TEMPERATURE
         self.max_tokens = settings.LLM_MAX_TOKENS
+        self._llm_service = None
 
-        self.client = AsyncAnthropic(api_key=self.api_key) if self.api_key else None
-
-    def set_client(self, client):
-        """Set LLM client
+    def set_llm_service(self, llm_service):
+        """Set LLM service instance
 
         Args:
-            client: AsyncAnthropic client
+            llm_service: LLMService instance
         """
-        self.client = client
+        self._llm_service = llm_service
+
+    @property
+    def llm(self):
+        """Get LLM service (lazy init)"""
+        if self._llm_service is None:
+            from app.services.llm_service import llm_service
+            self._llm_service = llm_service
+        return self._llm_service
 
     async def chat(
         self,
@@ -145,8 +146,8 @@ class PlanningChatService:
         Yields:
             Chat events
         """
-        if not self.client:
-            yield ChatEvent.message("LLM not configured. Please set ANTHROPIC_API_KEY.")
+        if not self.llm.is_configured():
+            yield ChatEvent.message("LLM not configured. Please set VOLCENGINE_API_KEY.")
             yield ChatEvent.done()
             return
 
@@ -287,17 +288,17 @@ class PlanningChatService:
         try:
             # For Plan mode - simple and focused experience
             if enable_planning:
-                # First, show thinking start and do planning with streaming thinking content
+                # Show a brief status indicator during planning (don't stream raw decision reasoning)
                 yield {
                     "type": "thinking_start",
-                    "message": "分析任务并规划执行方案..."
+                    "message": "正在分析任务..."
                 }
 
-                # Collect thinking content
-                thinking_content = []
+                # Collect thinking content for logging only (not for display)
+                thinking_log = []
 
                 def add_thinking(content):
-                    thinking_content.append(content)
+                    thinking_log.append(content)
 
                 # Create the plan with deep thinking callback and tool filtering
                 allowed_tools = agent_config.get("tools", []) if agent_config else None
@@ -325,9 +326,15 @@ class PlanningChatService:
                     enabled_mcp_servers=enabled_mcp_servers
                 )
 
-                # Yield the thinking content that was collected
-                for thought in thinking_content:
-                    yield ChatEvent.thinking(thought)
+                # Log the thinking content for debugging but don't stream to user
+                if thinking_log:
+                    logger.debug(f"Decision engine thinking: {''.join(thinking_log)[:500]}...")
+
+                # End thinking phase before showing plan
+                yield {
+                    "type": "thinking_end",
+                    "message": "分析完成"
+                }
 
                 # Show the planning card
                 yield ChatEvent.planning({
@@ -337,36 +344,19 @@ class PlanningChatService:
                     "step_count": len(plan.steps)
                 })
 
-                # End thinking phase
-                yield {
-                    "type": "thinking_end",
-                    "message": "规划完成"
-                }
-
                 if plan.steps:
                     # Execute the plan
-                    yield ChatEvent.thinking("执行工具调用计划...")
-
-                    execution_context = {
-                        "user_message": message,
-                        "conversation_history": conversation_history or []
-                    }
-
                     results = {}
                     for step in plan.steps:
                         yield ChatEvent.step_start({
                             "step_id": step.step_id,
                             "tool_name": step.tool_name,
                             "step_number": len(results) + 1,
-                            "total_steps": len(plan.steps)
+                            "total_steps": len(plan.steps),
+                            "arguments": step.arguments
                         })
 
                         try:
-                            yield ChatEvent.step_progress(
-                                step.step_id,
-                                f"调用工具: {step.tool_name}..."
-                            )
-
                             result = await execution_engine._execute_step(step)
 
                             if step.status == "completed":
@@ -380,14 +370,14 @@ class PlanningChatService:
                             logger.error(f"Error executing step {step.step_id}: {error_msg}")
                             yield ChatEvent.step_error(step.step_id, error_msg)
 
-                    # Step 2: Generate final response based on execution results - with streaming!
-                    yield ChatEvent.thinking("生成最终回复...")
-
-                    # Stream the final response
-                    results_summary = "\n\n".join([
-                        f"步骤 {i+1} ({step_id}): {json.dumps(result, ensure_ascii=False)[:500]}"
-                        for i, (step_id, result) in enumerate(results.items())
-                    ])
+                    # Generate final response based on execution results
+                    if results:
+                        results_summary = "\n\n".join([
+                            f"步骤 {i+1} ({step_id}): {json.dumps(result, ensure_ascii=False)[:500]}"
+                            for i, (step_id, result) in enumerate(results.items())
+                        ])
+                    else:
+                        results_summary = "所有工具调用均失败，无执行结果。"
 
                     messages = []
 
@@ -403,17 +393,15 @@ class PlanningChatService:
 
 请基于以上工具执行结果，给用户一个清晰、有用的回复。如果工具执行出错，请解释原因并提出建议。"""
 
-                    # Add user message
-                    messages.append({
-                        "role": "user",
-                        "content": message
-                    })
+                    # Add user message (skip if already the last message in history)
+                    last_msg = conversation_history[-1] if conversation_history else None
+                    if not (last_msg and last_msg.get("role") == "user" and last_msg.get("content") == message):
+                        messages.append({
+                            "role": "user",
+                            "content": message
+                        })
 
                     # Stream the response
-                    yield {
-                        "type": "message_start"
-                    }
-
                     async for text in self._stream_chat_with_system(messages, system_prompt):
                         yield ChatEvent.message(text)
 
@@ -429,6 +417,23 @@ class PlanningChatService:
                     async for event in strategy_router.execute(
                         message,
                         conversation_history=conversation_history,
+                        deep_thinking=True
+                    ):
+                        yield event
+
+                    return
+
+                else:
+                    # No steps and not thinking strategy — use deep thinking as fallback
+                    # This happens when the LLM decides no tools are needed
+                    logger.info(f"Plan has no steps (strategy={plan.strategy.value}), using deep thinking")
+
+                    from app.core.strategy_router import strategy_router
+
+                    async for event in strategy_router.execute(
+                        message,
+                        conversation_history=conversation_history,
+                        agent_config=agent_config,
                         deep_thinking=True
                     ):
                         yield event
@@ -476,35 +481,39 @@ class PlanningChatService:
         if conversation_history:
             messages.extend(conversation_history[-5:])  # Last 5 messages
 
-        # Add system message
+        # Inject time reminder after history, before current message
+        current_time = datetime.now().strftime("%Y年%m月%d日 %H:%M")
+        messages.append({
+            "role": "system",
+            "content": f"【提醒】当前日期时间：{current_time}，请基于此时间回答问题。"
+        })
+
+        # Add user message (skip if already the last message in history)
+        last_msg = conversation_history[-1] if conversation_history else None
+        if not (last_msg and last_msg.get("role") == "user" and last_msg.get("content") == user_message):
+            messages.append({
+                "role": "user",
+                "content": user_message
+            })
+
+        # Use LLMService with system prompt
         system_message = f"""你是一个智能助手。你刚刚执行了一些工具调用来帮助用户。
 
 工具执行结果：
 {results_summary}
 
-请基于以上工具执行结果，给用户一个清晰、有用的回复。如果工具执行出错，请解释原因并提出建议。
-"""
+请基于以上工具执行结果，给用户一个清晰、有用的回复。如果工具执行出错，请解释原因并提出建议。"""
 
-        # Add user message
-        messages.append({
-            "role": "user",
-            "content": user_message
-        })
-
-        # Get response
-        response = await self.client.messages.create(
-            model=self.model,
-            system=system_message,
-            messages=messages,
+        response = await self.llm._chat_completion(
+            messages,
+            temperature=self.temperature,
             max_tokens=self.max_tokens,
-            temperature=self.temperature
+            system_prompt=system_message
         )
-
-        text_blocks = [block.text for block in response.content if block.type == "text"]
-        return "".join(text_blocks)
+        return response
 
     async def _stream_chat(self, messages: List[Dict]) -> AsyncGenerator[str, None]:
-        """Stream chat response
+        """Stream chat response using LLMService
 
         Args:
             messages: Message list
@@ -512,17 +521,11 @@ class PlanningChatService:
         Yields:
             Text chunks
         """
-        async with self.client.messages.stream(
-            model=self.model,
-            messages=messages,
-            max_tokens=self.max_tokens,
-            temperature=self.temperature
-        ) as stream:
-            async for text in stream.text_stream:
-                yield text
+        async for content in self.llm._chat_completion_stream(messages):
+            yield content
 
     async def _stream_chat_with_system(self, messages: List[Dict], system_prompt: str) -> AsyncGenerator[str, None]:
-        """Stream chat response with system prompt
+        """Stream chat response with system prompt using LLMService
 
         Args:
             messages: Message list
@@ -531,15 +534,13 @@ class PlanningChatService:
         Yields:
             Text chunks
         """
-        async with self.client.messages.stream(
-            model=self.model,
-            system=system_prompt,
-            messages=messages,
-            max_tokens=self.max_tokens,
-            temperature=self.temperature
-        ) as stream:
-            async for text in stream.text_stream:
-                yield text
+        async for content, _ in self.llm._chat_completion_stream_with_thinking(
+            messages,
+            system_prompt=system_prompt,
+            enable_thinking=False
+        ):
+            if content is not None:
+                yield content
 
     def _build_messages(
         self,
@@ -560,10 +561,20 @@ class PlanningChatService:
         if conversation_history:
             messages.extend(conversation_history[-10:])  # Last 10 messages
 
+        # Inject time reminder after history, before current message
+        current_time = datetime.now().strftime("%Y年%m月%d日 %H:%M")
         messages.append({
-            "role": "user",
-            "content": message
+            "role": "system",
+            "content": f"【提醒】当前日期时间：{current_time}，请基于此时间回答问题。"
         })
+
+        # Add user message (skip if already the last message in history)
+        last_msg = conversation_history[-1] if conversation_history else None
+        if not (last_msg and last_msg.get("role") == "user" and last_msg.get("content") == message):
+            messages.append({
+                "role": "user",
+                "content": message
+            })
 
         return messages
 
@@ -573,7 +584,7 @@ class PlanningChatService:
         Returns:
             True if configured
         """
-        return bool(self.api_key)
+        return self.llm.is_configured()
 
 
 # Global instance

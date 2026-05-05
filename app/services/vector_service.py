@@ -33,11 +33,11 @@ class VectorService:
             logger.error(f"Error initializing vector store: {e}")
             self.client = None
 
-    def get_or_create_collection(self, session_id: str):
-        """Get or create collection for session
+    def get_or_create_collection(self, agent_id: str):
+        """Get or create collection for agent
 
         Args:
-            session_id: Session ID
+            agent_id: Agent ID
 
         Returns:
             ChromaDB collection
@@ -46,9 +46,8 @@ class VectorService:
             raise ValueError("Vector store not initialized")
 
         try:
-            # Use session_id as collection name
             return self.client.get_or_create_collection(
-                name=f"session_{session_id}",
+                name=f"agent_{agent_id}",
                 metadata={"hnsw:space": "cosine"}
             )
         except Exception as e:
@@ -57,14 +56,14 @@ class VectorService:
 
     def add(
         self,
-        session_id: str,
+        agent_id: str,
         content: str,
         metadata: Optional[Dict[str, Any]] = None
     ) -> str:
         """Add content to vector store
 
         Args:
-            session_id: Session ID
+            agent_id: Agent ID
             content: Content to store
             metadata: Optional metadata
 
@@ -76,7 +75,7 @@ class VectorService:
         if not self.client:
             raise ValueError("Vector store not initialized")
 
-        collection = self.get_or_create_collection(session_id)
+        collection = self.get_or_create_collection(agent_id)
 
         doc_id = str(uuid.uuid4())
 
@@ -93,14 +92,14 @@ class VectorService:
 
     def search(
         self,
-        session_id: str,
+        agent_id: str,
         query: str,
         n_results: int = 5
     ) -> List[Dict[str, Any]]:
         """Search vector store for relevant content
 
         Args:
-            session_id: Session ID
+            agent_id: Agent ID
             query: Search query
             n_results: Number of results to return
 
@@ -111,7 +110,7 @@ class VectorService:
             raise ValueError("Vector store not initialized")
 
         try:
-            collection = self.get_or_create_collection(session_id)
+            collection = self.get_or_create_collection(agent_id)
             results = collection.query(
                 query_texts=[query],
                 n_results=n_results
@@ -132,11 +131,11 @@ class VectorService:
             logger.error(f"Error searching vector store: {e}")
             return []
 
-    def delete(self, session_id: str, doc_id: str) -> bool:
+    def delete(self, agent_id: str, doc_id: str) -> bool:
         """Delete document from vector store
 
         Args:
-            session_id: Session ID
+            agent_id: Agent ID
             doc_id: Document ID
 
         Returns:
@@ -146,18 +145,18 @@ class VectorService:
             raise ValueError("Vector store not initialized")
 
         try:
-            collection = self.get_or_create_collection(session_id)
+            collection = self.get_or_create_collection(agent_id)
             collection.delete(ids=[doc_id])
             return True
         except Exception as e:
             logger.error(f"Error deleting from vector store: {e}")
             return False
 
-    def get_all(self, session_id: str) -> List[Dict[str, Any]]:
-        """Get all documents from session
+    def get_all(self, agent_id: str) -> List[Dict[str, Any]]:
+        """Get all documents for agent
 
         Args:
-            session_id: Session ID
+            agent_id: Agent ID
 
         Returns:
             List of documents
@@ -166,7 +165,7 @@ class VectorService:
             raise ValueError("Vector store not initialized")
 
         try:
-            collection = self.get_or_create_collection(session_id)
+            collection = self.get_or_create_collection(agent_id)
             results = collection.get()
 
             formatted_results = []

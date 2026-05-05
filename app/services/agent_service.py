@@ -15,10 +15,6 @@ logger = logging.getLogger(__name__)
 class AgentService:
     """Service for managing agent configurations"""
 
-    def __init__(self):
-        """Initialize agent service"""
-        pass
-
     async def _sync_agent_skills_to_registry(self, agent_id: str, skill_names: List[str]):
         """Sync agent-skill links from database to memory registry"""
         try:
@@ -40,7 +36,6 @@ class AgentService:
             all_registry_skills = registry.get_all_skills()
 
             for skill_name in skill_names:
-                # Find skill in registry by name (not by DB id!)
                 for skill in all_registry_skills.values():
                     if skill.name == skill_name:
                         link = AgentSkillLink(
@@ -59,14 +54,7 @@ class AgentService:
             logger.warning(f"Failed to sync agent skills to registry: {e}", exc_info=True)
 
     async def create(self, agent_data: AgentCreate) -> AgentResponse:
-        """Create a new agent
-
-        Args:
-            agent_data: Agent creation data
-
-        Returns:
-            Created agent
-        """
+        """Create a new agent"""
         db = DatabaseConnection(settings.DATABASE_URL)
         await db.connect()
 
@@ -74,12 +62,11 @@ class AgentService:
             agent_id = str(uuid.uuid4())
             now = datetime.utcnow()
 
-            # Create agent
             await db.execute("""
             INSERT INTO agents (id, name, description, type, execution_mode, system_prompt, model,
                               temperature, max_tokens, enabled, priority, thinking_effort, max_react_steps,
-                              created_at, updated_at, usage_count)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                              enable_long_term_memory, created_at, updated_at, usage_count)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 agent_id,
                 agent_data.name,
@@ -94,21 +81,19 @@ class AgentService:
                 agent_data.priority,
                 getattr(agent_data, "thinking_effort", "medium"),
                 getattr(agent_data, "max_react_steps", 15),
+                1 if getattr(agent_data, "enable_long_term_memory", False) else 0,
                 now.isoformat(),
                 now.isoformat(),
                 0
             ))
 
-            # Add MCP server associations
             for server_id in agent_data.mcp_servers:
                 await db.execute("""
                 INSERT INTO agent_mcp_servers (id, agent_id, server_id, enabled)
                 VALUES (?, ?, ?, ?)
                 """, (str(uuid.uuid4()), agent_id, server_id, 1))
 
-            # Add tool configurations
             for tool_config in agent_data.tools:
-                # Handle both string tool names and dict configs
                 if isinstance(tool_config, str):
                     tool_name = tool_config
                     permission = "optional"
@@ -124,7 +109,6 @@ class AgentService:
                     VALUES (?, ?, ?, ?, ?)
                     """, (str(uuid.uuid4()), agent_id, tool_name, permission, description))
 
-            # Add skill associations
             if hasattr(agent_data, "skills") and agent_data.skills:
                 from app.database.skill_repository import SkillRepository
                 from app.models.skill import AgentSkillLink
@@ -143,25 +127,24 @@ class AgentService:
 
             await db.commit()
 
-            # Sync agent-skill links to memory registry
-            agent = await self.get(agent_id)
-            if agent:
-                await self._sync_agent_skills_to_registry(agent_id, agent.skills)
-
-            return agent
-
+        except Exception:
+            await db.rollback()
+            raise
         finally:
             await db.disconnect()
 
+        # Post-commit: sync to registry and agent_registry
+        agent = await self.get(agent_id)
+        if agent:
+            await self._sync_agent_skills_to_registry(agent_id, agent.skills)
+            if agent.enabled:
+                from app.services.agent_registry import agent_registry
+                await agent_registry.register_existing_agent(agent)
+
+        return agent
+
     async def get(self, agent_id: str) -> Optional[AgentResponse]:
-        """Get agent by ID
-
-        Args:
-            agent_id: Agent ID
-
-        Returns:
-            Agent or None
-        """
+        """Get agent by ID"""
         db = DatabaseConnection(settings.DATABASE_URL)
         await db.connect()
 
@@ -174,19 +157,16 @@ class AgentService:
             if not agent_data:
                 return None
 
-            # Get MCP servers
             mcp_servers = await db.fetch_all(
                 "SELECT server_id, enabled FROM agent_mcp_servers WHERE agent_id = ? AND enabled = 1",
                 (agent_id,)
             )
 
-            # Get tools
             tools = await db.fetch_all(
                 "SELECT tool_name, permission, description FROM agent_tools WHERE agent_id = ?",
                 (agent_id,)
             )
 
-            # Get skills
             from app.database.skill_repository import SkillRepository
             skill_repo = SkillRepository(db)
             skills = await skill_repo.get_agent_skills(agent_id)
@@ -211,10 +191,11 @@ class AgentService:
                 tools=[t["tool_name"] for t in tools],
                 skills=skill_names,
                 thinking_effort=agent_data.get("thinking_effort", "medium"),
-                max_react_steps=agent_data.get("max_react_steps", 15)
+                max_react_steps=agent_data.get("max_react_steps", 15),
+                enable_long_term_memory=bool(agent_data.get("enable_long_term_memory", 0))
             )
 
-            # Sync to registry before returning agent - important for skill system prompt!
+            # Sync to registry
             await self._sync_agent_skills_to_registry(agent_id, skill_names)
 
             return agent
@@ -223,14 +204,7 @@ class AgentService:
             await db.disconnect()
 
     async def list(self, enabled_only: bool = False) -> List[AgentResponse]:
-        """List all agents
-
-        Args:
-            enabled_only: Only return enabled agents
-
-        Returns:
-            List of agents
-        """
+        """List all agents (optimized - single query for agents, batched for related data)"""
         db = DatabaseConnection(settings.DATABASE_URL)
         await db.connect()
 
@@ -242,9 +216,46 @@ class AgentService:
 
             result = []
             for agent_data in agents:
-                agent = await self.get(agent_data["id"])
-                if agent:
-                    result.append(agent)
+                agent_id = agent_data["id"]
+
+                # Fetch related data inline (avoids N+1 from calling self.get)
+                mcp_servers = await db.fetch_all(
+                    "SELECT server_id, enabled FROM agent_mcp_servers WHERE agent_id = ? AND enabled = 1",
+                    (agent_id,)
+                )
+                tools = await db.fetch_all(
+                    "SELECT tool_name FROM agent_tools WHERE agent_id = ?",
+                    (agent_id,)
+                )
+
+                from app.database.skill_repository import SkillRepository
+                skill_repo = SkillRepository(db)
+                skills = await skill_repo.get_agent_skills(agent_id)
+                skill_names = [skill.name for skill in skills]
+
+                agent = AgentResponse(
+                    id=agent_data["id"],
+                    name=agent_data["name"],
+                    description=agent_data.get("description", ""),
+                    type=AgentType(agent_data.get("type", "custom")),
+                    execution_mode=agent_data.get("execution_mode", "plan"),
+                    system_prompt=agent_data.get("system_prompt", ""),
+                    model=agent_data.get("model"),
+                    temperature=agent_data.get("temperature"),
+                    max_tokens=agent_data.get("max_tokens"),
+                    enabled=bool(agent_data.get("enabled", 1)),
+                    priority=agent_data.get("priority", 0),
+                    created_at=datetime.fromisoformat(agent_data["created_at"]) if agent_data.get("created_at") else datetime.utcnow(),
+                    updated_at=datetime.fromisoformat(agent_data["updated_at"]) if agent_data.get("updated_at") else datetime.utcnow(),
+                    usage_count=agent_data.get("usage_count", 0),
+                    mcp_servers=[{"server_id": s["server_id"], "enabled": bool(s["enabled"])} for s in mcp_servers],
+                    tools=[t["tool_name"] for t in tools],
+                    skills=skill_names,
+                    thinking_effort=agent_data.get("thinking_effort", "medium"),
+                    max_react_steps=agent_data.get("max_react_steps", 15),
+                    enable_long_term_memory=bool(agent_data.get("enable_long_term_memory", 0))
+                )
+                result.append(agent)
 
             return result
 
@@ -252,25 +263,15 @@ class AgentService:
             await db.disconnect()
 
     async def update(self, agent_id: str, update_data: AgentUpdate) -> Optional[AgentResponse]:
-        """Update agent
-
-        Args:
-            agent_id: Agent ID
-            update_data: Update data
-
-        Returns:
-            Updated agent or None
-        """
+        """Update agent"""
         db = DatabaseConnection(settings.DATABASE_URL)
         await db.connect()
 
         try:
-            # Get current agent
             current = await self.get(agent_id)
             if not current:
                 return None
 
-            # Build update query
             updates = []
             params = []
 
@@ -322,6 +323,10 @@ class AgentService:
                 updates.append("max_react_steps = ?")
                 params.append(update_data.max_react_steps)
 
+            if hasattr(update_data, "enable_long_term_memory") and update_data.enable_long_term_memory is not None:
+                updates.append("enable_long_term_memory = ?")
+                params.append(1 if update_data.enable_long_term_memory else 0)
+
             if updates:
                 updates.append("updated_at = ?")
                 params.append(datetime.utcnow().isoformat())
@@ -330,26 +335,17 @@ class AgentService:
                 query = f"UPDATE agents SET {', '.join(updates)} WHERE id = ?"
                 await db.execute(query, tuple(params))
 
-            # Update MCP servers if provided
             if update_data.mcp_servers is not None:
-                # Remove old associations
                 await db.execute("DELETE FROM agent_mcp_servers WHERE agent_id = ?", (agent_id,))
-
-                # Add new associations
                 for server_id in update_data.mcp_servers:
                     await db.execute("""
                     INSERT INTO agent_mcp_servers (id, agent_id, server_id, enabled)
                     VALUES (?, ?, ?, ?)
                     """, (str(uuid.uuid4()), agent_id, server_id, 1))
 
-            # Update tools if provided
             if update_data.tools is not None:
-                # Remove old tool configs
                 await db.execute("DELETE FROM agent_tools WHERE agent_id = ?", (agent_id,))
-
-                # Add new tool configs
                 for tool_config in update_data.tools:
-                    # Handle both string tool names and dict configs
                     if isinstance(tool_config, str):
                         tool_name = tool_config
                         permission = "optional"
@@ -365,17 +361,13 @@ class AgentService:
                         VALUES (?, ?, ?, ?, ?)
                         """, (str(uuid.uuid4()), agent_id, tool_name, permission, description))
 
-            # Update skills if provided
             if hasattr(update_data, "skills") and update_data.skills is not None:
                 from app.database.skill_repository import SkillRepository
                 from app.models.skill import AgentSkillLink
 
                 skill_repo = SkillRepository(db)
-
-                # Remove old skill associations
                 await db.execute("DELETE FROM agent_skills WHERE agent_id = ?", (agent_id,))
 
-                # Add new skill associations
                 for skill_name in update_data.skills:
                     skill = await skill_repo.get_skill_by_name(skill_name)
                     if skill:
@@ -389,49 +381,78 @@ class AgentService:
 
             await db.commit()
 
-            # Get updated agent and sync to registry
-            agent = await self.get(agent_id)
-            if agent and hasattr(update_data, "skills") and update_data.skills is not None:
-                await self._sync_agent_skills_to_registry(agent_id, update_data.skills)
-
-            return agent
-
+        except Exception:
+            await db.rollback()
+            raise
         finally:
             await db.disconnect()
 
+        # Post-commit: get updated agent and sync
+        agent = await self.get(agent_id)
+        if agent and hasattr(update_data, "skills") and update_data.skills is not None:
+            await self._sync_agent_skills_to_registry(agent_id, update_data.skills)
+
+        if agent:
+            from app.services.agent_registry import agent_registry
+            if agent.enabled:
+                await agent_registry.register_existing_agent(agent)
+            else:
+                agent_registry.unregister(agent_id)
+
+        return agent
+
     async def delete(self, agent_id: str) -> bool:
-        """Delete agent
-
-        Args:
-            agent_id: Agent ID
-
-        Returns:
-            True if deleted
-        """
+        """Delete agent"""
         db = DatabaseConnection(settings.DATABASE_URL)
         await db.connect()
 
         try:
+            # Delete agent memories from SQLite
+            await db.execute("DELETE FROM agent_memories WHERE agent_id = ?", (agent_id,))
+            # Delete agent
             await db.execute("DELETE FROM agents WHERE id = ?", (agent_id,))
             await db.commit()
+
+            from app.services.agent_registry import agent_registry
+            agent_registry.unregister(agent_id)
+
+            # Delete agent memories from ChromaDB
+            try:
+                from app.services.vector_service import VectorService
+                vector_service = VectorService()
+                if vector_service.is_available():
+                    try:
+                        collection = vector_service.get_or_create_collection(agent_id)
+                        vector_service.client.delete_collection(f"agent_{agent_id}")
+                        logger.info(f"Deleted ChromaDB collection for agent {agent_id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to delete ChromaDB collection for agent {agent_id}: {e}")
+            except Exception:
+                pass
+
+            # Invalidate memory profile cache
+            try:
+                from app.services.agent_memory_service import agent_memory_service
+                agent_memory_service._profile_cache.pop(agent_id, None)
+            except Exception:
+                pass
+
             return True
 
+        except Exception:
+            await db.rollback()
+            raise
         finally:
             await db.disconnect()
 
     async def increment_usage(self, agent_id: str):
-        """Increment agent usage count
-
-        Args:
-            agent_id: Agent ID
-        """
+        """Increment agent usage count"""
         db = DatabaseConnection(settings.DATABASE_URL)
         await db.connect()
 
         try:
             await db.execute("UPDATE agents SET usage_count = usage_count + 1 WHERE id = ?", (agent_id,))
             await db.commit()
-
         finally:
             await db.disconnect()
 
@@ -440,26 +461,14 @@ class AgentService:
         message: str,
         conversation_history: Optional[List[Dict[str, Any]]] = None
     ) -> Optional[AgentResponse]:
-        """Select the best agent for the current task
-
-        Args:
-            message: User message
-            conversation_history: Conversation history
-
-        Returns:
-            Best agent or None
-        """
-        # For now, return the highest priority enabled agent
-        # This can be enhanced with LLM-based agent selection
+        """Select the best agent for the current task"""
         agents = await self.list(enabled_only=True)
 
         if not agents:
             return None
 
-        # Return highest priority agent
         return agents[0]
 
 
 # Global agent service instance
 agent_service = AgentService()
-

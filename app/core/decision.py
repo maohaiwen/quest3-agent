@@ -249,7 +249,7 @@ class ToolDecisionEngine:
                 # Try to find { and }
                 json_start = response.find("{")
                 json_end = response.rfind("}")
-                if json_start != -1 or json_end == -1:
+                if json_start == -1 or json_end == -1:
                     raise ValueError("No JSON found in response")
                 json_str = response[json_start:json_end + 1]
 
@@ -288,7 +288,7 @@ class ToolDecisionEngine:
                 )
                 steps.append(step)
 
-            return ExecutionPlan(
+            plan = ExecutionPlan(
                 plan_id=str(uuid.uuid4()),
                 complexity=complexity,
                 strategy=strategy,
@@ -296,10 +296,17 @@ class ToolDecisionEngine:
                 steps=steps
             )
 
+            # Validate: if LLM returned tool strategy but no steps, it's a bad plan
+            if strategy in [ExecutionStrategy.SINGLE, ExecutionStrategy.CHAIN,
+                          ExecutionStrategy.PARALLEL, ExecutionStrategy.MIXED] and not steps:
+                logger.warning(f"LLM returned strategy={strategy} but no steps, falling back to keyword analysis")
+                return self._create_keyword_plan(user_message)
+
+            return plan
+
         except Exception as e:
-            logger.error(f"Error parsing LLM response: {e}")
-            # Fallback to simple plan
-            return self._create_simple_plan(user_message)
+            logger.error(f"Error parsing LLM response: {e}, falling back to keyword analysis")
+            return self._create_keyword_plan(user_message)
 
     def _create_simple_plan(self, user_message: str) -> ExecutionPlan:
         """Create simple execution plan (fallback)
@@ -317,6 +324,89 @@ class ToolDecisionEngine:
             description=f"处理请求: {user_message[:50]}",
             steps=[]
         )
+
+    def _create_keyword_plan(self, user_message: str) -> ExecutionPlan:
+        """Create execution plan based on keyword analysis when LLM decision fails.
+
+        Uses keyword matching to detect search needs and generates
+        multiple focused search steps for complex queries.
+
+        Args:
+            user_message: User message
+
+        Returns:
+            Execution plan based on keyword analysis
+        """
+        search_keywords = [
+            '搜索', '查找', '查询', '最新', '新闻', '天气',
+            '推荐', '排名', '评价', '价格', '哪里', '哪家', '酒店',
+            '餐厅', '景点', '旅游', '攻略', '路线', '机票', '地图',
+            '汇率', '股票', '比赛', '赛程', '比分', '实时', '当前',
+            '今天', '明天', '本周', '本月'
+        ]
+
+        needs_search = any(kw in user_message for kw in search_keywords)
+
+        if needs_search:
+            # Detect sub-topics that need separate searches
+            steps = []
+            sub_topics = []
+
+            # Travel-related: search for attractions, food, hotels separately
+            travel_kw = ['旅游', '路线', '攻略', '行程', '景点']
+            food_kw = ['好吃', '美食', '餐厅', '小吃', '饭店']
+            hotel_kw = ['酒店', '住宿', '民宿', '住哪']
+            has_travel = any(kw in user_message for kw in travel_kw)
+            has_food = any(kw in user_message for kw in food_kw)
+            has_hotel = any(kw in user_message for kw in hotel_kw)
+
+            if has_travel:
+                sub_topics.append('旅游攻略 景点推荐')
+            if has_food:
+                sub_topics.append('美食推荐 餐厅')
+            if has_hotel:
+                sub_topics.append('酒店推荐 住宿')
+
+            if len(sub_topics) >= 2:
+                # Multi-step chain for complex queries
+                for i, topic in enumerate(sub_topics):
+                    steps.append(ExecutionStep(
+                        step_id=f"step_{i+1}",
+                        tool_name="web_search",
+                        arguments={"query": f"{user_message[:30]} {topic}"},
+                        depends_on=[f"step_{i}"] if i > 0 else [],
+                        parallel=False,
+                        retry_on_failure=True,
+                        max_retries=3
+                    ))
+                return ExecutionPlan(
+                    plan_id=str(uuid.uuid4()),
+                    complexity=ComplexityLevel.MEDIUM,
+                    strategy=ExecutionStrategy.CHAIN,
+                    description=f"分步搜索: {user_message[:50]}",
+                    steps=steps
+                )
+            else:
+                # Single search
+                steps.append(ExecutionStep(
+                    step_id="step_1",
+                    tool_name="web_search",
+                    arguments={"query": user_message},
+                    depends_on=[],
+                    parallel=False,
+                    retry_on_failure=True,
+                    max_retries=3
+                ))
+                return ExecutionPlan(
+                    plan_id=str(uuid.uuid4()),
+                    complexity=ComplexityLevel.SIMPLE,
+                    strategy=ExecutionStrategy.SINGLE,
+                    description=f"搜索: {user_message[:50]}",
+                    steps=steps
+                )
+
+        # No tools needed
+        return self._create_simple_plan(user_message)
 
 
 # Global decision engine instance

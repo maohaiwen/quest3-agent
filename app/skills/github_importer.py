@@ -300,7 +300,7 @@ class GitHubSkillImporter:
                     try:
                         ref.ref = branch
                         return await self._download_zip(ref, target_dir)
-                    except:
+                    except Exception:
                         continue
             raise RuntimeError(f"Failed to download zip: {e}")
         except httpx.ConnectError as e:

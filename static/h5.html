@@ -1,0 +1,1501 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Quest3 Agent</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        :root {
+            --primary: #667eea;
+            --primary-light: rgba(102,126,234,0.12);
+            --primary-dark: #5a6fd6;
+            --bg: #f5f6fa;
+            --card-bg: #fff;
+            --text: #1a1a2e;
+            --text-secondary: #6b7280;
+            --text-muted: #9ca3af;
+            --border: #e5e7eb;
+            --user-bubble: #667eea;
+            --user-text: #fff;
+            --ai-bubble: #fff;
+            --ai-text: #1a1a2e;
+            --shadow: 0 1px 3px rgba(0,0,0,0.08);
+            --shadow-lg: 0 4px 16px rgba(0,0,0,0.12);
+            --radius: 16px;
+            --radius-sm: 10px;
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            height: 100dvh;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ═══════════════════════════════════════
+           View Container
+           ═══════════════════════════════════════ */
+        .view { position: absolute; inset: 0; transition: transform 0.3s ease, opacity 0.3s ease; }
+        .view.hidden-left { transform: translateX(-100%); opacity: 0; pointer-events: none; }
+        .view.hidden-right { transform: translateX(100%); opacity: 0; pointer-events: none; }
+        .view.active { transform: translateX(0); opacity: 1; }
+
+        /* ═══════════════════════════════════════
+           Agent Selection View
+           ═══════════════════════════════════════ */
+        .agent-view {
+            display: flex;
+            flex-direction: column;
+            background: var(--bg);
+        }
+
+        .agent-header {
+            padding: 20px 16px 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+        }
+
+        .agent-header h1 { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+        .agent-header p { font-size: 13px; opacity: 0.8; }
+
+        .agent-search {
+            margin: 14px 0 16px;
+            position: relative;
+        }
+
+        .agent-search input {
+            width: 100%;
+            padding: 12px 16px 12px 40px;
+            border: none;
+            border-radius: 24px;
+            font-size: 15px;
+            background: rgba(255,255,255,0.25);
+            color: #fff;
+            outline: none;
+            backdrop-filter: blur(4px);
+        }
+
+        .agent-search input::placeholder { color: rgba(255,255,255,0.6); }
+
+        .agent-search::before {
+            content: '\1F50D';
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 15px;
+        }
+
+        .agent-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .agent-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .agent-card {
+            background: var(--card-bg);
+            border-radius: var(--radius-sm);
+            padding: 16px 14px;
+            box-shadow: var(--shadow);
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s;
+            border: 2px solid transparent;
+        }
+
+        .agent-card:active { transform: scale(0.97); }
+        .agent-card.selected { border-color: var(--primary); background: var(--primary-light); }
+
+        .agent-card-icon { font-size: 28px; margin-bottom: 8px; }
+        .agent-card-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .agent-card-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+        .agent-card-tags { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+
+        .tag {
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 20px;
+            font-weight: 500;
+        }
+
+        .tag-type { background: #e8f0fe; color: #1a73e8; }
+        .tag-plan { background: #fce8e6; color: #d93025; }
+        .tag-react { background: #e6f4ea; color: #1e8e3e; }
+        .tag-cot { background: #f3e8fd; color: #8430ce; }
+        .tag-direct { background: #fff3e0; color: #e37400; }
+
+        .agent-empty {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+        .agent-empty-icon { font-size: 48px; margin-bottom: 12px; }
+        .agent-empty h3 { font-size: 16px; margin-bottom: 4px; color: var(--text-secondary); }
+        .agent-empty p { font-size: 13px; }
+
+        /* ═══════════════════════════════════════
+           Chat View
+           ═══════════════════════════════════════ */
+        .chat-view {
+            display: flex;
+            flex-direction: column;
+            background: var(--bg);
+        }
+
+        .chat-header {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            background: var(--card-bg);
+            border-bottom: 1px solid var(--border);
+            gap: 12px;
+            flex-shrink: 0;
+        }
+
+        .chat-header-back {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            background: none;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+            color: var(--text-secondary);
+        }
+
+        .chat-header-back:active { background: var(--primary-light); }
+
+        .chat-header-info { flex: 1; min-width: 0; }
+        .chat-header-name { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .chat-header-mode { font-size: 12px; color: var(--text-muted); }
+
+        .chat-header-menu {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            background: none;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+            color: var(--text-secondary);
+        }
+
+        .chat-header-menu:active { background: var(--primary-light); }
+
+        .connection-dot {
+            width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px;
+        }
+        .connection-dot.on { background: #4caf50; }
+        .connection-dot.off { background: #dc3545; }
+
+        /* Messages Area */
+        .messages-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 16px 16px;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .msg { margin-bottom: 12px; display: flex; flex-direction: column; }
+        .msg-user { align-items: flex-end; }
+        .msg-ai { align-items: flex-start; max-width: 85%; }
+
+        .msg-bubble {
+            max-width: 100%;
+            padding: 10px 14px;
+            border-radius: var(--radius);
+            font-size: 15px;
+            line-height: 1.6;
+            word-break: break-word;
+        }
+
+        .msg-user .msg-bubble {
+            background: var(--user-bubble);
+            color: var(--user-text);
+            border-bottom-right-radius: 4px;
+        }
+
+        .msg-ai .msg-bubble {
+            background: var(--ai-bubble);
+            color: var(--ai-text);
+            border-bottom-left-radius: 4px;
+            box-shadow: var(--shadow);
+        }
+
+        .msg-time { font-size: 11px; color: var(--text-muted); margin-top: 4px; padding: 0 4px; }
+
+        /* Markdown in AI bubble */
+        .msg-ai .msg-bubble h1, .msg-ai .msg-bubble h2, .msg-ai .msg-bubble h3 {
+            margin: 10px 0 6px; font-weight: 700;
+        }
+        .msg-ai .msg-bubble h1 { font-size: 1.3em; }
+        .msg-ai .msg-bubble h2 { font-size: 1.15em; }
+        .msg-ai .msg-bubble h3 { font-size: 1.05em; }
+        .msg-ai .msg-bubble p { margin: 6px 0; }
+        .msg-ai .msg-bubble ul, .msg-ai .msg-bubble ol { margin: 6px 0; padding-left: 22px; }
+        .msg-ai .msg-bubble li { margin: 3px 0; }
+        .msg-ai .msg-bubble code {
+            background: #f0f1f5; padding: 1px 5px; border-radius: 4px; font-size: 0.88em;
+            font-family: 'SF Mono', 'Consolas', monospace;
+        }
+        .msg-ai .msg-bubble pre {
+            background: #2d2d2d; color: #f8f8f2; padding: 12px; border-radius: 8px;
+            overflow-x: auto; margin: 8px 0; font-size: 13px;
+        }
+        .msg-ai .msg-bubble pre code { background: none; padding: 0; color: inherit; }
+        .msg-ai .msg-bubble blockquote {
+            border-left: 3px solid var(--primary); margin: 8px 0; padding: 4px 12px;
+            color: var(--text-secondary); background: #f8f9fb; border-radius: 0 6px 6px 0;
+        }
+        .msg-ai .msg-bubble table { border-collapse: collapse; margin: 8px 0; width: 100%; font-size: 13px; }
+        .msg-ai .msg-bubble th, .msg-ai .msg-bubble td { border: 1px solid var(--border); padding: 6px 8px; }
+        .msg-ai .msg-bubble th { background: #f5f5f5; font-weight: 600; }
+        .msg-ai .msg-bubble a { color: var(--primary); }
+
+        /* ═══════════════════════════════════════
+           Thinking Card
+           ═══════════════════════════════════════ */
+        .thinking-card {
+            background: #f8f9fb;
+            border-left: 3px solid var(--primary);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            max-width: 85%;
+            overflow: hidden;
+        }
+
+        .thinking-card-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            cursor: pointer;
+            user-select: none;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .thinking-card-header:active { background: rgba(102,126,234,0.06); }
+
+        .thinking-card-icon { font-size: 14px; }
+        .thinking-card-title { flex: 1; }
+        .thinking-card-count { font-size: 11px; color: var(--primary); font-weight: 600; margin-right: 4px; }
+        .thinking-card-status { font-size: 11px; color: var(--primary); }
+        .thinking-card-status.active { animation: pulse 1.5s infinite; }
+        .thinking-card-toggle { font-size: 10px; color: var(--text-muted); transition: transform 0.2s; }
+        .thinking-card.collapsed .thinking-card-toggle { transform: rotate(-90deg); }
+
+        .thinking-card-body { padding: 0 12px 8px; }
+        .thinking-card.collapsed .thinking-card-body { display: none; }
+
+        .thinking-content {
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--text-secondary);
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 300px;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            padding: 8px 0;
+        }
+
+        .thinking-step-list { margin-top: 8px; }
+
+        .thinking-step-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 0;
+            font-size: 12px;
+        }
+
+        .thinking-step-row-icon { font-size: 12px; flex-shrink: 0; }
+        .thinking-step-row-text { flex: 1; color: var(--text-secondary); }
+        .thinking-step-row-status { font-size: 10px; flex-shrink: 0; }
+        .thinking-step-row-status.running { color: #e37400; }
+        .thinking-step-row-status.done { color: #1e8e3e; }
+
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        /* Planning card */
+        .planning-card {
+            background: linear-gradient(135deg, #f8f9fb 0%, #eef0f5 100%);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            max-width: 85%;
+            overflow: hidden;
+        }
+
+        .planning-card-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            cursor: pointer;
+            user-select: none;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .planning-card-header:active { background: rgba(0,0,0,0.03); }
+
+        .planning-card-badges { display: flex; gap: 6px; margin-left: auto; }
+
+        .planning-badge {
+            font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 500;
+        }
+        .planning-badge.complexity { background: #e3f2fd; color: #1565c0; }
+        .planning-badge.strategy { background: #f3e5f5; color: #7b1fa2; }
+
+        .planning-card-body { padding: 0 12px 8px; }
+        .planning-card.collapsed .planning-card-body { display: none; }
+        .planning-card.collapsed .planning-card-toggle { transform: rotate(-90deg); }
+        .planning-card-toggle { font-size: 10px; color: var(--text-muted); transition: transform 0.2s; margin-left: 4px; }
+
+        .planning-step-item {
+            display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px;
+        }
+        .planning-step-num { font-weight: 600; color: var(--primary); min-width: 20px; }
+        .planning-step-tool { flex: 1; }
+        .planning-step-status { font-size: 11px; }
+        .planning-step-status.running { color: #e37400; }
+        .planning-step-status.complete { color: #1e8e3e; }
+        .planning-step-status.error { color: #d93025; }
+
+        /* ═══════════════════════════════════════
+           Input Area
+           ═══════════════════════════════════════ */
+        .input-area {
+            padding: 8px 12px 8px;
+            padding-bottom: calc(8px + var(--safe-bottom));
+            background: var(--card-bg);
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
+            flex-shrink: 0;
+        }
+
+        .input-area textarea {
+            flex: 1;
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            font-size: 15px;
+            resize: none;
+            outline: none;
+            max-height: 100px;
+            line-height: 1.4;
+            font-family: inherit;
+            background: var(--bg);
+        }
+
+        .input-area textarea:focus { border-color: var(--primary); }
+
+        .input-area textarea:disabled {
+            background: #eee;
+            color: #999;
+        }
+
+        .send-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: none;
+            background: var(--primary);
+            color: #fff;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: background 0.15s;
+        }
+
+        .send-btn:disabled { background: #ccc; cursor: not-allowed; }
+        .send-btn:active:not(:disabled) { background: var(--primary-dark); }
+
+        /* ═══════════════════════════════════════
+           Session Drawer
+           ═══════════════════════════════════════ */
+        .drawer-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+        .drawer-overlay.open { opacity: 1; pointer-events: auto; }
+
+        .drawer {
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 75%;
+            max-width: 320px;
+            background: var(--card-bg);
+            z-index: 101;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+        .drawer.open { transform: translateX(0); }
+
+        .drawer-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .drawer-header h2 { font-size: 16px; font-weight: 600; }
+
+        .drawer-header button {
+            padding: 6px 14px;
+            border-radius: 8px;
+            border: none;
+            background: var(--primary);
+            color: #fff;
+            font-size: 13px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .drawer-header button:active { background: var(--primary-dark); }
+
+        .drawer-list {
+            flex: 1;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .drawer-item {
+            padding: 14px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            cursor: pointer;
+            transition: background 0.15s;
+            position: relative;
+        }
+
+        .drawer-item:active { background: #f5f6fa; }
+        .drawer-item.active { background: var(--primary-light); }
+
+        .drawer-item-title {
+            font-size: 14px;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 4px;
+        }
+
+        .drawer-item-meta {
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            gap: 10px;
+        }
+
+        .drawer-item .delete-btn {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            border: none;
+            background: #fee;
+            color: #dc3545;
+            font-size: 14px;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .drawer-item:hover .delete-btn,
+        .drawer-item:active .delete-btn { display: flex; }
+
+        .drawer-empty {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        /* ═══════════════════════════════════════
+           Toast
+           ═══════════════════════════════════════ */
+        .toast-container {
+            position: fixed;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: 90%;
+            max-width: 360px;
+        }
+
+        .toast {
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            animation: toastIn 0.25s ease;
+            box-shadow: var(--shadow-lg);
+            text-align: center;
+        }
+
+        .toast-error { background: #fee; color: #dc3545; }
+        .toast-success { background: #d4edda; color: #155724; }
+        .toast-warning { background: #fff3cd; color: #856404; }
+
+        @keyframes toastIn {
+            from { transform: translateY(-20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        /* ═══════════════════════════════════════
+           Loading / Empty
+           ═══════════════════════════════════════ */
+        .chat-empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-muted);
+            padding: 20px;
+        }
+        .chat-empty-icon { font-size: 40px; margin-bottom: 12px; }
+        .chat-empty h3 { font-size: 16px; margin-bottom: 4px; color: var(--text-secondary); }
+        .chat-empty p { font-size: 13px; }
+    </style>
+</head>
+<body>
+    <!-- Agent Selection View -->
+    <div id="agentView" class="view active agent-view">
+        <div class="agent-header">
+            <h1>Quest3</h1>
+            <p>选择一个 Agent 开始对话</p>
+            <div class="agent-search">
+                <input type="text" id="agentSearch" placeholder="搜索 Agent..." autocomplete="off">
+            </div>
+        </div>
+        <div class="agent-list" id="agentList">
+            <div class="agent-empty">
+                <div class="agent-empty-icon">&#x1F916;</div>
+                <h3>加载中...</h3>
+                <p>正在获取 Agent 列表</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat View -->
+    <div id="chatView" class="view hidden-right chat-view">
+        <div class="chat-header">
+            <button class="chat-header-back" onclick="H5.goAgentList()" title="返回">&#x2190;</button>
+            <div class="chat-header-info">
+                <div class="chat-header-name" id="chatAgentName">Agent</div>
+                <div class="chat-header-mode" id="chatAgentMode">
+                    <span class="connection-dot off" id="connDot"></span>
+                    <span id="connText">未连接</span>
+                </div>
+            </div>
+            <button class="chat-header-menu" onclick="H5.openDrawer()" title="会话">&#x2630;</button>
+        </div>
+        <div class="messages-area" id="messagesArea">
+            <div class="chat-empty" id="chatEmpty">
+                <div class="chat-empty-icon">&#x1F4AC;</div>
+                <h3>开始对话</h3>
+                <p>输入消息与 Agent 交流</p>
+            </div>
+        </div>
+        <div class="input-area">
+            <textarea id="msgInput" placeholder="输入消息..." rows="1" disabled></textarea>
+            <button class="send-btn" id="sendBtn" disabled onclick="H5.sendMessage()">&#x2191;</button>
+        </div>
+    </div>
+
+    <!-- Session Drawer -->
+    <div class="drawer-overlay" id="drawerOverlay" onclick="H5.closeDrawer()"></div>
+    <div class="drawer" id="drawer">
+        <div class="drawer-header">
+            <h2>历史会话</h2>
+            <button onclick="H5.createSession()">+ 新建</button>
+        </div>
+        <div class="drawer-list" id="drawerList"></div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+    const H5 = {
+        agents: [],
+        sessions: [],
+        currentAgent: null,
+        currentSessionId: null,
+        ws: null,
+        isConnected: false,
+        isResponding: false,
+        aiContent: '',
+        aiMsgEl: null,
+        thinkingCard: null,
+        thinkingSteps: [],
+        planningCard: null,
+        planningSteps: {},
+        _intentionalClose: false,
+
+        // Thinking card internals
+        _thinkingBuffer: '',
+        _stepType: 'thinking',
+        _renderThrottle: null,
+
+        // ── Init ──────────────────────────
+        async init() {
+            await this.loadAgents();
+            this.bindInputEvents();
+        },
+
+        // ── API ───────────────────────────
+        async api(method, url, body) {
+            const opts = { method, headers: { 'Content-Type': 'application/json' } };
+            if (body) opts.body = JSON.stringify(body);
+            const res = await fetch(url, opts);
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: res.statusText }));
+                throw new Error(err.detail || res.statusText);
+            }
+            return res.json();
+        },
+
+        // ── Toast ─────────────────────────
+        toast(msg, type) {
+            type = type || 'error';
+            const c = document.getElementById('toastContainer');
+            const el = document.createElement('div');
+            el.className = 'toast toast-' + type;
+            el.textContent = msg;
+            c.appendChild(el);
+            setTimeout(function() { el.remove(); }, 3000);
+        },
+
+        // ── View Switching ────────────────
+        showChatView() {
+            document.getElementById('agentView').className = 'view hidden-left agent-view';
+            document.getElementById('chatView').className = 'view active chat-view';
+        },
+
+        goAgentList() {
+            this.disconnectWs();
+            document.getElementById('chatView').className = 'view hidden-right chat-view';
+            document.getElementById('agentView').className = 'view active agent-view';
+        },
+
+        // ── Agent List ────────────────────
+        async loadAgents() {
+            try {
+                const data = await this.api('GET', '/api/agents?enabled_only=true');
+                this.agents = data.agents || [];
+                this.renderAgents();
+            } catch (e) {
+                document.getElementById('agentList').innerHTML =
+                    '<div class="agent-empty"><div class="agent-empty-icon">&#x26A0;&#xFE0F;</div><h3>加载失败</h3><p>' + this.escHtml(e.message) + '</p></div>';
+            }
+        },
+
+        renderAgents(filter) {
+            filter = filter || '';
+            var list = this.agents.filter(function(a) {
+                if (!filter) return true;
+                var q = filter.toLowerCase();
+                return a.name.toLowerCase().indexOf(q) >= 0 || (a.description || '').toLowerCase().indexOf(q) >= 0;
+            });
+
+            if (!list.length) {
+                document.getElementById('agentList').innerHTML =
+                    '<div class="agent-empty"><div class="agent-empty-icon">&#x1F50D;</div><h3>没有找到 Agent</h3><p>试试其他关键词</p></div>';
+                return;
+            }
+
+            var icons = { chat: '\uD83D\uDCAC', coder: '\uD83D\uDCBB', researcher: '\uD83D\uDD2C', custom: '\uD83E\uDD16' };
+            var modeTag = { plan: 'tag-plan', react: 'tag-react', react_cot: 'tag-cot', direct: 'tag-direct' };
+            var modeLabel = { plan: 'Plan', react: 'ReAct', react_cot: 'COT', direct: 'Direct' };
+            var self = this;
+
+            document.getElementById('agentList').innerHTML = '<div class="agent-grid">' +
+                list.map(function(a) {
+                    return '<div class="agent-card" onclick="H5.selectAgent(\'' + a.id + '\')">' +
+                        '<div class="agent-card-icon">' + (icons[a.type] || '\uD83E\uDD16') + '</div>' +
+                        '<div class="agent-card-name">' + self.escHtml(a.name) + '</div>' +
+                        '<div class="agent-card-desc">' + self.escHtml(a.description || '') + '</div>' +
+                        '<div class="agent-card-tags">' +
+                            '<span class="tag tag-type">' + a.type + '</span>' +
+                            '<span class="tag ' + (modeTag[a.execution_mode] || 'tag-direct') + '">' + (modeLabel[a.execution_mode] || a.execution_mode) + '</span>' +
+                        '</div>' +
+                    '</div>';
+                }).join('') +
+            '</div>';
+        },
+
+        async selectAgent(agentId) {
+            var agent = this.agents.find(function(a) { return a.id === agentId; });
+            if (!agent) return;
+            this.currentAgent = agent;
+
+            var modeIcons = { plan: '\uD83D\uDCCB', react: '\uD83D\uDD04', react_cot: '\uD83E\uDDE0', direct: '\u26A1' };
+            var modeNames = { plan: 'Plan', react: 'ReAct', react_cot: 'COT', direct: 'Direct' };
+            document.getElementById('chatAgentName').textContent = agent.name;
+            document.getElementById('chatAgentMode').innerHTML =
+                '<span class="connection-dot off" id="connDot"></span><span id="connText">' +
+                (modeIcons[agent.execution_mode] || '') + ' ' + (modeNames[agent.execution_mode] || agent.execution_mode) + '</span>';
+
+            await this.loadSessions();
+
+            if (this.sessions.length > 0) {
+                this.connectSession(this.sessions[0].id);
+            } else {
+                await this.createSession();
+            }
+
+            this.showChatView();
+        },
+
+        // ── Sessions ──────────────────────
+        async loadSessions() {
+            if (!this.currentAgent) return;
+            try {
+                var data = await this.api('GET', '/api/sessions/list/by-agent/' + this.currentAgent.id);
+                this.sessions = (data.sessions || []).sort(function(a, b) { return new Date(b.created_at) - new Date(a.created_at); });
+            } catch (e) {
+                this.sessions = [];
+            }
+            this.renderDrawer();
+        },
+
+        renderDrawer() {
+            var list = document.getElementById('drawerList');
+            if (!this.sessions.length) {
+                list.innerHTML = '<div class="drawer-empty">暂无会话</div>';
+                return;
+            }
+            var self = this;
+            list.innerHTML = this.sessions.map(function(s) {
+                return '<div class="drawer-item ' + (s.id === self.currentSessionId ? 'active' : '') + '" onclick="H5.connectSession(\'' + s.id + '\')">' +
+                    '<div class="drawer-item-title">' + self.escHtml(s.title || '新会话') + '</div>' +
+                    '<div class="drawer-item-meta">' +
+                        '<span>' + self.timeAgo(s.created_at) + '</span>' +
+                        '<span>' + (s.message_count || 0) + ' 条消息</span>' +
+                    '</div>' +
+                    '<button class="delete-btn" onclick="event.stopPropagation(); H5.deleteSession(\'' + s.id + '\')">&#x2715;</button>' +
+                '</div>';
+            }).join('');
+        },
+
+        openDrawer() {
+            document.getElementById('drawerOverlay').classList.add('open');
+            document.getElementById('drawer').classList.add('open');
+            this.loadSessions();
+        },
+
+        closeDrawer() {
+            document.getElementById('drawerOverlay').classList.remove('open');
+            document.getElementById('drawer').classList.remove('open');
+        },
+
+        async createSession() {
+            if (!this.currentAgent) return;
+            try {
+                var data = await this.api('POST', '/api/sessions/create', {
+                    title: '会话 ' + new Date().toLocaleString('zh-CN'),
+                    agent_id: this.currentAgent.id
+                });
+                if (data.session_id) {
+                    this.toast('会话已创建', 'success');
+                    await this.loadSessions();
+                    this.connectSession(data.session_id);
+                    this.closeDrawer();
+                }
+            } catch (e) {
+                this.toast('创建会话失败: ' + e.message);
+            }
+        },
+
+        async deleteSession(sessionId) {
+            if (!confirm('确定删除该会话？')) return;
+            try {
+                await this.api('DELETE', '/api/sessions/' + sessionId);
+                if (sessionId === this.currentSessionId) {
+                    this.currentSessionId = null;
+                    this.disconnectWs();
+                    this.clearChat();
+                }
+                await this.loadSessions();
+                this.toast('已删除', 'success');
+            } catch (e) {
+                this.toast('删除失败: ' + e.message);
+            }
+        },
+
+        async connectSession(sessionId) {
+            this.currentSessionId = sessionId;
+            this.closeDrawer();
+            this.renderDrawer();
+            this.clearChat();
+            this.connectWs(sessionId, this.currentAgent.id);
+        },
+
+        // ── WebSocket ─────────────────────
+        connectWs(sessionId, agentId) {
+            this.disconnectWs();
+            this._intentionalClose = false;
+
+            var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            var url = proto + '//' + location.host + '/api/chat/stream';
+            this.ws = new WebSocket(url);
+
+            var self = this;
+
+            this.ws.onopen = function() {
+                self.isConnected = true;
+                self._intentionalClose = false;
+                self.updateConnStatus(true);
+                if (!self.isResponding) self.setInputEnabled(true);
+                self.ws.send(JSON.stringify({ session_id: sessionId, agent_id: agentId }));
+            };
+
+            this.ws.onmessage = function(evt) {
+                try {
+                    var data = JSON.parse(evt.data);
+                    self.handleWsEvent(data);
+                } catch (e) {
+                    console.error('WS parse error:', e);
+                }
+            };
+
+            this.ws.onclose = function() {
+                self.isConnected = false;
+                self.updateConnStatus(false);
+                if (self.isResponding) self.finalizeAi();
+            };
+
+            this.ws.onerror = function() {
+                self.toast('连接错误');
+            };
+        },
+
+        disconnectWs() {
+            this._intentionalClose = true;
+            if (this.ws) {
+                this.ws.onopen = null;
+                this.ws.onclose = null;
+                this.ws.onerror = null;
+                this.ws.onmessage = null;
+                this.ws.close();
+                this.ws = null;
+            }
+            this.isConnected = false;
+            this.updateConnStatus(false);
+        },
+
+        updateConnStatus(connected) {
+            var dot = document.getElementById('connDot');
+            if (dot) dot.className = 'connection-dot ' + (connected ? 'on' : 'off');
+        },
+
+        // ═══════════════════════════════════════
+        // WebSocket Event Handler
+        // ═══════════════════════════════════════
+        handleWsEvent(data) {
+            var type = data.type;
+
+            switch (type) {
+                case 'connected':
+                    this.updateConnStatus(true);
+                    if (!this.isResponding) this.setInputEnabled(true);
+                    break;
+
+                case 'history':
+                    this.renderHistory(data.messages || []);
+                    break;
+
+                case 'message':
+                    if (!this.isResponding) this.startAiResponse();
+                    this.aiContent += data.content || '';
+                    this.updateAiBubble();
+                    break;
+
+                case 'end':
+                case 'done':
+                    this.finalizeAi();
+                    break;
+
+                case 'error':
+                    if (this.isResponding) this.finalizeAi();
+                    this.toast(data.content || data.message || '未知错误');
+                    break;
+
+                // ── Execution start (plan mode) ──
+                case 'execution_start':
+                    if (!this.isResponding) this.startAiResponse();
+                    this.ensureThinkingCard();
+                    this.addThinkingStep('thinking', data.description || '正在分析任务...');
+                    break;
+
+                // ── Thinking events (all modes) ──
+                case 'thinking':
+                case 'thinking_content':
+                    if (!this.isResponding) this.startAiResponse();
+                    this.ensureThinkingCard();
+                    this.appendThinkingText(data.content || data.message || '');
+                    break;
+
+                case 'thinking_start':
+                    if (!this.isResponding) this.startAiResponse();
+                    this.ensureThinkingCard();
+                    this.addThinkingStep('thinking', data.message || data.task || '开始思考...');
+                    break;
+
+                case 'thinking_end':
+                    this.completeAllThinkingSteps();
+                    break;
+
+                case 'thinking_chunk':
+                    if (!this.isResponding) this.startAiResponse();
+                    this.ensureThinkingCard();
+                    this.appendThinkingText(data.content || '');
+                    break;
+
+                case 'thinking_complete':
+                    this.completeAllThinkingSteps();
+                    break;
+
+                case 'thinking_step':
+                    break;
+
+                case 'thinking_error':
+                    this.completeAllThinkingSteps();
+                    this.toast(data.error || '思考过程出错');
+                    break;
+
+                // ── COT events (react_cot mode) ──
+                case 'cot_step_start':
+                    if (!this.isResponding) this.startAiResponse();
+                    this.ensureThinkingCard();
+                    break;
+
+                case 'cot_phase':
+                    this.handleCotPhase(data.phase);
+                    break;
+
+                case 'cot_thinking':
+                    this.appendThinkingText(data.content || '');
+                    break;
+
+                case 'cot_action':
+                    this.addThinkingStep('tool', data.tool_name || '工具调用');
+                    break;
+
+                case 'cot_observation':
+                    this.completeCurrentStep();
+                    break;
+
+                case 'cot_complete':
+                    this.completeAllThinkingSteps();
+                    if (data.message && !data.streamed) {
+                        if (!this.isResponding) this.startAiResponse();
+                        this.aiContent = data.message;
+                        this.updateAiBubble();
+                    }
+                    break;
+
+                // ── Planning events (plan mode) ──
+                case 'planning':
+                    if (!this.isResponding) this.startAiResponse();
+                    this.completeAllThinkingSteps();
+                    this.showPlanningCard(data.plan);
+                    break;
+
+                case 'step_start':
+                    this.addPlanningStep(data.step || data);
+                    break;
+
+                case 'step_complete':
+                    this.updatePlanningStep(data.step_id, 'complete', '\u2705');
+                    break;
+
+                case 'step_error':
+                    this.updatePlanningStep(data.step_id, 'error', '\u274C');
+                    break;
+
+                // ── ReAct events ──
+                case 'complete':
+                    if (data.message) {
+                        if (!this.isResponding) this.startAiResponse();
+                        this.aiContent = data.message;
+                        this.updateAiBubble();
+                    }
+                    break;
+
+                case 'action_start':
+                    if (!this.isResponding) this.startAiResponse();
+                    this.ensureThinkingCard();
+                    var query = data.query || '';
+                    var toolName = data.tool_name || '工具';
+                    this.addThinkingStep('tool', query ? toolName + ': ' + query : toolName);
+                    break;
+
+                case 'observation':
+                    this.completeCurrentStep();
+                    break;
+
+                case 'step_progress':
+                case 'phase':
+                case 'terminated':
+                case 'incomplete':
+                    break;
+            }
+        },
+
+        // ═══════════════════════════════════════
+        // Message Rendering
+        // ═══════════════════════════════════════
+        clearChat() {
+            if (this._renderThrottle) { clearTimeout(this._renderThrottle); this._renderThrottle = null; }
+            if (this._aiRenderThrottle) { clearTimeout(this._aiRenderThrottle); this._aiRenderThrottle = null; }
+            var area = document.getElementById('messagesArea');
+            area.innerHTML = '<div class="chat-empty" id="chatEmpty"><div class="chat-empty-icon">\uD83D\uDCAC</div><h3>开始对话</h3><p>输入消息与 Agent 交流</p></div>';
+            this.aiMsgEl = null;
+            this.aiContent = '';
+            this.isResponding = false;
+            this.thinkingCard = null;
+            this.thinkingSteps = [];
+            this._thinkingBuffer = '';
+            this._stepType = 'thinking';
+            this._thinkingContentEl = null;
+            this.planningCard = null;
+            this.planningSteps = {};
+        },
+
+        renderHistory(messages) {
+            this.clearChat();
+            var empty = document.getElementById('chatEmpty');
+            if (empty) empty.remove();
+            for (var i = 0; i < messages.length; i++) {
+                var m = messages[i];
+                this.addMessageBubble(m.role === 'assistant' ? 'ai' : m.role, m.content, m.created_at);
+            }
+        },
+
+        addMessageBubble(sender, content, time) {
+            var empty = document.getElementById('chatEmpty');
+            if (empty) empty.remove();
+
+            var area = document.getElementById('messagesArea');
+            var div = document.createElement('div');
+            div.className = 'msg msg-' + sender;
+
+            var timeStr = time
+                ? new Date(time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+                : new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+
+            var renderedContent = sender === 'ai' ? this.renderMd(content) : this.escHtml(content);
+
+            div.innerHTML = '<div class="msg-bubble">' + renderedContent + '</div><div class="msg-time">' + timeStr + '</div>';
+            area.appendChild(div);
+            this.scrollToBottom();
+            return div;
+        },
+
+        startAiResponse() {
+            this.isResponding = true;
+            this.aiContent = '';
+            this.aiMsgEl = null;
+            this.setInputEnabled(false);
+        },
+
+        _aiRenderThrottle: null,
+
+        updateAiBubble() {
+            if (!this.aiMsgEl) {
+                this.aiMsgEl = this.addMessageBubble('ai', '');
+            }
+            // Throttle markdown rendering during streaming
+            if (!this._aiRenderThrottle) {
+                this._aiRenderThrottle = setTimeout(function() {
+                    H5._aiRenderThrottle = null;
+                    H5._doAiRender();
+                }, 200);
+            }
+        },
+
+        /** Render AI bubble with markdown (throttled) */
+        _doAiRender() {
+            if (!this.aiMsgEl) return;
+            var bubble = this.aiMsgEl.querySelector('.msg-bubble');
+            if (bubble) bubble.innerHTML = this.renderMd(this.aiContent);
+            this.scrollToBottom();
+        },
+
+        finalizeAi() {
+            // Flush all pending renders
+            if (this._renderThrottle) { clearTimeout(this._renderThrottle); this._renderThrottle = null; }
+            if (this._aiRenderThrottle) { clearTimeout(this._aiRenderThrottle); this._aiRenderThrottle = null; }
+            this._doThinkingRender();
+            // Final markdown render with complete content
+            if (this.aiMsgEl && this.aiContent) {
+                var bubble = this.aiMsgEl.querySelector('.msg-bubble');
+                if (bubble) bubble.innerHTML = this.renderMd(this.aiContent);
+            }
+            this.isResponding = false;
+            this.aiMsgEl = null;
+            this.aiContent = '';
+            this.thinkingCard = null;
+            this.thinkingSteps = [];
+            this._thinkingBuffer = '';
+            this._stepType = 'thinking';
+            this._thinkingContentEl = null;
+            this.planningCard = null;
+            this.setInputEnabled(true);
+        },
+
+        // ═══════════════════════════════════════
+        // Thinking Card
+        // ═══════════════════════════════════════
+
+        _thinkingContentEl: null,  // the scrollable content div
+        _thinkingAutoScroll: true, // auto-scroll thinking content
+
+        ensureThinkingCard() {
+            if (this.thinkingCard) return;
+            var area = document.getElementById('messagesArea');
+            var empty = document.getElementById('chatEmpty');
+            if (empty) empty.remove();
+
+            var card = document.createElement('div');
+            card.className = 'thinking-card';
+            card.innerHTML =
+                '<div class="thinking-card-header" onclick="this.parentElement.classList.toggle(\'collapsed\')">' +
+                    '<span class="thinking-card-icon">\uD83E\uDDE0</span>' +
+                    '<span class="thinking-card-title">深度思考</span>' +
+                    '<span class="thinking-card-count" id="tc-count">0字</span>' +
+                    '<span class="thinking-card-status active" id="tc-status">\u23F3 思考中</span>' +
+                    '<span class="thinking-card-toggle">\u25BC</span>' +
+                '</div>' +
+                '<div class="thinking-card-body">' +
+                    '<div class="thinking-content" id="tc-content"></div>' +
+                    '<div class="thinking-step-list" id="tc-steps"></div>' +
+                '</div>';
+            area.appendChild(card);
+            this.thinkingCard = card;
+            this._thinkingContentEl = document.getElementById('tc-content');
+            this.thinkingSteps = [];
+            this._thinkingBuffer = '';
+            this._stepType = 'thinking';
+            this._thinkingAutoScroll = true;
+
+            // Detect manual scroll — stop auto-scroll
+            var self = this;
+            this._thinkingContentEl.addEventListener('scroll', function() {
+                var el = self._thinkingContentEl;
+                self._thinkingAutoScroll = (el.scrollHeight - el.scrollTop - el.clientHeight < 40);
+            });
+
+            this.scrollToBottom();
+        },
+
+        /** Append text to the full thinking content area */
+        appendThinkingText(content) {
+            this.ensureThinkingCard();
+            if (!content) return;
+
+            this._thinkingBuffer += content;
+
+            // Throttle DOM updates
+            if (!this._renderThrottle) {
+                this._renderThrottle = setTimeout(function() {
+                    H5._renderThrottle = null;
+                    H5._doThinkingRender();
+                }, 150);
+            }
+        },
+
+        /** Actually update thinking content DOM */
+        _doThinkingRender() {
+            if (!this._thinkingContentEl) return;
+            this._thinkingContentEl.textContent = this._thinkingBuffer;
+            this._updateThinkingCount();
+
+            // Auto-scroll thinking content
+            if (this._thinkingAutoScroll) {
+                this._thinkingContentEl.scrollTop = this._thinkingContentEl.scrollHeight;
+            }
+            this.scrollToBottom();
+        },
+
+        /** Update the character count badge */
+        _updateThinkingCount() {
+            var el = document.getElementById('tc-count');
+            if (!el) return;
+            var len = this._thinkingBuffer.length;
+            if (len < 1000) {
+                el.textContent = len + '字';
+            } else {
+                el.textContent = (len / 1000).toFixed(1) + 'k字';
+            }
+        },
+
+        /** Add a step row (tool call summary) below the content */
+        addThinkingStep(type, text) {
+            this.ensureThinkingCard();
+
+            // Complete any previous running step
+            this._completeRunningStepRows();
+
+            var stepsEl = document.getElementById('tc-steps');
+            if (!stepsEl) return;
+
+            var icon = type === 'tool' ? '\uD83D\uDD27' : '\uD83D\uDCAD';
+            var row = document.createElement('div');
+            row.className = 'thinking-step-row';
+            row.innerHTML =
+                '<span class="thinking-step-row-icon">' + icon + '</span>' +
+                '<span class="thinking-step-row-text">' + this.escHtml(text) + '</span>' +
+                '<span class="thinking-step-row-status running" id="tcs-' + this.thinkingSteps.length + '">\u23F3</span>';
+            stepsEl.appendChild(row);
+            this.thinkingSteps.push(row);
+            this._stepType = type;
+            this._updateThinkingCount();
+            this.scrollToBottom();
+        },
+
+        /** Mark all running step rows as done */
+        _completeRunningStepRows() {
+            for (var i = 0; i < this.thinkingSteps.length; i++) {
+                var statusEl = this.thinkingSteps[i].querySelector('.thinking-step-row-status.running');
+                if (statusEl) {
+                    statusEl.textContent = '\u2705';
+                    statusEl.className = 'thinking-step-row-status done';
+                }
+            }
+        },
+
+        handleCotPhase(phase) {
+            this.ensureThinkingCard();
+            if (phase === 'thinking') {
+                this._completeRunningStepRows();
+                this._stepType = 'thinking';
+            }
+            if (phase === 'tool-call') {
+                this._completeRunningStepRows();
+                this._stepType = 'tool';
+            }
+            if (phase === 'observation') {
+                this._completeRunningStepRows();
+            }
+            if (phase === 'summarizing') {
+                this._completeRunningStepRows();
+            }
+            if (phase === 'complete') {
+                this.completeAllThinkingSteps();
+            }
+        },
+
+        completeCurrentStep() {
+            // Flush pending render
+            if (this._renderThrottle) {
+                clearTimeout(this._renderThrottle);
+                this._renderThrottle = null;
+            }
+            this._doThinkingRender();
+            this._completeRunningStepRows();
+        },
+
+        completeAllThinkingSteps() {
+            // Flush pending renders
+            if (this._renderThrottle) {
+                clearTimeout(this._renderThrottle);
+                this._renderThrottle = null;
+            }
+            this._doThinkingRender();
+            this._completeRunningStepRows();
+
+            // Update status badge
+            var statusEl = document.getElementById('tc-status');
+            if (statusEl) {
+                statusEl.textContent = '\u2705 完成';
+                statusEl.className = 'thinking-card-status';
+            }
+            // Auto-collapse when done
+            if (this.thinkingCard) this.thinkingCard.classList.add('collapsed');
+        },
+
+        // ── Planning Card ─────────────────
+        showPlanningCard(plan) {
+            var area = document.getElementById('messagesArea');
+            var empty = document.getElementById('chatEmpty');
+            if (empty) empty.remove();
+
+            var totalSteps = plan.total_steps || plan.step_count || 0;
+            var complexity = plan.complexity || '';
+            var strategy = plan.strategy || '';
+
+            var card = document.createElement('div');
+            card.className = 'planning-card';
+            card.innerHTML =
+                '<div class="planning-card-header" onclick="this.parentElement.classList.toggle(\'collapsed\')">' +
+                    '<span>\uD83D\uDCCB</span>' +
+                    '<span style="flex:1;margin-left:4px;">智能规划 (' + totalSteps + '步)</span>' +
+                    '<div class="planning-card-badges">' +
+                        (complexity ? '<span class="planning-badge complexity">' + complexity + '</span>' : '') +
+                        (strategy ? '<span class="planning-badge strategy">' + strategy + '</span>' : '') +
+                    '</div>' +
+                    '<span class="planning-card-toggle">\u25BC</span>' +
+                '</div>' +
+                '<div class="planning-card-body"></div>';
+            area.appendChild(card);
+            this.planningCard = card;
+            this.planningSteps = {};
+            this.scrollToBottom();
+        },
+
+        addPlanningStep(step) {
+            if (!this.planningCard) return;
+            var body = this.planningCard.querySelector('.planning-card-body');
+            var stepId = step.step_id || String(Object.keys(this.planningSteps).length + 1);
+
+            var div = document.createElement('div');
+            div.className = 'planning-step-item';
+            div.id = 'pstep-' + stepId;
+            var num = Object.keys(this.planningSteps).length + 1;
+            div.innerHTML =
+                '<span class="planning-step-num">' + num + '.</span>' +
+                '<span class="planning-step-tool">' + this.escHtml(step.tool_name || step.tool || '步骤') + '</span>' +
+                '<span class="planning-step-status running" id="pstep-status-' + stepId + '">\u23F3</span>';
+            body.appendChild(div);
+            this.planningSteps[stepId] = div;
+            this.scrollToBottom();
+        },
+
+        updatePlanningStep(stepId, status, icon) {
+            var el = document.getElementById('pstep-status-' + stepId);
+            if (el) {
+                el.className = 'planning-step-status ' + status;
+                el.textContent = icon;
+            }
+        },
+
+        // ── Input ─────────────────────────
+        bindInputEvents() {
+            var input = document.getElementById('msgInput');
+            var searchInput = document.getElementById('agentSearch');
+
+            input.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    H5.sendMessage();
+                }
+            });
+
+            input.addEventListener('input', function() {
+                input.style.height = 'auto';
+                input.style.height = Math.min(input.scrollHeight, 100) + 'px';
+            });
+
+            searchInput.addEventListener('input', function(e) {
+                H5.renderAgents(e.target.value);
+            });
+        },
+
+        setInputEnabled(enabled) {
+            var input = document.getElementById('msgInput');
+            var btn = document.getElementById('sendBtn');
+            input.disabled = !enabled;
+            btn.disabled = !enabled;
+            if (enabled) input.focus();
+        },
+
+        sendMessage() {
+            var input = document.getElementById('msgInput');
+            var msg = input.value.trim();
+            if (!msg || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+            this.addMessageBubble('user', msg);
+            input.value = '';
+            input.style.height = 'auto';
+
+            this.ws.send(JSON.stringify({ message: msg }));
+            this.setInputEnabled(false);
+        },
+
+        scrollToBottom() {
+            var area = document.getElementById('messagesArea');
+            requestAnimationFrame(function() {
+                area.scrollTop = area.scrollHeight;
+            });
+        },
+
+        // ── Utilities ─────────────────────
+        renderMd(text) {
+            if (!text) return '';
+            if (typeof marked !== 'undefined') {
+                try { return marked.parse(text); } catch (e) { /* fall */ }
+            }
+            return this.escHtml(text).replace(/\n/g, '<br>');
+        },
+
+        escHtml(s) {
+            if (!s) return '';
+            var d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        },
+
+        timeAgo(dateStr) {
+            if (!dateStr) return '';
+            var diff = Date.now() - new Date(dateStr).getTime();
+            if (diff < 60000) return '刚刚';
+            if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前';
+            if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前';
+            return new Date(dateStr).toLocaleDateString('zh-CN');
+        }
+    };
+
+    H5.init();
+    </script>
+</body>
+</html>

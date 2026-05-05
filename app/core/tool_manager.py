@@ -234,19 +234,33 @@ class UnifiedToolManager:
                         original_name=tool_info.get("original_name")
                     )
 
-        # 3. 按白名单过滤（如果有指定）
-        # 注意：allowed_tools=[] 表示agent明确没有配置工具，只保留skill工具
-        #       allowed_tools=None 表示不限制，所有工具可用
+        # 3. 按白名单过滤（混合模式）
+        # allowed_tools=None     → 不过滤，加载已绑定server的全部tool（兼容旧行为）
+        # allowed_tools=[]       → 加载已绑定server的全部tool + skill工具
+        # allowed_tools=["xx"]   → 混合逻辑：白名单中的 tool 放行；
+        #   对每个已绑定 server，如果没有任何 tool 被选中，则该 server 全部 tool 放行
         if allowed_tools is not None and isinstance(allowed_tools, list):
             allowed_set = set(allowed_tools)
             # 始终包含 load_skill 和 execute_skill 工具
             allowed_set.add("load_skill")
             allowed_set.add("execute_skill")
-            # 保留来自已启用MCP服务器的工具（MCP工具名称带前缀，不在白名单中）
+
+            # 找出哪些 server 的 tool 一个都没被选中（包括 allowed_tools 为空的情况）
             mcp_server_set = set(enabled_mcp_servers) if enabled_mcp_servers else set()
+            servers_with_no_tools_selected = set()
+            for sid in mcp_server_set:
+                has_any = any(
+                    v.server_id == sid and v.source == "mcp" and k in allowed_set
+                    for k, v in tools.items()
+                )
+                if not has_any:
+                    servers_with_no_tools_selected.add(sid)
+
+            # 白名单中的 tool 放行 + 没有被选中任何 tool 的 server 全部放行
             tools = {
                 k: v for k, v in tools.items()
-                if k in allowed_set or (v.server_id in mcp_server_set and v.source == "mcp")
+                if k in allowed_set
+                or (v.server_id in servers_with_no_tools_selected and v.source == "mcp")
             }
 
         logger.info(f"Available tools: {list(tools.keys())}")

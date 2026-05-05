@@ -1,6 +1,7 @@
 """Execution strategy router - routes to LLM with deep thinking support"""
 import logging
 from typing import Optional, Dict, List, Any, AsyncGenerator
+from datetime import datetime
 
 from app.config import settings
 from app.services.llm_service import llm_service
@@ -63,11 +64,20 @@ class ExecutionStrategyRouter:
         if conversation_history:
             messages.extend(conversation_history)
 
-        # Add current task
+        # Inject time reminder after history, before current message
+        current_time = datetime.now().strftime("%Y年%m月%d日 %H:%M")
         messages.append({
-            "role": "user",
-            "content": task
+            "role": "system",
+            "content": f"【提醒】当前日期时间：{current_time}，请基于此时间回答问题。"
         })
+
+        # Add current task (skip if already the last message in history)
+        last_msg = conversation_history[-1] if conversation_history else None
+        if not (last_msg and last_msg.get("role") == "user" and last_msg.get("content") == task):
+            messages.append({
+                "role": "user",
+                "content": task
+            })
 
         logger.info(f"Calling LLM with {len(messages)} messages, deep_thinking={deep_thinking}")
 

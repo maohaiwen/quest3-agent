@@ -266,6 +266,137 @@ async def disconnect_server(server_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/tools/catalog")
+async def get_tools_catalog():
+    """Get tool catalog from all connected servers.
+
+    Returns a lightweight summary of all tools grouped by server,
+    suitable for the Agent editor's tool selector UI.
+    """
+    try:
+        all_tools = await mcp_client_pool.get_all_tools()
+
+        # Group by server_id
+        servers_map: Dict[str, Any] = {}
+        for tool_name, tool_info in all_tools.items():
+            source = tool_info.get("source", "unknown")
+            server_id = tool_info.get("server_id", "local")
+            server_name = tool_info.get("server_name", "本地")
+
+            if source == "local":
+                server_id = "local"
+                server_name = "本地工具"
+
+            if server_id not in servers_map:
+                servers_map[server_id] = {
+                    "server_id": server_id,
+                    "server_name": server_name,
+                    "tools": []
+                }
+
+            servers_map[server_id]["tools"].append({
+                "name": tool_name,
+                "description": tool_info.get("description", ""),
+                "original_name": tool_info.get("original_name", tool_name),
+            })
+
+        return {
+            "servers": list(servers_map.values()),
+            "total_tools": len(all_tools)
+        }
+    except Exception as e:
+        logger.error(f"Error getting tools catalog: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/tools/recommend")
+async def recommend_tools(request: Dict[str, Any]):
+    """Use AI to recommend tools based on user's requirement description.
+
+    Request body:
+        requirement: Natural language description of what the user needs
+    Response:
+        recommended_tools: List of tool names that match the requirement
+    """
+    try:
+        requirement = request.get("requirement", "").strip()
+        if not requirement:
+            raise HTTPException(status_code=400, detail="requirement is required")
+
+        # Get all available tools
+        all_tools = await mcp_client_pool.get_all_tools()
+        if not all_tools:
+            return {"recommended_tools": []}
+
+        # Build tool list for prompt
+        tool_lines = []
+        valid_tool_names = set()
+        for tool_name, tool_info in all_tools.items():
+            source = tool_info.get("source", "unknown")
+            if source == "local":
+                continue  # Skip local/skill tools
+            desc = tool_info.get("description", "").strip()
+            tool_lines.append(f"- {tool_name}: {desc}")
+            valid_tool_names.add(tool_name)
+
+        if not tool_lines:
+            return {"recommended_tools": []}
+
+        tools_text = "\n".join(tool_lines)
+
+        # Build prompt
+        prompt = f"""你是一个工具选择助手。根据用户的需求，从以下工具列表中选择最合适的工具。
+
+用户需求：{requirement}
+
+可用工具：
+{tools_text}
+
+请只返回一个JSON数组，包含你推荐的工具名称，不要返回其他内容。
+示例：["tool_name_1", "tool_name_3"]"""
+
+        # Call LLM
+        from app.services.llm_service import llm_service
+
+        if not llm_service.is_configured():
+            raise HTTPException(status_code=500, detail="LLM service not configured. Please set VOLCENGINE_API_KEY.")
+
+        messages = [{"role": "user", "content": prompt}]
+        response_text = await llm_service._chat_completion(
+            messages=messages,
+            temperature=0.1,
+            max_tokens=2000
+        )
+
+        # Parse LLM response as JSON array
+        import json
+        import re
+
+        # Try to extract JSON array from response (handle markdown code blocks)
+        json_match = re.search(r'\[.*?\]', response_text, re.DOTALL)
+        if not json_match:
+            logger.warning(f"LLM response is not a valid JSON array: {response_text[:200]}")
+            return {"recommended_tools": []}
+
+        try:
+            recommended = json.loads(json_match.group())
+        except json.JSONDecodeError:
+            logger.warning(f"Failed to parse LLM response as JSON: {json_match.group()[:200]}")
+            return {"recommended_tools": []}
+
+        # Validate tool names against catalog
+        validated = [name for name in recommended if isinstance(name, str) and name in valid_tool_names]
+
+        logger.info(f"AI recommended {len(validated)} tools for requirement: {requirement[:50]}")
+        return {"recommended_tools": validated}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error recommending tools: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{server_id}/test")
 async def test_server_connection(server_id: str):
     """Test server connection"""

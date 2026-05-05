@@ -1,19 +1,110 @@
 """Chat API endpoints"""
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException
-from typing import List
+from typing import List, Optional
 import json
 import logging
+from datetime import datetime
 
 from app.models.chat import ChatRequest, ChatResponse, StreamMessage, MessageCreate, MessageRole
 from app.database.repositories import MessageRepository, SessionRepository
 from app.services.llm_service import LLMService
-from app.services.memory_service import MemoryService
+from app.services.session_working_memory import SessionWorkingMemory
 from app.services.planning_chat_service import planning_chat_service
 from app.core.strategy_router import strategy_router
 
 logger = logging.getLogger(__name__)
 
+
+async def _inject_memory_into_agent_config(
+    agent_config_dict: dict,
+    agent_id: str,
+    user_message: str
+) -> dict:
+    """将 agent 长期记忆注入到 agent_config 的 system_prompt 中
+
+    只有当 agent 启用了长期记忆时才注入。
+
+    Args:
+        agent_config_dict: Agent 配置字典
+        agent_id: Agent ID
+        user_message: 当前用户消息（用于语义召回）
+
+    Returns:
+        更新后的 agent_config_dict
+    """
+    try:
+        from app.services.agent_memory_service import agent_memory_service
+
+        # 获取记忆画像
+        profile = await agent_memory_service.get_agent_profile(agent_id)
+        profile_text = profile.to_prompt_text()
+
+        # 语义召回相关记忆
+        recalled = await agent_memory_service.recall(agent_id, user_message, n=5)
+        recalled_texts = [f"- [{r.memory_type.value}] {r.content}" for r in recalled]
+
+        # 注入到 system_prompt
+        base_prompt = agent_config_dict.get("system_prompt", "")
+        memory_sections = []
+
+        if profile_text:
+            memory_sections.append(profile_text)
+
+        if recalled_texts:
+            memory_sections.append(
+                "与当前话题相关的历史记忆：\n" + "\n".join(recalled_texts)
+            )
+
+        if memory_sections:
+            memory_block = "\n\n【记忆上下文】\n" + "\n\n".join(memory_sections)
+            agent_config_dict["system_prompt"] = base_prompt + memory_block
+            logger.info(f"Injected memory context for agent {agent_id}: profile={bool(profile_text)}, recalled={len(recalled_texts)}")
+
+    except Exception as e:
+        logger.warning(f"Failed to inject memory for agent {agent_id}: {e}")
+
+    return agent_config_dict
+
+
+async def _extract_memories_on_session_end(
+    agent_id: str,
+    session_id: str,
+    memory_service: SessionWorkingMemory
+):
+    """对话结束时提取记忆（异步，不阻塞响应）
+
+    Args:
+        agent_id: Agent ID
+        session_id: Session ID
+        memory_service: SessionWorkingMemory 实例
+    """
+    try:
+        from app.services.agent_memory_service import agent_memory_service
+
+        # 获取完整对话消息
+        all_messages = memory_service.get_all_messages(session_id)
+        if all_messages:
+            count = await agent_memory_service.extract_and_store(
+                agent_id=agent_id,
+                session_id=session_id,
+                conversation_messages=all_messages
+            )
+            logger.info(f"Extracted {count} memories from session {session_id} for agent {agent_id}")
+    except Exception as e:
+        logger.error(f"Error extracting memories on session end: {e}", exc_info=True)
+
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+
+
+async def _add_assistant_message(
+    memory_service: SessionWorkingMemory,
+    session_id: str,
+    content: str,
+    agent_model: Optional[str] = None
+):
+    """添加助手消息到工作记忆，并检查是否需要摘要"""
+    memory_service.add_message(session_id, MessageRole.ASSISTANT, content)
+    await memory_service.maybe_summarize(session_id, agent_model=agent_model)
 
 
 # Dependency functions
@@ -41,7 +132,7 @@ async def get_dependencies(
     session_repo: SessionRepository = Depends(get_session_repo),
     message_repo: MessageRepository = Depends(get_message_repo),
     llm_service: LLMService = Depends(get_llm_service),
-    memory_service: MemoryService = Depends(get_memory_service)
+    memory_service: SessionWorkingMemory = Depends(get_memory_service)
 ):
     """Dependency injection for chat endpoints"""
     return {
@@ -93,7 +184,7 @@ async def chat(
         ))
 
         # Add to memory
-        memory_service.add_message(request.session_id, MessageRole.ASSISTANT, response_text)
+        await _add_assistant_message(memory_service, request.session_id, response_text)
 
         return ChatResponse(
             response=response_text,
@@ -111,7 +202,7 @@ async def chat_stream(
     session_repo: SessionRepository = Depends(get_session_repo),
     message_repo: MessageRepository = Depends(get_message_repo),
     llm_service: LLMService = Depends(get_llm_service),
-    memory_service: MemoryService = Depends(get_memory_service)
+    memory_service: SessionWorkingMemory = Depends(get_memory_service)
 ):
     """WebSocket endpoint for streaming chat"""
     await websocket.accept()
@@ -156,13 +247,17 @@ async def chat_stream(
                     "content": f"Agent {agent_id} not found"
                 })
 
-        # Load conversation history into memory
-        db_messages = await session_repo.get_history(session_id)
+        # Load conversation history into memory (most recent 20 rounds = 40 messages)
+        HISTORY_LIMIT = 40
+        db_messages = await session_repo.get_history(session_id, limit=HISTORY_LIMIT)
         history_dicts = [{
             "role": msg.role.value,
             "content": msg.content
         } for msg in db_messages]
         memory_service.load_from_db(session_id, history_dicts)
+
+        # Check total message count for "has_more" indicator
+        total_messages = await session_repo.count_messages(session_id)
 
         # Send connection established message
         connection_message = {
@@ -189,7 +284,9 @@ async def chat_stream(
                     "role": msg.role.value,
                     "content": msg.content,
                     "created_at": msg.created_at.isoformat() if msg.created_at else None
-                } for msg in db_messages]
+                } for msg in db_messages],
+                "total": total_messages,
+                "has_more": total_messages > HISTORY_LIMIT
             }
             await websocket.send_json(history_message)
 
@@ -198,8 +295,33 @@ async def chat_stream(
             data = await websocket.receive_json()
             message = data.get("message", "")
             new_agent_id = data.get("agent_id")
+            action = data.get("action")
             # Update deep_thinking mode if provided in message
             current_deep_thinking = data.get("deep_thinking", deep_thinking)
+
+            # Handle load_more_history action
+            if action == "load_more_history":
+                before_count = data.get("before", HISTORY_LIMIT)
+                older_messages = await session_repo.get_older_messages(session_id, before_count, HISTORY_LIMIT)
+                if older_messages:
+                    await websocket.send_json({
+                        "type": "more_history",
+                        "messages": [{
+                            "id": str(msg.id),
+                            "role": msg.role.value,
+                            "content": msg.content,
+                            "created_at": msg.created_at.isoformat() if msg.created_at else None
+                        } for msg in older_messages],
+                        "has_more": len(older_messages) >= HISTORY_LIMIT
+                    })
+                else:
+                    await websocket.send_json({
+                        "type": "more_history",
+                        "messages": [],
+                        "has_more": False
+                    })
+                continue
+
             logger.info(f"Received message: {message[:50]}..., deep_thinking={current_deep_thinking}")
 
             # Check if agent_id is being updated
@@ -269,6 +391,11 @@ async def chat_stream(
                     if skill_system_prompt:
                         full_system_prompt = agent.system_prompt + "\n" + skill_system_prompt if agent.system_prompt else skill_system_prompt
 
+                    # Inject current time at the beginning of system prompt for visibility
+                    current_time = datetime.now().strftime("%Y年%m月%d日 %H:%M")
+                    time_prompt = f"【重要】当前日期时间：{current_time}。请基于此时间回答问题，不要使用过时的信息。\n\n"
+                    full_system_prompt_with_time = time_prompt + full_system_prompt if full_system_prompt else time_prompt.strip()
+
                     agent_config_dict = {
                         "name": agent.name,
                         "description": agent.description,
@@ -277,10 +404,17 @@ async def chat_stream(
                         "model": agent.model,
                         "temperature": agent.temperature,
                         "max_tokens": agent.max_tokens,
-                        "system_prompt": full_system_prompt,
+                        "system_prompt": full_system_prompt_with_time,
                         "tools": agent.tools if hasattr(agent, "tools") else [],
                         "mcp_servers": agent.mcp_servers if hasattr(agent, "mcp_servers") else []
                     }
+
+                    # 如果 agent 启用了长期记忆，注入记忆上下文
+                    enable_ltm = getattr(agent, "enable_long_term_memory", False)
+                    if enable_ltm and agent_id:
+                        agent_config_dict = await _inject_memory_into_agent_config(
+                            agent_config_dict, agent_id, message
+                        )
 
                 # Get execution mode
                 execution_mode = getattr(agent, "execution_mode", "plan") if agent else "plan"
@@ -353,9 +487,7 @@ async def chat_stream(
                         ))
 
                         # Add to memory
-                        memory_service.add_message(session_id, MessageRole.ASSISTANT, full_response)
-
-                # Use planning chat service for plan and react modes
+                        await _add_assistant_message(memory_service, session_id, full_response, agent_model=agent_config_dict.get("model"))
                 elif execution_mode in ["plan", "react", "react_cot"]:
                     logger.info(f"Using execution mode: {execution_mode}")
 
@@ -372,14 +504,33 @@ async def chat_stream(
                         executor = ReActCotExecutor(agent_config=agent_config_dict)
 
                         full_response = ""
-                        async for event in executor.execute(
-                            message,
-                            conversation_history=history,
-                            deep_thinking=True
-                        ):
-                            await websocket.send_json(event)
-                            if event.get("type") == "cot_complete":
-                                full_response = event.get("message", "")
+                        sent_end = False
+                        try:
+                            async for event in executor.execute(
+                                message,
+                                conversation_history=history,
+                                deep_thinking=True
+                            ):
+                                await websocket.send_json(event)
+                                if event.get("type") == "cot_complete":
+                                    full_response = event.get("message", "") or full_response
+                                if event.get("type") == "end":
+                                    sent_end = True
+                        except Exception as e:
+                            logger.error(f"ReActCot execution error: {e}", exc_info=True)
+                            try:
+                                await websocket.send_json({
+                                    "type": "error",
+                                    "content": f"执行错误: {str(e)}"
+                                })
+                            except:
+                                pass
+                        finally:
+                            if not sent_end:
+                                try:
+                                    await websocket.send_json({"type": "end"})
+                                except:
+                                    pass
 
                         # Save assistant message
                         if full_response:
@@ -388,10 +539,12 @@ async def chat_stream(
                                 content=full_response,
                                 role=MessageRole.ASSISTANT
                             ))
-                            memory_service.add_message(session_id, MessageRole.ASSISTANT, full_response)
+                            await _add_assistant_message(memory_service, session_id, full_response, agent_model=agent_config_dict.get("model"))
 
-                    else:
-                        # Plan 或 原 ReAct 模式
+                        # react_cot 模式已由 ReActCotExecutor 处理，不需要再走 planning_chat_service
+                        if execution_mode == "react_cot":
+                            continue
+
                         from app.services.planning_chat_service import planning_chat_service
 
                         # For plan & react mode, force enable deep thinking
@@ -420,7 +573,7 @@ async def chat_stream(
                                 content=full_response,
                                 role=MessageRole.ASSISTANT
                             ))
-                            memory_service.add_message(session_id, MessageRole.ASSISTANT, full_response)
+                            await _add_assistant_message(memory_service, session_id, full_response, agent_model=agent_config_dict.get("model"))
 
             except ValueError as e:
                 logger.error(f"ValueError in chat: {e}", exc_info=True)
@@ -440,6 +593,19 @@ async def chat_stream(
 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected for session {session_id}")
+        # 对话结束时提取记忆
+        if agent_id and session_id:
+            # 检查 agent 是否启用了长期记忆
+            try:
+                from app.services.agent_service import agent_service as _as
+                _agent = await _as.get(agent_id)
+                if _agent and getattr(_agent, "enable_long_term_memory", False):
+                    try:
+                        await _extract_memories_on_session_end(agent_id, session_id, memory_service)
+                    except Exception as extract_err:
+                        logger.warning(f"Memory extraction failed: {extract_err}")
+            except Exception as e:
+                logger.warning(f"Failed to trigger memory extraction on disconnect: {e}")
     except Exception as e:
         logger.error(f"WebSocket error: {e}", exc_info=True)
         try:

@@ -102,48 +102,61 @@ class ReActCotExecutor:
             执行事件字典
         """
         # 初始化
-        await self._initialize()
         self.current_step = 0
 
         logger.info(f"ReActCot: 开始执行任务 (最大步数: {self.max_steps})")
 
-        # 发送一个开始事件，前端创建容器（只发送一次！）
-        yield {"type": "cot_step_start", "step": 1}
-
-        # 初始化 messages
-        messages: List[Dict] = []
-
-        # 添加 system prompt
-        if self.system_prompt:
-            messages.append({"role": "system", "content": self.system_prompt})
-
-        # 添加对话历史
-        if conversation_history:
-            messages.extend(conversation_history)
-
-        # 添加当前任务
-        messages.append({"role": "user", "content": task})
-
-        # 使用统一工具管理器获取 LLM 格式的工具
-        tool_manager = get_tool_manager()
-        agent_mcp_servers = self.agent_config.get("mcp_servers", [])
-        enabled_server_ids = []
-        if agent_mcp_servers and isinstance(agent_mcp_servers, list):
-            for server_config in agent_mcp_servers:
-                if isinstance(server_config, dict) and server_config.get("enabled", False):
-                    enabled_server_ids.append(server_config.get("server_id"))
-                elif isinstance(server_config, str):
-                    enabled_server_ids.append(server_config)
-
-        agent_tools = self.agent_config.get("tools", [])
-        tools = await tool_manager.get_tools_for_llm(
-            enabled_mcp_servers=enabled_server_ids if enabled_server_ids else None,
-            allowed_tools=agent_tools if agent_tools is not None else None
-        )
-
-        logger.info(f"ReActCot: 已为 LLM 准备 {len(tools)} 个工具")
-
         try:
+            await self._initialize()
+
+            # 发送一个开始事件，前端创建容器（只发送一次！）
+            yield {"type": "cot_step_start", "step": 1}
+
+            # 初始化 messages
+            messages: List[Dict] = []
+
+            # 添加 system prompt
+            if self.system_prompt:
+                messages.append({"role": "system", "content": self.system_prompt})
+
+            # 添加对话历史
+            if conversation_history:
+                messages.extend(conversation_history)
+
+            # 在对话历史之后、当前消息之前，注入时间提醒
+            # 放在这里而非 system prompt 头部，避免被长历史对话"淹没"
+            current_time = datetime.now().strftime("%Y年%m月%d日 %H:%M")
+            messages.append({
+                "role": "system",
+                "content": f"【提醒】当前日期时间：{current_time}，请基于此时间回答问题。"
+            })
+
+            # 添加当前任务（如果历史中最后一条不是当前用户消息，才追加）
+            # 注意：chat.py 中先 add_message 再 get_conversation_history，
+            # 所以 conversation_history 已包含当前用户消息，无需重复追加
+            last_msg = conversation_history[-1] if conversation_history else None
+            if not (last_msg and last_msg.get("role") == "user" and last_msg.get("content") == task):
+                messages.append({"role": "user", "content": task})
+
+            # 使用统一工具管理器获取 LLM 格式的工具
+            tool_manager = get_tool_manager()
+            agent_mcp_servers = self.agent_config.get("mcp_servers", [])
+            enabled_server_ids = []
+            if agent_mcp_servers and isinstance(agent_mcp_servers, list):
+                for server_config in agent_mcp_servers:
+                    if isinstance(server_config, dict) and server_config.get("enabled", False):
+                        enabled_server_ids.append(server_config.get("server_id"))
+                    elif isinstance(server_config, str):
+                        enabled_server_ids.append(server_config)
+
+            agent_tools = self.agent_config.get("tools", [])
+            tools = await tool_manager.get_tools_for_llm(
+                enabled_mcp_servers=enabled_server_ids if enabled_server_ids else None,
+                allowed_tools=agent_tools if agent_tools is not None else None
+            )
+
+            logger.info(f"ReActCot: 已为 LLM 准备 {len(tools)} 个工具")
+
             # 主循环
             for step in range(1, self.max_steps + 1):
                 if self._should_stop:
@@ -159,6 +172,7 @@ class ReActCotExecutor:
 
                 thinking_content = ""
                 final_content = ""
+                content_buffer = []  # 缓冲 content，待确认是最终步骤后再流式发送
                 tool_calls_to_execute = []
                 tool_calls_accumulator = {}
 
@@ -179,6 +193,7 @@ class ReActCotExecutor:
 
                     elif event["type"] == "content":
                         final_content += event["content"]
+                        content_buffer.append(event["content"])
 
                     elif event["type"] == "tool_calls":
                         # 累加 tool_calls
@@ -250,12 +265,27 @@ class ReActCotExecutor:
                         })
 
                 else:
-                    # 没有工具调用，任务完成
+                    # 没有工具调用，任务完成 — 这是最终步骤
                     logger.info(f"ReActCot: 模型决定结束任务")
+
+                    # 判断最终回复内容：如果 final_content 很短但 thinking_content 很长，
+                    # 说明模型把答案放在了 thinking 中（火山引擎深度思考模型的常见行为）
+                    if final_content and len(final_content) >= 50:
+                        response_message = final_content
+                    elif thinking_content and len(thinking_content) > max(len(final_content) * 3, 100):
+                        response_message = thinking_content
+                    else:
+                        response_message = final_content or thinking_content
+
+                    # 回放缓冲的 content 作为流式消息（仅在 content 是最终答案时）
+                    is_streamed = response_message == final_content and len(content_buffer) > 0
+                    if is_streamed:
+                        for chunk in content_buffer:
+                            yield {"type": "message", "content": chunk}
+
                     yield {"type": "cot_phase", "phase": "summarizing"}
                     yield {"type": "cot_phase", "phase": "complete"}
-                    yield {"type": "cot_complete", "message": final_content or thinking_content}
-                    yield {"type": "end"}
+                    yield {"type": "cot_complete", "message": response_message, "streamed": is_streamed}
                     break
 
                 await asyncio.sleep(0.01)
@@ -271,11 +301,9 @@ class ReActCotExecutor:
         except Exception as e:
             logger.error(f"ReActCot: 执行错误: {e}", exc_info=True)
             yield {"type": "error", "message": f"执行错误: {str(e)}"}
-            yield {"type": "end"}
 
         finally:
             logger.info("ReActCot: 执行结束")
-            # 始终确保发送 end 事件
             yield {"type": "end"}
 
     async def _initialize(self):

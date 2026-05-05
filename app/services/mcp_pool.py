@@ -268,18 +268,20 @@ class MCPClientPool:
                             }
 
                         # Parse streaming response to count tools
-                        tool_count = 0
+                        # Collect all bytes first to avoid UTF-8 split at chunk boundaries
+                        raw_bytes = b""
                         async for chunk in response.aiter_bytes():
                             if chunk:
-                                text = chunk.decode('utf-8')
-                                for line in text.strip().split('\n'):
-                                    if line.strip():
-                                        try:
-                                            result = json.loads(line)
-                                            if "result" in result and "tools" in result["result"]:
-                                                tool_count = len(result["result"]["tools"])
-                                        except:
-                                            pass
+                                raw_bytes += chunk
+
+                        tool_count = 0
+                        try:
+                            text = raw_bytes.decode('utf-8')
+                            result = json.loads(text)
+                            if "result" in result and "tools" in result["result"]:
+                                tool_count = len(result["result"]["tools"])
+                        except Exception as parse_err:
+                            logger.warning(f"Failed to parse test_connection response: {parse_err}")
 
                         await test_client.aclose()
 
@@ -571,32 +573,38 @@ class MCPClientPool:
             "method": "tools/list"
         }
 
-        full_response = ""
-        async with connection.client.stream('POST', connection.config.url, json=initialize_request) as response:
+        # Try non-streaming request first (more reliable for JSON parsing)
+        try:
+            response = await connection.client.post(
+                connection.config.url,
+                json=initialize_request
+            )
             logger.info(f"Response status: {response.status_code}")
             response.raise_for_status()
 
-            # Parse streaming response
-            tools = []
-            async for chunk in response.aiter_bytes():
-                # Parse JSON from chunk
-                try:
-                    if chunk:
-                        text = chunk.decode('utf-8')
-                        full_response += text
-                        # Handle multiple JSON objects in response
-                        for line in text.strip().split('\n'):
-                            if line.strip():
-                                logger.debug(f"Received chunk: {line[:200]}...")
-                                result = json.loads(line)
-                                if "result" in result and "tools" in result["result"]:
-                                    tools = result["result"]["tools"]
-                                    logger.info(f"Found {len(tools)} tools in response")
-                except Exception as e:
-                    logger.debug(f"Error parsing chunk: {e}")
-                    continue
+            data = response.json()
+            tools = data.get("result", {}).get("tools", [])
+            logger.info(f"Found {len(tools)} tools in response")
 
-        logger.info(f"Full response received: {full_response[:500]}...")
+        except Exception as e:
+            logger.warning(f"Non-streaming request failed, trying streaming: {e}")
+            # Fallback to streaming
+            tools = []
+            raw_bytes = b""
+            async with connection.client.stream('POST', connection.config.url, json=initialize_request) as stream_resp:
+                stream_resp.raise_for_status()
+                async for chunk in stream_resp.aiter_bytes():
+                    if chunk:
+                        raw_bytes += chunk
+
+            # Parse complete response (decode after all bytes collected to avoid UTF-8 split)
+            try:
+                full_response = raw_bytes.decode('utf-8')
+                result = json.loads(full_response)
+                tools = result.get("result", {}).get("tools", [])
+                logger.info(f"Found {len(tools)} tools from streaming response")
+            except Exception as parse_err:
+                logger.error(f"Failed to parse streaming response: {parse_err}")
 
         if tools:
             connection.tools = {tool["name"]: tool for tool in tools}
@@ -654,18 +662,13 @@ class MCPClientPool:
             )
             response.raise_for_status()
 
-            # Parse streaming response
+            # Parse response - read full body then parse JSON
+            data = response.json()
             result = None
-            async for chunk in response.aiter_bytes():
-                if chunk:
-                    text = chunk.decode('utf-8')
-                    for line in text.strip().split('\n'):
-                        if line.strip():
-                            data = json.loads(line)
-                            if "result" in data:
-                                result = data["result"]
-                            elif "error" in data:
-                                raise ValueError(f"Tool error: {data['error']}")
+            if "result" in data:
+                result = data["result"]
+            elif "error" in data:
+                raise ValueError(f"Tool error: {data['error']}")
 
             # Extract nested result if it's in content format
             if isinstance(result, dict) and "content" in result:

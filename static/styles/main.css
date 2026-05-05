@@ -461,6 +461,22 @@ select.form-control {
     margin-right: 8px;
 }
 
+/* Tool Selector in Agent Editor */
+.tool-selector .tool-server-group {
+    transition: box-shadow 0.2s;
+}
+.tool-selector .tool-server-group:hover {
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.tool-selector .tool-server-header:hover {
+    background: rgba(102,126,234,0.05);
+}
+.tool-selector .tool-server-tools {
+    max-height: 300px;
+    overflow-y: auto;
+    border-top: 1px solid var(--border-color);
+}
+
 /* Checkbox Group (for single checkbox form groups) */
 .checkbox-group {
     display: flex;

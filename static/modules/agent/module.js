@@ -3,7 +3,7 @@ const AgentModule = {
     name: 'agent',
     agents: [],
     mcpServers: [],
-    availableTools: [],
+    toolCatalog: [],   // [{server_id, server_name, tools: [{name, description, original_name}]}]
     currentEditId: null,
     currentStep: 1,
     selectedMode: null,
@@ -12,7 +12,7 @@ const AgentModule = {
     init() {
         this.loadAgents();
         this.loadMCPServers();
-        this.loadTools();
+        this.loadToolCatalog();
     },
 
     render(container) {
@@ -46,12 +46,13 @@ const AgentModule = {
         }
     },
 
-    async loadTools() {
+    async loadToolCatalog() {
         try {
-            const data = await API.get('/tools');
-            this.availableTools = data.tools || [];
+            const data = await API.get('/api/mcp/servers/tools/catalog');
+            this.toolCatalog = data.servers || [];
         } catch (error) {
-            console.error('Failed to load tools:', error);
+            console.error('Failed to load tool catalog:', error);
+            this.toolCatalog = [];
         }
     },
 
@@ -86,7 +87,17 @@ const AgentModule = {
             content: this.buildModalContent(agent),
             footer: this.buildModalFooter(),
             width: '750px',
-            onShow: () => this.onModalShow(agent)
+        });
+
+        // Modal.show doesn't support onShow callback, so initialize directly
+        // The DOM is already created by Modal.show at this point
+        this.loadToolCatalog().then(() => {
+            this.renderToolSelector();
+            if (this.isEditMode && agent) {
+                this.fillFormForEdit(agent);
+            } else {
+                this.resetFormForCreate();
+            }
         });
     },
 
@@ -196,17 +207,11 @@ const AgentModule = {
                     <!-- Tool/MCP Section - only show for plan/react -->
                     <div class="form-section" id="agentToolsMcpSection">
                         <h3>🔧 工具配置</h3>
+                        <p style="color: #666; font-size: 13px; margin-bottom: 12px;">
+                            选择此Agent可以使用的MCP服务器和具体工具。勾选服务器后可展开选择具体工具；只勾选服务器不选具体工具则加载该服务器全部工具。
+                        </p>
 
-                        <div class="form-group">
-                            <label>MCP服务器</label>
-                            <div id="agentMcpServerList" class="checkbox-list">
-                            </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label>本地工具</label>
-                            <div id="agentToolsList" class="checkbox-list">
-                            </div>
+                        <div id="agentToolSelector" class="tool-selector">
                         </div>
                     </div>
 
@@ -262,56 +267,91 @@ const AgentModule = {
         `;
     },
 
-    onModalShow(agent) {
-        // Render checkboxes
-        this.renderMCPCheckboxes();
-        this.renderToolCheckboxes();
+    renderToolSelector() {
+        const container = document.getElementById('agentToolSelector');
+        if (!container) return;
 
-        if (this.isEditMode && agent) {
-            this.fillFormForEdit(agent);
+        // Refresh catalog if empty
+        if (!this.toolCatalog || this.toolCatalog.length === 0) {
+            container.innerHTML = '<small style="color: #999;">没有可用的工具服务器，请先在MCP管理中添加并连接服务器</small>';
+            return;
+        }
+
+        container.innerHTML = this.toolCatalog.map(server => {
+            const isLocal = server.server_id === 'local';
+            const serverIcon = isLocal ? '🏠' : '🔗';
+            const toolCount = server.tools ? server.tools.length : 0;
+
+            return `
+                <div class="tool-server-group" style="margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden;">
+                    <div class="tool-server-header" style="display: flex; align-items: center; padding: 10px 12px; background: var(--sidebar-bg); cursor: pointer;"
+                         onclick="AgentModule.toggleServerGroup('${server.server_id}')">
+                        ${isLocal ? '' : `
+                            <input type="checkbox" id="agent_mcp_${server.server_id}" value="${server.server_id}"
+                                   style="margin-right: 8px;"
+                                   onclick="event.stopPropagation()"
+                                   onchange="AgentModule.onServerCheckboxChange('${server.server_id}', this.checked)">
+                        `}
+                        <span style="font-weight: 600;">${serverIcon} ${this.escapeHtml(server.server_name)}</span>
+                        <span style="color: #999; font-size: 12px; margin-left: 8px;">(${toolCount} 个工具)</span>
+                        <span style="margin-left: auto; font-size: 12px; color: #999;" id="toggle_icon_${server.server_id}">▼</span>
+                    </div>
+                    <div class="tool-server-tools" id="server_tools_${server.server_id}" style="padding: 8px 12px; display: none;">
+                        <div style="margin-bottom: 6px;">
+                            <a href="javascript:void(0)" style="font-size: 12px; color: #667eea;"
+                               onclick="AgentModule.selectAllTools('${server.server_id}', true)">全选</a>
+                            <span style="color: #ddd;">|</span>
+                            <a href="javascript:void(0)" style="font-size: 12px; color: #999;"
+                               onclick="AgentModule.selectAllTools('${server.server_id}', false)">全不选</a>
+                        </div>
+                        ${(server.tools || []).map(tool => `
+                            <div class="checkbox-item" style="padding: 4px 0;">
+                                <input type="checkbox" id="agent_tool_${tool.name}" value="${tool.name}"
+                                       data-server-id="${server.server_id}" class="tool-checkbox-${server.server_id}">
+                                <label for="agent_tool_${tool.name}" style="font-size: 13px;">
+                                    <strong>${this.escapeHtml(tool.name)}</strong>
+                                    ${tool.description ? `<small style="color: #999; margin-left: 5px;">${this.escapeHtml(tool.description.substring(0, 60))}${tool.description.length > 60 ? '...' : ''}</small>` : ''}
+                                </label>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    },
+
+    toggleServerGroup(serverId) {
+        const toolsDiv = document.getElementById(`server_tools_${serverId}`);
+        const icon = document.getElementById(`toggle_icon_${serverId}`);
+        if (!toolsDiv) return;
+
+        if (toolsDiv.style.display === 'none') {
+            toolsDiv.style.display = 'block';
+            if (icon) icon.textContent = '▲';
         } else {
-            this.resetFormForCreate();
+            toolsDiv.style.display = 'none';
+            if (icon) icon.textContent = '▼';
         }
     },
 
-    renderMCPCheckboxes() {
-        const container = document.getElementById('agentMcpServerList');
-        if (!container) return;
-
-        if (!this.mcpServers || this.mcpServers.length === 0) {
-            container.innerHTML = '<small style="color: #999;">没有可用的MCP服务器</small>';
-            return;
+    onServerCheckboxChange(serverId, checked) {
+        // When a server is checked/unchecked, auto-select/deselect all its tools
+        this.selectAllTools(serverId, checked);
+        // Auto-expand when checking, auto-collapse when unchecking
+        const toolsDiv = document.getElementById(`server_tools_${serverId}`);
+        const icon = document.getElementById(`toggle_icon_${serverId}`);
+        if (toolsDiv) {
+            toolsDiv.style.display = checked ? 'block' : 'none';
         }
-
-        container.innerHTML = this.mcpServers.map(server => `
-            <div class="checkbox-item">
-                <input type="checkbox" id="agent_mcp_${server.id}" value="${server.id}">
-                <label for="agent_mcp_${server.id}">
-                    <strong>${this.escapeHtml(server.name)}</strong>
-                    <small style="color: #999; margin-left: 5px;">(${server.status || 'unknown'})</small>
-                </label>
-            </div>
-        `).join('');
+        if (icon) {
+            icon.textContent = checked ? '▲' : '▼';
+        }
     },
 
-    renderToolCheckboxes() {
-        const container = document.getElementById('agentToolsList');
-        if (!container) return;
-
-        if (!this.availableTools || this.availableTools.length === 0) {
-            container.innerHTML = '<small style="color: #999;">没有可用的本地工具</small>';
-            return;
-        }
-
-        container.innerHTML = this.availableTools.map(tool => `
-            <div class="checkbox-item">
-                <input type="checkbox" id="agent_tool_${tool.name}" value="${tool.name}">
-                <label for="agent_tool_${tool.name}">
-                    <strong>${this.escapeHtml(tool.name)}</strong>
-                    <small style="color: #999; margin-left: 5px;">(${tool.source || 'local'})</small>
-                </label>
-            </div>
-        `).join('');
+    selectAllTools(serverId, selected) {
+        document.querySelectorAll(`.tool-checkbox-${serverId}`).forEach(cb => {
+            cb.checked = selected;
+        });
     },
 
     resetFormForCreate() {
@@ -352,13 +392,30 @@ const AgentModule = {
         document.getElementById('agentSystemPrompt').value = agent.system_prompt || '';
 
         // Check MCP servers
-        document.querySelectorAll('#agentMcpServerList input[type="checkbox"]').forEach(cb => {
-            cb.checked = (agent.mcp_servers || []).some(mcp => mcp.server_id === cb.value);
+        const agentMcpIds = (agent.mcp_servers || []).map(mcp =>
+            typeof mcp === 'string' ? mcp : mcp.server_id
+        );
+        document.querySelectorAll('#agentToolSelector input[id^="agent_mcp_"]').forEach(cb => {
+            cb.checked = agentMcpIds.includes(cb.value);
         });
 
-        // Check tools
-        document.querySelectorAll('#agentToolsList input[type="checkbox"]').forEach(cb => {
-            cb.checked = (agent.tools || []).includes(cb.value);
+        // Check individual tools
+        const agentToolNames = agent.tools || [];
+        document.querySelectorAll('#agentToolSelector input[id^="agent_tool_"]').forEach(cb => {
+            cb.checked = agentToolNames.includes(cb.value);
+        });
+
+        // Expand server groups that are checked (server checkbox) or have checked tools
+        this.toolCatalog.forEach(server => {
+            const serverCb = document.getElementById(`agent_mcp_${server.server_id}`);
+            const isChecked = serverCb && serverCb.checked;
+            const hasCheckedTool = (server.tools || []).some(t => agentToolNames.includes(t.name));
+            if (isChecked || hasCheckedTool) {
+                const toolsDiv = document.getElementById(`server_tools_${server.server_id}`);
+                const icon = document.getElementById(`toggle_icon_${server.server_id}`);
+                if (toolsDiv) toolsDiv.style.display = 'block';
+                if (icon) icon.textContent = '▲';
+            }
         });
 
         // Show step 2
@@ -508,11 +565,13 @@ const AgentModule = {
 
         // Only collect tools if not in direct mode
         if (this.selectedMode !== 'direct') {
-            document.querySelectorAll('#agentMcpServerList input[type="checkbox"]:checked').forEach(cb => {
+            // Collect checked MCP servers
+            document.querySelectorAll('#agentToolSelector input[id^="agent_mcp_"]:checked').forEach(cb => {
                 formData.mcp_servers.push(cb.value);
             });
 
-            document.querySelectorAll('#agentToolsList input[type="checkbox"]:checked').forEach(cb => {
+            // Collect checked individual tools
+            document.querySelectorAll('#agentToolSelector input[id^="agent_tool_"]:checked').forEach(cb => {
                 formData.tools.push(cb.value);
             });
         }

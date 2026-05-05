@@ -39,7 +39,7 @@ class AgentCreate(BaseModel):
     name: str = Field(..., description="Agent name")
     description: str = Field(default="", description="Agent description")
     type: AgentType = Field(default=AgentType.CUSTOM, description="Agent type")
-    execution_mode: str = Field(default="plan", description="Execution mode: plan, react, react_cot, thinking_while_doing, or direct")
+    execution_mode: str = Field(default="plan", description="Execution mode: plan, react, react_cot, or direct")
     system_prompt: str = Field(default="", description="System prompt for the agent")
     model: Optional[str] = Field(default=None, description="LLM model to use")
     temperature: Optional[float] = Field(default=None, description="Temperature for generation")
@@ -51,6 +51,7 @@ class AgentCreate(BaseModel):
     priority: int = Field(default=0, description="Priority for auto-selection")
     thinking_effort: str = Field(default="medium", description="Thinking depth: low, medium, high")
     max_react_steps: int = Field(default=15, description="Maximum ReAct steps")
+    enable_long_term_memory: bool = Field(default=False, description="Enable agent-level long-term memory")
 
 
 class AgentUpdate(BaseModel):
@@ -70,6 +71,7 @@ class AgentUpdate(BaseModel):
     priority: Optional[int] = Field(default=None, description="Priority")
     thinking_effort: Optional[str] = Field(default=None, description="Thinking depth")
     max_react_steps: Optional[int] = Field(default=None, description="Maximum ReAct steps")
+    enable_long_term_memory: Optional[bool] = Field(default=None, description="Enable agent-level long-term memory")
 
 
 class AgentResponse(BaseModel):
@@ -93,6 +95,7 @@ class AgentResponse(BaseModel):
     usage_count: int = Field(default=0, description="Usage count")
     thinking_effort: str = Field(default="medium", description="Thinking depth")
     max_react_steps: int = Field(default=15, description="Maximum ReAct steps")
+    enable_long_term_memory: bool = Field(default=False, description="Enable agent-level long-term memory")
 
 
 class AgentSelectRequest(BaseModel):
