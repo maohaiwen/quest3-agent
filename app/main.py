@@ -9,8 +9,9 @@ from app.config import settings
 from app.database.connection import DatabaseConnection
 from app.database.repositories import SessionRepository, MessageRepository, MemoryRepository
 from app.services.llm_service import LLMService
-from app.services.memory_service import MemoryService
+from app.services.session_working_memory import SessionWorkingMemory
 from app.services.vector_service import VectorService
+from app.services.agent_memory_service import agent_memory_service
 from app.services.mcp_service import mcp_tool_manager
 from app.tools.filesystem import FileSystemToolService
 from app.tools.web_search import WebSearchToolService
@@ -19,8 +20,8 @@ from app.services.planning_chat_service import planning_chat_service
 from app.core.decision import decision_engine
 from app.core.execution import execution_engine
 from app.core.strategy_router import strategy_router
-from app.core.react_executor import ReActExecutor
-
+from app.services.settings_service import settings_service
+from app.services.user_service import user_service
 # Configure logging
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL),
@@ -34,8 +35,11 @@ session_repo = SessionRepository(db)
 message_repo = MessageRepository(db)
 memory_repo = MemoryRepository(db)
 llm_service = LLMService()
-memory_service = MemoryService()
+memory_service = SessionWorkingMemory()
 vector_service = VectorService()
+
+# Wire agent_memory_service with vector_service
+agent_memory_service.set_vector_service(vector_service)
 
 # Initialize agent registry for A2A
 from app.services.agent_registry import agent_registry
@@ -80,9 +84,6 @@ logger.info("All tools registered with UnifiedToolManager")
 # Set LLM service for decision engine
 decision_engine.set_llm_service(llm_service)
 
-# Note: planning_chat_service uses Anthropic (AsyncAnthropic), llm_service uses Volcengine
-# They are separate LLM providers and don't share the same client
-
 # Set LLM service for strategy router (it imports llm_service internally)
 strategy_router.set_llm_client(llm_service)
 
@@ -106,9 +107,25 @@ async def lifespan(app: FastAPI):
         await db.initialize_schema()
         logger.info("Database initialized")
 
+        # Initialize settings and user services with DB connection
+        settings_service.set_db(db)
+        user_service.set_db(db)
+
+        # Ensure default settings exist in database
+        await settings_service.ensure_default_settings()
+        logger.info("Settings initialized")
+
+        # Ensure default admin user exists
+        await user_service.ensure_default_admin()
+        logger.info("Default admin user ensured")
+
+        # Reload settings from database (DB values override .env)
+        await settings.reload_from_db(db)
+        logger.info("Settings loaded from database")
+
         # Check LLM configuration
         if not llm_service.is_configured():
-            logger.warning("LLM service not configured. Please set ANTHROPIC_API_KEY in .env file")
+            logger.warning("LLM service not configured. Please set VOLCENGINE_API_KEY in .env file")
 
         # Check vector service
         if not vector_service.is_available():
@@ -231,6 +248,8 @@ from app.api import chat, sessions, memory, mcp, mcp_servers
 from app.api import agents  # Import agents module
 from app.api import skills  # Import skills module
 from app.api import collaborations, a2a  # Import collaboration and A2A modules
+from app.api import settings as settings_api  # Import settings module
+from app.api import users as users_api  # Import users module
 
 # Include routers
 app.include_router(chat.router)
@@ -242,9 +261,31 @@ app.include_router(agents.router)
 app.include_router(skills.router)
 app.include_router(collaborations.router)
 app.include_router(a2a.router)
+app.include_router(settings_api.router)
+app.include_router(users_api.router)
 
-# Mount static files
+# Mount static files with no-cache headers for development
+from starlette.middleware.base import BaseHTTPMiddleware
+
+
+class NoCacheMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
+
+
+app.add_middleware(NoCacheMiddleware)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.get("/m")
+async def mobile_page():
+    """Mobile H5 page"""
+    return RedirectResponse(url="/static/h5.html")
 
 
 @app.get("/")

@@ -146,9 +146,12 @@ class DatabaseConnection:
         await self._create_skills_table()
         await self._create_agent_skills_table()
         await self._create_agents_table()
+        await self._create_agent_memories_table()
         await self._create_collaborations_table()
         await self._create_collaboration_agents_table()
         await self._create_collaboration_tasks_table()
+        await self._create_settings_table()
+        await self._create_users_table()
 
     async def _create_sessions_table(self) -> None:
         """Create sessions table"""
@@ -306,6 +309,46 @@ class DatabaseConnection:
         except Exception:
             pass  # Table might already exist
 
+        # Add enable_long_term_memory column if it doesn't exist
+        try:
+            await self.execute("ALTER TABLE agents ADD COLUMN enable_long_term_memory INTEGER DEFAULT 0")
+            await self.commit()
+        except Exception:
+            pass  # Column already exists
+
+    async def _create_agent_memories_table(self) -> None:
+        """Create agent_memories table for long-term agent-level memory"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS agent_memories (
+            id TEXT PRIMARY KEY,
+            agent_id TEXT NOT NULL,
+            session_id TEXT,
+            content TEXT NOT NULL,
+            memory_type TEXT NOT NULL,
+            importance REAL DEFAULT 0.5,
+            access_count INTEGER DEFAULT 0,
+            source TEXT DEFAULT 'auto',
+            metadata TEXT,
+            created_at TEXT NOT NULL,
+            last_accessed_at TEXT,
+            FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+        )
+        """
+        await self.execute(sql)
+
+        sql = """
+        CREATE INDEX IF NOT EXISTS idx_agent_memories_agent_id
+        ON agent_memories(agent_id)
+        """
+        await self.execute(sql)
+
+        sql = """
+        CREATE INDEX IF NOT EXISTS idx_agent_memories_type
+        ON agent_memories(agent_id, memory_type)
+        """
+        await self.execute(sql)
+        await self.commit()
+
     async def _create_collaborations_table(self) -> None:
         """Create collaborations table"""
         sql = """
@@ -382,6 +425,39 @@ class DatabaseConnection:
         sql = """
         CREATE INDEX IF NOT EXISTS idx_collaboration_tasks_task_id
         ON collaboration_tasks (task_id)
+        """
+        await self.execute(sql)
+        await self.commit()
+
+    async def _create_settings_table(self) -> None:
+        """Create app_settings table"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            default_value TEXT,
+            description TEXT,
+            group_name TEXT DEFAULT 'general',
+            value_type TEXT DEFAULT 'string',
+            editable INTEGER DEFAULT 1,
+            created_at TEXT,
+            updated_at TEXT
+        )
+        """
+        await self.execute(sql)
+        await self.commit()
+
+    async def _create_users_table(self) -> None:
+        """Create app_users table"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS app_users (
+            id TEXT PRIMARY KEY,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'user',
+            created_at TEXT,
+            updated_at TEXT
+        )
         """
         await self.execute(sql)
         await self.commit()

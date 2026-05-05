@@ -540,6 +540,191 @@
             background: #fff3cd;
             color: #856404;
         }
+
+        /* Tool Selector */
+        .ts-empty {
+            color: #999;
+            font-size: 13px;
+            padding: 12px 0;
+        }
+        .ts-group {
+            border: 1px solid #e4e7ed;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            overflow: hidden;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .ts-group:hover {
+            border-color: #c0c6d0;
+        }
+        .ts-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            background: #f7f8fa;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s;
+        }
+        .ts-header:hover {
+            background: #eef0f4;
+        }
+        .ts-checkbox {
+            width: 16px !important;
+            height: 16px !important;
+            padding: 0 !important;
+            border: none !important;
+            border-radius: 0 !important;
+            accent-color: #667eea;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .ts-icon {
+            font-size: 15px;
+            flex-shrink: 0;
+        }
+        .ts-name {
+            font-weight: 600;
+            font-size: 14px;
+            color: #303133;
+            flex: 1 1 0;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .ts-count {
+            font-size: 12px;
+            color: #909399;
+            margin-left: auto;
+            flex-shrink: 0;
+        }
+        .ts-toggle {
+            font-size: 10px;
+            color: #909399;
+            transition: transform 0.2s;
+            flex-shrink: 0;
+        }
+        .ts-toggle.open {
+            transform: rotate(90deg);
+        }
+        .ts-body {
+            display: none;
+            border-top: 1px solid #e4e7ed;
+        }
+        .ts-body.open {
+            display: block;
+        }
+        .ts-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px 4px;
+            font-size: 12px;
+        }
+        .ts-actions a {
+            color: #667eea;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .ts-actions a:hover {
+            text-decoration: underline;
+        }
+        .ts-actions .ts-deselect {
+            color: #909399;
+        }
+        .ts-actions .ts-divider {
+            color: #dcdfe6;
+        }
+        .ts-tools {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 2px 8px;
+            padding: 4px 14px 10px;
+            max-height: 280px;
+            overflow-y: auto;
+        }
+        .ts-tool {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.15s;
+            line-height: 1.4;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+        .ts-tool:hover {
+            background: #f0f2f5;
+        }
+        .ts-tool input {
+            width: 14px !important;
+            height: 14px !important;
+            padding: 0 !important;
+            border: none !important;
+            border-radius: 0 !important;
+            accent-color: #667eea;
+            flex-shrink: 0;
+        }
+        .ts-tool-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: #303133;
+            flex-shrink: 0;
+        }
+        .ts-tool-desc {
+            font-size: 12px;
+            color: #a0a4ab;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* AI Recommend */
+        .ts-ai-recommend {
+            margin-bottom: 10px;
+        }
+        .ts-ai-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .ts-ai-row .form-control {
+            flex: 1;
+        }
+        .btn-ai-recommend {
+            padding: 9px 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-family: inherit;
+            font-weight: 500;
+            white-space: nowrap;
+            transition: opacity 0.2s, transform 0.15s;
+        }
+        .btn-ai-recommend:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+        .btn-ai-recommend:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .ts-ai-status {
+            margin-top: 6px;
+            font-size: 12px;
+            color: #667eea;
+        }
+        .ts-ai-status.error {
+            color: #dc3545;
+        }
     </style>
 </head>
 <body>
@@ -555,6 +740,9 @@
                 </a>
                 <a href="/static/mcp_manager.html">
                     <button>🔗 MCP管理</button>
+                </a>
+                <a href="/static/settings.html">
+                    <button>⚙️ 设置</button>
                 </a>
             </div>
         </div>
@@ -684,8 +872,9 @@
                             </div>
 
                             <div class="checkbox-group">
-                                <input type="checkbox" id="agentEnabled" checked>
-                                <label for="agentEnabled">启用</label>
+                                <input type="checkbox" id="enableLongTermMemory">
+                                <label for="enableLongTermMemory">启用长期记忆</label>
+                                <span style="font-size: 12px; color: #999; margin-left: 4px;">（开启后，Agent将跨会话记住用户偏好和重要信息）</span>
                             </div>
                         </div>
 
@@ -700,14 +889,20 @@
                             </div>
 
                             <div class="form-group">
-                                <label>MCP服务器</label>
-                                <div id="mcpServerList" class="checkbox-list">
+                                <label>MCP服务器与工具</label>
+                                <p style="color: #666; font-size: 13px; margin-bottom: 8px;">
+                                    勾选服务器自动全选其工具；展开后可逐个选择。只勾选服务器不选具体工具则加载该服务器全部工具。
+                                </p>
+                                <div class="ts-ai-recommend">
+                                    <div class="ts-ai-row">
+                                        <input type="text" id="aiRecommendInput" placeholder="描述你的需求，AI帮你推荐工具..." class="form-control">
+                                        <button type="button" id="aiRecommendBtn" onclick="aiRecommendTools()" class="btn-ai-recommend">
+                                            ✨ AI推荐
+                                        </button>
+                                    </div>
+                                    <div id="aiRecommendStatus" class="ts-ai-status" style="display:none;"></div>
                                 </div>
-                            </div>
-
-                            <div class="form-group">
-                                <label>本地工具</label>
-                                <div id="toolsList" class="checkbox-list">
+                                <div id="toolSelector">
                                 </div>
                             </div>
                         </div>
@@ -780,6 +975,7 @@
         let mcpServers = [];
         let availableTools = [];
         let availableSkills = [];
+        let toolCatalog = [];   // [{server_id, server_name, tools: [{name, description, original_name}]}]
         let currentAgentId = null;
         let currentStep = 1;
         let selectedMode = null;
@@ -788,9 +984,39 @@
         document.addEventListener('DOMContentLoaded', async () => {
             await loadAgents();
             await loadMCPServers();
-            await loadAvailableTools();
+            await loadToolCatalog();
             await loadAvailableSkills();
+            checkInitStatus();
         });
+
+        async function checkInitStatus() {
+            try {
+                const res = await fetch('/api/settings/init-status');
+                const data = await res.json();
+                if (!data.initialized) {
+                    showSetupDialog();
+                }
+            } catch (e) {
+                // Silently ignore
+            }
+        }
+
+        function showSetupDialog() {
+            const overlay = document.createElement('div');
+            overlay.id = 'setupOverlay';
+            overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
+            overlay.innerHTML = `
+                <div style="background:white;border-radius:16px;padding:40px;max-width:460px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+                    <div style="font-size:48px;margin-bottom:16px;">🚀</div>
+                    <h2 style="color:#333;margin-bottom:12px;">欢迎使用 Quest3 Agent</h2>
+                    <p style="color:#666;margin-bottom:24px;font-size:14px;line-height:1.6;">检测到系统尚未完成初始配置，请先设置 LLM API Key 等必要参数。</p>
+                    <button onclick="window.location.href='/static/settings.html?setup=1'" style="padding:14px 36px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;">前往设置</button>
+                    <br><br>
+                    <a href="#" onclick="document.getElementById('setupOverlay').remove();return false;" style="color:#999;font-size:13px;">稍后再说</a>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+        }
 
         async function loadAgents() {
             try {
@@ -832,6 +1058,7 @@
                                 <span class="agent-status ${agent.enabled ? 'enabled' : ''}">
                                     ${agent.enabled ? '✓ 启用' : '✗ 禁用'}
                                 </span>
+                                ${agent.enable_long_term_memory ? '<span class="agent-status enabled" style="margin-left: 4px;">🧠 长期记忆</span>' : ''}
                             </div>
                         </div>
                     </div>
@@ -887,54 +1114,178 @@
         }
 
         function renderMCPServers() {
-            const list = document.getElementById('mcpServerList');
-            if (!list) return;
+            // MCP server checkboxes are now rendered as part of the tool selector
+            // This function is kept for compatibility but the rendering is handled by renderToolSelector
+        }
 
-            if (!mcpServers || mcpServers.length === 0) {
-                list.innerHTML = '<small style="color: #999;">没有可用的MCP服务器</small>';
+        async function loadToolCatalog() {
+            try {
+                const response = await fetch('/api/mcp/servers/tools/catalog');
+                const data = await response.json();
+                toolCatalog = data.servers || [];
+                renderToolSelector();
+            } catch (error) {
+                console.error('Error loading tool catalog:', error);
+                toolCatalog = [];
+            }
+        }
+
+        function renderToolSelector() {
+            const container = document.getElementById('toolSelector');
+            if (!container) return;
+
+            if (!toolCatalog || toolCatalog.length === 0) {
+                container.innerHTML = '<div class="ts-empty">没有可用的工具服务器，请先在MCP管理中添加并连接服务器</div>';
                 return;
             }
 
-            list.innerHTML = mcpServers.map(server => `
-                <div class="checkbox-item">
-                    <input type="checkbox" id="mcp_${server.id}" value="${server.id}">
-                    <label for="mcp_${server.id}">
-                        <strong>${escapeHtml(server.name)}</strong>
-                        <small style="color: #999; margin-left: 5px;">(${server.status || 'unknown'})</small>
-                    </label>
-                </div>
-            `).join('');
+            container.innerHTML = toolCatalog.map(server => {
+                const isLocal = server.server_id === 'local';
+                const toolCount = server.tools ? server.tools.length : 0;
+
+                return `
+                    <div class="ts-group">
+                        <div class="ts-header" onclick="toggleServerGroup('${server.server_id}')">
+                            ${isLocal ? '' : `
+                                <input type="checkbox" class="ts-checkbox" id="mcp_${server.server_id}" value="${server.server_id}"
+                                       onclick="event.stopPropagation()"
+                                       onchange="onServerCheckboxChange('${server.server_id}', this.checked)">
+                            `}
+                            <span class="ts-icon">${isLocal ? '🏠' : '🔗'}</span>
+                            <span class="ts-name">${escapeHtml(server.server_name)}</span>
+                            <span class="ts-count">${toolCount} 个工具</span>
+                            <span class="ts-toggle" id="toggle_icon_${server.server_id}">▶</span>
+                        </div>
+                        <div class="ts-body" id="server_tools_${server.server_id}">
+                            <div class="ts-actions">
+                                <a href="javascript:void(0)" onclick="selectAllTools('${server.server_id}', true)">全选</a>
+                                <span class="ts-divider">|</span>
+                                <a href="javascript:void(0)" class="ts-deselect" onclick="selectAllTools('${server.server_id}', false)">全不选</a>
+                            </div>
+                            <div class="ts-tools">
+                                ${(server.tools || []).map(tool => `
+                                    <label class="ts-tool" for="tool_${tool.name}" title="${tool.description ? escapeHtml(tool.description) : ''}">
+                                        <input type="checkbox" id="tool_${tool.name}" value="${tool.name}"
+                                               data-server-id="${server.server_id}" class="tool-cb-${server.server_id}">
+                                        <span class="ts-tool-name">${escapeHtml(tool.name)}</span>
+                                        ${tool.description ? `<span class="ts-tool-desc">${escapeHtml(tool.description)}</span>` : ''}
+                                    </label>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
         }
 
-        async function loadAvailableTools() {
+        function toggleServerGroup(serverId) {
+            const toolsDiv = document.getElementById(`server_tools_${serverId}`);
+            const icon = document.getElementById(`toggle_icon_${serverId}`);
+            if (!toolsDiv) return;
+            const isOpen = toolsDiv.classList.toggle('open');
+            if (icon) icon.classList.toggle('open', isOpen);
+        }
+
+        function onServerCheckboxChange(serverId, checked) {
+            selectAllTools(serverId, checked);
+            const toolsDiv = document.getElementById(`server_tools_${serverId}`);
+            const icon = document.getElementById(`toggle_icon_${serverId}`);
+            if (toolsDiv) {
+                if (checked) {
+                    toolsDiv.classList.add('open');
+                } else {
+                    toolsDiv.classList.remove('open');
+                }
+            }
+            if (icon) icon.classList.toggle('open', checked);
+        }
+
+        function selectAllTools(serverId, selected) {
+            document.querySelectorAll(`.tool-cb-${serverId}`).forEach(cb => {
+                cb.checked = selected;
+            });
+        }
+
+        async function aiRecommendTools() {
+            const input = document.getElementById('aiRecommendInput');
+            const btn = document.getElementById('aiRecommendBtn');
+            const status = document.getElementById('aiRecommendStatus');
+            const requirement = input.value.trim();
+
+            if (!requirement) {
+                showError('请先输入需求描述');
+                return;
+            }
+
+            // Show loading state
+            btn.disabled = true;
+            btn.textContent = '✨ 分析中...';
+            status.style.display = 'block';
+            status.className = 'ts-ai-status';
+            status.textContent = 'AI正在分析您的需求，请稍候...';
+
             try {
-                const response = await fetch('/tools');
+                const response = await fetch('/api/mcp/servers/tools/recommend', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ requirement })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || '推荐失败');
+                }
+
                 const data = await response.json();
-                availableTools = data.tools || [];
-                renderTools();
+                const recommended = data.recommended_tools || [];
+
+                if (recommended.length === 0) {
+                    status.className = 'ts-ai-status error';
+                    status.textContent = 'AI未找到匹配的工具，请尝试更具体的需求描述';
+                    return;
+                }
+
+                // Auto-check recommended tools
+                let checkedCount = 0;
+                const affectedServers = new Set();
+
+                recommended.forEach(toolName => {
+                    const cb = document.getElementById('tool_' + toolName);
+                    if (cb) {
+                        cb.checked = true;
+                        checkedCount++;
+                        const serverId = cb.dataset.serverId;
+                        if (serverId) affectedServers.add(serverId);
+                    }
+                });
+
+                // Check server-level checkboxes and expand affected groups
+                affectedServers.forEach(serverId => {
+                    const serverCb = document.getElementById('mcp_' + serverId);
+                    if (serverCb) serverCb.checked = true;
+
+                    const toolsDiv = document.getElementById('server_tools_' + serverId);
+                    const icon = document.getElementById('toggle_icon_' + serverId);
+                    if (toolsDiv) toolsDiv.classList.add('open');
+                    if (icon) icon.classList.add('open');
+                });
+
+                status.className = 'ts-ai-status';
+                status.textContent = `✨ AI推荐了 ${checkedCount} 个工具`;
+
             } catch (error) {
-                console.error('Error loading tools:', error);
+                console.error('AI recommend error:', error);
+                status.className = 'ts-ai-status error';
+                status.textContent = '推荐失败：' + error.message;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '✨ AI推荐';
             }
         }
 
         function renderTools() {
-            const list = document.getElementById('toolsList');
-            if (!list) return;
-
-            if (!availableTools || availableTools.length === 0) {
-                list.innerHTML = '<small style="color: #999;">没有可用的本地工具</small>';
-                return;
-            }
-
-            list.innerHTML = availableTools.map(tool => `
-                <div class="checkbox-item">
-                    <input type="checkbox" id="tool_${tool.name}" value="${tool.name}">
-                    <label for="tool_${tool.name}">
-                        <strong>${escapeHtml(tool.name)}</strong>
-                        <small style="color: #999; margin-left: 5px;">(${tool.source || 'local'})</small>
-                    </label>
-                </div>
-            `).join('');
+            // Tool checkboxes are now rendered as part of the tool selector
+            // This function is kept for compatibility but the rendering is handled by renderToolSelector
         }
 
         async function loadAvailableSkills() {
@@ -1083,7 +1434,7 @@
             });
 
             document.getElementById('agentForm').reset();
-            document.getElementById('agentEnabled').checked = true;
+            document.getElementById('enableLongTermMemory').checked = false;
             document.getElementById('agentPriority').value = '0';
 
             document.getElementById('stepContent1').style.display = 'block';
@@ -1121,7 +1472,7 @@
             document.getElementById('agentDescription').value = agent.description || '';
             document.getElementById('agentType').value = agent.type || 'chat';
             document.getElementById('agentPriority').value = agent.priority || 0;
-            document.getElementById('agentEnabled').checked = agent.enabled;
+            document.getElementById('enableLongTermMemory').checked = agent.enable_long_term_memory || false;
             document.getElementById('agentModel').value = agent.model || '';
             document.getElementById('agentTemperature').value = agent.temperature || '';
             document.getElementById('agentMaxTokens').value = agent.max_tokens || '';
@@ -1129,12 +1480,31 @@
             document.getElementById('maxReactSteps').value = agent.max_react_steps || 15;
             document.getElementById('agentSystemPrompt').value = agent.system_prompt || '';
 
-            document.querySelectorAll('#mcpServerList input[type="checkbox"]').forEach(cb => {
-                cb.checked = (agent.mcp_servers || []).some(mcp => mcp.server_id === cb.value);
+            // Check MCP servers
+            const agentMcpIds = (agent.mcp_servers || []).map(mcp =>
+                typeof mcp === 'string' ? mcp : mcp.server_id
+            );
+            document.querySelectorAll('#toolSelector input[id^="mcp_"]').forEach(cb => {
+                cb.checked = agentMcpIds.includes(cb.value);
             });
 
-            document.querySelectorAll('#toolsList input[type="checkbox"]').forEach(cb => {
-                cb.checked = (agent.tools || []).includes(cb.value);
+            // Check individual tools
+            const agentToolNames = agent.tools || [];
+            document.querySelectorAll('#toolSelector input[id^="tool_"]').forEach(cb => {
+                cb.checked = agentToolNames.includes(cb.value);
+            });
+
+            // Expand server groups that are checked or have checked tools
+            toolCatalog.forEach(server => {
+                const serverCb = document.getElementById(`mcp_${server.server_id}`);
+                const isChecked = serverCb && serverCb.checked;
+                const hasCheckedTool = (server.tools || []).some(t => agentToolNames.includes(t.name));
+                if (isChecked || hasCheckedTool) {
+                    const toolsDiv = document.getElementById(`server_tools_${server.server_id}`);
+                    const icon = document.getElementById(`toggle_icon_${server.server_id}`);
+                    if (toolsDiv) toolsDiv.classList.add('open');
+                    if (icon) icon.classList.add('open');
+                }
             });
 
             document.querySelectorAll('#skillsList input[type="checkbox"]').forEach(cb => {
@@ -1161,7 +1531,7 @@
                 description: document.getElementById('agentDescription')?.value?.trim(),
                 type: document.getElementById('agentType')?.value,
                 priority: parseInt(document.getElementById('agentPriority')?.value) || 0,
-                enabled: document.getElementById('agentEnabled')?.checked,
+                enable_long_term_memory: document.getElementById('enableLongTermMemory')?.checked || false,
                 execution_mode: selectedMode,
                 thinking_effort: document.getElementById('thinkingEffort')?.value || 'medium',
                 max_react_steps: parseInt(document.getElementById('maxReactSteps')?.value) || 15,
@@ -1179,11 +1549,11 @@
                     formData.skills.push(cb.value);
                 });
 
-                document.querySelectorAll('#mcpServerList input[type="checkbox"]:checked').forEach(cb => {
+                document.querySelectorAll('#toolSelector input[id^="mcp_"]:checked').forEach(cb => {
                     formData.mcp_servers.push(cb.value);
                 });
 
-                document.querySelectorAll('#toolsList input[type="checkbox"]:checked').forEach(cb => {
+                document.querySelectorAll('#toolSelector input[id^="tool_"]:checked').forEach(cb => {
                     formData.tools.push(cb.value);
                 });
             }

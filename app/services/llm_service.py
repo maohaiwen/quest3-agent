@@ -607,6 +607,25 @@ class LLMService:
         """
         return bool(self.api_key) and bool(self.volc_client)
 
+    def reconfigure(self):
+        """Reconfigure LLM service with current settings values.
+
+        Called when LLM-related settings are updated via the settings page.
+        Rebuilds the Volcengine client with new API key / base URL / model.
+        """
+        self.api_key = settings.VOLCENGINE_API_KEY
+        self.model = settings.VOLCENGINE_MODEL
+        self.temperature = settings.LLM_TEMPERATURE
+        self.max_tokens = settings.LLM_MAX_TOKENS
+
+        if Ark and self.api_key:
+            volc_base_url = getattr(settings, 'VOLCENGINE_BASE_URL', 'https://ark.cn-beijing.volces.com/api/v3')
+            self.volc_client = Ark(base_url=volc_base_url, api_key=self.api_key)
+            logger.info(f"LLM service reconfigured with model: {self.model}")
+        else:
+            self.volc_client = None
+            logger.warning("LLM service reconfigured but no API key available")
+
 
 # Global LLM service instance
 llm_service = LLMService()
