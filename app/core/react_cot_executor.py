@@ -435,7 +435,7 @@ class ReActCotExecutor:
             # Deduplicate while preserving order
             seen = set()
             unique = []
-            for t in normalized:
+            for t in raw_tools:
                 if t not in seen:
                     seen.add(t)
                     unique.append(t)

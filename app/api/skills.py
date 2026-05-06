@@ -503,7 +503,10 @@ async def list_templates():
 
 
 @router.post("/scaffold")
-async def create_skill_from_template(request: SkillScaffoldRequest):
+async def create_skill_from_template(
+    request: SkillScaffoldRequest,
+    repo: SkillRepository = Depends(get_repo),
+):
     """Create a new skill from a template"""
     from app.skills.file_manager import get_skill_file_manager
     from app.skills.loader import SkillLoader
@@ -527,6 +530,22 @@ async def create_skill_from_template(request: SkillScaffoldRequest):
 
         # Check if skill exists now
         new_skill = registry.get_skill(request.name)
+
+        # Sync to database so it appears in the management page
+        if new_skill:
+            try:
+                existing = await repo.get_skill_by_name(new_skill.name)
+                if not existing:
+                    skill_create = SkillCreate(
+                        name=new_skill.name,
+                        description=new_skill.description,
+                        skill_content=new_skill.skill_content,
+                        source=new_skill.source,
+                    )
+                    await repo.create_skill(skill_create)
+                    logger.info(f"Scaffold: synced skill '{new_skill.name}' to database")
+            except Exception as db_err:
+                logger.warning(f"Scaffold: failed to sync skill to database: {db_err}")
 
         return {
             "message": f"Skill {request.name} ready",
@@ -593,7 +612,12 @@ async def read_skill_file(skill_name: str, file_path: str):
 
 
 @router.post("/{skill_name}/files/{file_path:path}")
-async def write_skill_file(skill_name: str, file_path: str, request: Request):
+async def write_skill_file(
+    skill_name: str,
+    file_path: str,
+    request: Request,
+    repo: SkillRepository = Depends(get_repo),
+):
     """Write a file to a skill directory"""
     from app.skills.file_manager import get_skill_file_manager
     from app.skills.registry import get_skill_registry
@@ -614,6 +638,22 @@ async def write_skill_file(skill_name: str, file_path: str, request: Request):
         registry.reload()
     except Exception as e:
         logger.warning(f"Failed to reload registry: {e}")
+
+    # Sync skill.md changes to database
+    if file_path == "skill.md":
+        try:
+            registry = get_skill_registry()
+            updated_skill = registry.get_skill(skill_name)
+            if updated_skill:
+                existing = await repo.get_skill_by_name(skill_name)
+                if existing:
+                    skill_update = SkillUpdate(
+                        skill_content=updated_skill.skill_content,
+                    )
+                    await repo.update_skill(existing.id, skill_update)
+                    logger.info(f"Synced skill.md changes to database for '{skill_name}'")
+        except Exception as db_err:
+            logger.warning(f"Failed to sync skill.md to database: {db_err}")
 
     return {"message": f"File {file_path} written successfully"}
 
