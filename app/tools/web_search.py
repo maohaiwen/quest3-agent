@@ -15,16 +15,40 @@ class WebSearchToolService(BaseToolService):
     def __init__(
         self,
         api_key: Optional[str] = None,
-        base_url: str = "https://open.feedcoopapi.com/search_api/web_search"
+        base_url: Optional[str] = None
     ):
         """Initialize web search tool service
 
         Args:
-            api_key: Volcano Engine API key (will use config if not provided)
-            base_url: Web search API endpoint
+            api_key: Volcano Engine API key (overrides settings, for backward compat)
+            base_url: Web search API endpoint (overrides settings)
         """
-        self.api_key = api_key or getattr(settings, 'WEB_SEARCH_API_KEY', '')
-        self.base_url = base_url
+        self._api_key_override = api_key
+        self._base_url_override = base_url
+
+    async def _resolve_api_key(self) -> str:
+        """Resolve API key: DB setting > .env > constructor arg"""
+        # 1. Try DB setting first (user may have updated via settings page)
+        try:
+            from app.services.settings_service import settings_service
+            db_value = await settings_service.get_setting("WEB_SEARCH_API_KEY")
+            if db_value:
+                return db_value
+        except Exception:
+            pass
+        # 2. Constructor override, then .env
+        return self._api_key_override or getattr(settings, 'WEB_SEARCH_API_KEY', '')
+
+    async def _resolve_base_url(self) -> str:
+        """Resolve base URL: DB setting > constructor override > .env"""
+        try:
+            from app.services.settings_service import settings_service
+            db_value = await settings_service.get_setting("WEB_SEARCH_API_URL")
+            if db_value:
+                return db_value
+        except Exception:
+            pass
+        return self._base_url_override or getattr(settings, 'WEB_SEARCH_API_URL', 'https://open.feedcoopapi.com/search_api/web_search')
 
     async def search(
         self,
@@ -48,7 +72,11 @@ class WebSearchToolService(BaseToolService):
         Returns:
             Search results with titles, URLs, snippets, and optional summary
         """
-        if not self.api_key:
+        # Resolve API key and base URL dynamically (may have been updated in settings)
+        api_key = await self._resolve_api_key()
+        base_url = await self._resolve_base_url()
+
+        if not api_key:
             return {
                 "error": "Web search API key not configured",
                 "results": []
@@ -56,7 +84,7 @@ class WebSearchToolService(BaseToolService):
 
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
+            "Authorization": f"Bearer {api_key}"
         }
 
         payload = {
@@ -73,7 +101,7 @@ class WebSearchToolService(BaseToolService):
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
-                    self.base_url,
+                    base_url,
                     json=payload,
                     headers=headers
                 )

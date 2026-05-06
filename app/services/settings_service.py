@@ -32,7 +32,8 @@ DEFAULT_SETTINGS = [
 
 # Keys that require service reconfiguration when changed
 HOT_RELOAD_KEYS = {"VOLCENGINE_API_KEY", "VOLCENGINE_BASE_URL", "VOLCENGINE_MODEL",
-                   "LLM_TEMPERATURE", "LLM_MAX_TOKENS"}
+                   "LLM_TEMPERATURE", "LLM_MAX_TOKENS",
+                   "WEB_SEARCH_API_KEY", "WEB_SEARCH_API_URL"}
 
 
 class SettingsService:
