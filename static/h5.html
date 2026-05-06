@@ -757,8 +757,8 @@
             }
 
             var icons = { chat: '\uD83D\uDCAC', coder: '\uD83D\uDCBB', researcher: '\uD83D\uDD2C', custom: '\uD83E\uDD16' };
-            var modeTag = { plan: 'tag-plan', react: 'tag-react', react_cot: 'tag-cot', direct: 'tag-direct' };
-            var modeLabel = { plan: 'Plan', react: 'ReAct', react_cot: 'COT', direct: 'Direct' };
+            var modeTag = { plan: 'tag-plan', react: 'tag-react', direct: 'tag-direct' };
+            var modeLabel = { plan: 'Plan', react: 'ReAct', direct: 'Direct' };
             var self = this;
 
             document.getElementById('agentList').innerHTML = '<div class="agent-grid">' +
@@ -781,8 +781,8 @@
             if (!agent) return;
             this.currentAgent = agent;
 
-            var modeIcons = { plan: '\uD83D\uDCCB', react: '\uD83D\uDD04', react_cot: '\uD83E\uDDE0', direct: '\u26A1' };
-            var modeNames = { plan: 'Plan', react: 'ReAct', react_cot: 'COT', direct: 'Direct' };
+            var modeIcons = { plan: '\uD83D\uDCCB', react: '\uD83D\uDD04', direct: '\u26A1' };
+            var modeNames = { plan: 'Plan', react: 'ReAct', direct: 'Direct' };
             document.getElementById('chatAgentName').textContent = agent.name;
             document.getElementById('chatAgentMode').innerHTML =
                 '<span class="connection-dot off" id="connDot"></span><span id="connText">' +
@@ -1016,7 +1016,7 @@
                     this.toast(data.error || '思考过程出错');
                     break;
 
-                // ── COT events (react_cot mode) ──
+                // ── COT events (react mode) ──
                 case 'cot_step_start':
                     if (!this.isResponding) this.startAiResponse();
                     this.ensureThinkingCard();

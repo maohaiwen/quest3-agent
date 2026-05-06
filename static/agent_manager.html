@@ -806,18 +806,7 @@
                                 <div class="mode-icon">🔄</div>
                                 <div class="mode-name">ReAct模式</div>
                                 <div class="mode-description">
-                                    通过思考-行动-观察的循环逐步执行。适合需要边做边调整的任务。
-                                </div>
-                                <div class="mode-note tools">
-                                    🔧 需要配置工具
-                                </div>
-                            </div>
-
-                            <div class="mode-card" data-mode="react_cot" onclick="selectMode('react_cot')">
-                                <div class="mode-icon">🧠</div>
-                                <div class="mode-name">ReAct Cot模式</div>
-                                <div class="mode-description">
-                                    利用深度思维链能力，边思考边调用工具。可以实时观察思考过程。
+                                    利用深度思维链能力，边思考边调用工具。可以实时观察思考过程。适合需要多步推理的任务。
                                 </div>
                                 <div class="mode-note tools">
                                     🔧 需要配置工具
@@ -1408,7 +1397,7 @@
             // 更新思维链配置区域
             const thinkingSection = document.getElementById('thinkingConfigSection');
             if (thinkingSection) {
-                if (selectedMode === 'react_cot') {
+                if (selectedMode === 'react') {
                     thinkingSection.style.display = 'block';
                 } else {
                     thinkingSection.style.display = 'none';
@@ -1450,7 +1439,7 @@
 
             isEditMode = true;
             currentAgentId = agentId;
-            selectedMode = agent.execution_mode || 'plan';
+            selectedMode = agent.execution_mode === 'react_cot' ? 'react' : (agent.execution_mode || 'plan');
             currentStep = 2;
 
             document.getElementById('modalTitle').textContent = '编辑Agent';
@@ -1702,7 +1691,7 @@
         }
 
         function getModeIcon(mode) {
-            const icons = { 'plan': '📋', 'react': '🔄', 'react_cot': '🧠', 'direct': '⚡' };
+            const icons = { 'plan': '📋', 'react': '🔄', 'direct': '⚡' };
             return icons[mode] || '📋';
         }
 
@@ -1710,7 +1699,6 @@
             const names = {
                 'plan': 'Plan模式',
                 'react': 'ReAct模式',
-                'react_cot': 'ReAct Cot模式',
                 'direct': 'Direct模式'
             };
             return names[mode] || 'Plan模式';

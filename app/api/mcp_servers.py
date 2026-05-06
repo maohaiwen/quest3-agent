@@ -274,7 +274,44 @@ async def get_tools_catalog():
     suitable for the Agent editor's tool selector UI.
     """
     try:
-        all_tools = await mcp_client_pool.get_all_tools()
+        # Get MCP remote tools from client pool
+        mcp_tools = await mcp_client_pool.get_all_tools()
+
+        # Get local tools from unified tool manager
+        from app.core.tool_manager import get_tool_manager
+        tool_manager = get_tool_manager()
+        local_tools = await tool_manager.get_available_tools()
+
+        # Merge all tools
+        all_tools = {}
+
+        # Add local tools first
+        for tool_name, tool_def in local_tools.items():
+            if tool_def.source == "local":
+                all_tools[tool_name] = {
+                    "name": tool_name,
+                    "description": tool_def.description,
+                    "original_name": tool_def.original_name or tool_name,
+                    "server_id": "local",
+                    "server_name": "本地工具",
+                    "source": "local",
+                }
+            elif tool_def.source == "skill":
+                all_tools[tool_name] = {
+                    "name": tool_name,
+                    "description": tool_def.description,
+                    "original_name": tool_def.original_name or tool_name,
+                    "server_id": "skill",
+                    "server_name": "技能工具",
+                    "source": "skill",
+                }
+
+        # Add MCP remote tools
+        for tool_name, tool_info in mcp_tools.items():
+            if tool_info.get("source") == "local":
+                # Skip local tools already added above from unified tool manager
+                continue
+            all_tools[tool_name] = tool_info
 
         # Group by server_id
         servers_map: Dict[str, Any] = {}
@@ -286,6 +323,9 @@ async def get_tools_catalog():
             if source == "local":
                 server_id = "local"
                 server_name = "本地工具"
+            elif source == "skill":
+                server_id = "skill"
+                server_name = "技能工具"
 
             if server_id not in servers_map:
                 servers_map[server_id] = {

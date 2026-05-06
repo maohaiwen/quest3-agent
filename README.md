@@ -6,7 +6,7 @@
 
 ### 智能体管理
 - 多智能体配置：每个智能体可独立配置模型、system_prompt、执行模式、工具、MCP服务器
-- 执行模式：direct（直接对话）、plan（规划执行）、react（推理行动）、react_cot（推理+思维链）
+- 执行模式：direct（直接对话）、plan（规划执行）、react（推理+思维链）
 - 深度思考：集成火山引擎深度推理，支持 configurable reasoning effort
 
 ### 多智能体协作
@@ -126,8 +126,7 @@ quest3-agent/
 │   │   ├── settings.py         # 系统设置API
 │   │   └── users.py            # 用户管理API
 │   ├── core/                   # 核心执行引擎
-│   │   ├── react_cot_executor.py    # ReAct+CoT执行器
-│   │   ├── react_executor.py        # ReAct执行器
+│   │   ├── react_cot_executor.py    # ReAct执行器（思维链+工具循环）
 │   │   ├── decision.py              # 任务决策引擎
 │   │   ├── execution.py             # 执行引擎
 │   │   ├── strategy_router.py       # 策略路由

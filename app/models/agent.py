@@ -39,7 +39,7 @@ class AgentCreate(BaseModel):
     name: str = Field(..., description="Agent name")
     description: str = Field(default="", description="Agent description")
     type: AgentType = Field(default=AgentType.CUSTOM, description="Agent type")
-    execution_mode: str = Field(default="plan", description="Execution mode: plan, react, react_cot, or direct")
+    execution_mode: str = Field(default="plan", description="Execution mode: plan, react, or direct")
     system_prompt: str = Field(default="", description="System prompt for the agent")
     model: Optional[str] = Field(default=None, description="LLM model to use")
     temperature: Optional[float] = Field(default=None, description="Temperature for generation")

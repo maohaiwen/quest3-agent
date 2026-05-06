@@ -58,7 +58,7 @@ function showActiveAgent(agent) {
         }
     }
 
-    const modeIcon = agent.execution_mode === 'react' ? '🔄' : '📋';
+    const modeIcon = agent.execution_mode === 'react' ? '🔄' : (agent.execution_mode === 'direct' ? '⚡' : '📋');
 
     agentInfo.innerHTML = `
         <span class="agent-icon">${modeIcon}</span>

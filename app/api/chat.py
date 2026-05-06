@@ -416,8 +416,10 @@ async def chat_stream(
                             agent_config_dict, agent_id, message
                         )
 
-                # Get execution mode
+                # Get execution mode (backward compat: react_cot maps to react)
                 execution_mode = getattr(agent, "execution_mode", "plan") if agent else "plan"
+                if execution_mode == "react_cot":
+                    execution_mode = "react"
                 logger.info(f"Execution mode: {execution_mode}")
 
                 # Use strategy router for direct mode
@@ -488,12 +490,12 @@ async def chat_stream(
 
                         # Add to memory
                         await _add_assistant_message(memory_service, session_id, full_response, agent_model=agent_config_dict.get("model"))
-                elif execution_mode in ["plan", "react", "react_cot"]:
+                elif execution_mode in ["plan", "react"]:
                     logger.info(f"Using execution mode: {execution_mode}")
 
-                    if execution_mode == "react_cot":
-                        # ReAct + 思维链模式
-                        logger.info("Using ReActCotExecutor")
+                    if execution_mode == "react":
+                        # ReAct 模式：思考-行动-观察循环
+                        logger.info("Using ReActCotExecutor for react mode")
                         from app.core.react_cot_executor import ReActCotExecutor
 
                         # 添加 thinking_effort 到配置
@@ -517,7 +519,7 @@ async def chat_stream(
                                 if event.get("type") == "end":
                                     sent_end = True
                         except Exception as e:
-                            logger.error(f"ReActCot execution error: {e}", exc_info=True)
+                            logger.error(f"ReAct execution error: {e}", exc_info=True)
                             try:
                                 await websocket.send_json({
                                     "type": "error",
@@ -541,24 +543,19 @@ async def chat_stream(
                             ))
                             await _add_assistant_message(memory_service, session_id, full_response, agent_model=agent_config_dict.get("model"))
 
-                        # react_cot 模式已由 ReActCotExecutor 处理，不需要再走 planning_chat_service
-                        if execution_mode == "react_cot":
-                            continue
-
+                    else:
+                        # plan 模式：先规划再执行
                         from app.services.planning_chat_service import planning_chat_service
 
-                        # For plan & react mode, force enable deep thinking
-                        actual_deep_thinking = current_deep_thinking
-                        if execution_mode == "plan" or execution_mode == "react":
-                            actual_deep_thinking = True
-                            logger.info(f"{execution_mode.capitalize()} mode: forcing deep thinking enabled")
+                        actual_deep_thinking = True
+                        logger.info("Plan mode: forcing deep thinking enabled")
 
                         full_response = ""
                         async for event in planning_chat_service.chat(
                             message,
                             conversation_history=history,
-                            enable_planning=(execution_mode == "plan"),
-                            use_react=(execution_mode == "react"),
+                            enable_planning=True,
+                            use_react=False,
                             agent_config=agent_config_dict,
                             deep_thinking=actual_deep_thinking
                         ):

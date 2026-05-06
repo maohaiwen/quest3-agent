@@ -151,9 +151,9 @@ class PlanningChatService:
             yield ChatEvent.done()
             return
 
-        # Use ReAct executor for react mode
+        # Use ReAct executor for react mode (legacy path, react now handled directly in chat.py)
         if use_react:
-            from app.core.react_executor import ReActExecutor
+            from app.core.react_cot_executor import ReActCotExecutor
 
             # Merge agent config with service config
             merged_config = {
@@ -164,9 +164,8 @@ class PlanningChatService:
             if agent_config:
                 merged_config.update(agent_config)
 
-            executor = ReActExecutor(
+            executor = ReActCotExecutor(
                 agent_config=merged_config,
-                llm_client=self.client
             )
 
             final_response = ""

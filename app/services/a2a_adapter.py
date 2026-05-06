@@ -78,12 +78,15 @@ class A2AAdapter:
             logger.info(f"Agent {self.agent.name} handling task {task.id}: {task.input[:50]}...")
 
             execution_mode = getattr(self.agent, 'execution_mode', 'direct')
+            # Backward compat: react_cot maps to react
+            if execution_mode == "react_cot":
+                execution_mode = "react"
             agent_config_dict = self._build_agent_config_dict()
 
             if execution_mode == "direct":
                 full_response = await self._execute_direct(task.input, agent_config_dict)
             else:
-                # react_cot, plan, and react all use ReActCotExecutor
+                # plan and react both use ReActCotExecutor
                 full_response = await self._execute_react(task.input, agent_config_dict)
 
             task.set_completed(full_response)
@@ -117,7 +120,7 @@ class A2AAdapter:
         )
 
     async def _execute_react(self, task_input: str, agent_config: Dict[str, Any]) -> str:
-        """ReAct + CoT execution mode (used for react_cot, plan, and react modes)"""
+        """ReAct execution mode (used for plan and react modes)"""
         from app.core.react_cot_executor import ReActCotExecutor
 
         executor = ReActCotExecutor(agent_config=agent_config)

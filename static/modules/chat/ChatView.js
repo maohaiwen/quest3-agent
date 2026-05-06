@@ -580,9 +580,9 @@ const ChatView = {
             this._updateThinkingToggle('direct');
             return;
         }
-        const modeIcons = { 'plan': '📋', 'react': '🔄', 'react_cot': '🧠', 'direct': '⚡' };
+        const modeIcons = { 'plan': '📋', 'react': '🔄', 'direct': '⚡' };
         const modeIcon = modeIcons[agent.execution_mode] || '📋';
-        const modeNames = { 'plan': 'Plan', 'react': 'ReAct', 'react_cot': 'COT', 'direct': 'Direct' };
+        const modeNames = { 'plan': 'Plan', 'react': 'ReAct', 'direct': 'Direct' };
         const modeName = modeNames[agent.execution_mode] || agent.execution_mode;
         info.innerHTML = `<div style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; background: rgba(102, 126, 234, 0.2); border-radius: 16px; font-size: 13px;"><span>${modeIcon}</span><span style="font-weight: 500;">${this.escapeHtml(agent.name)}</span><span style="color: var(--text-secondary);">(${modeName})</span></div>`;
         this._updateThinkingToggle(agent.execution_mode);
@@ -593,7 +593,7 @@ const ChatView = {
         const checkbox = document.getElementById('deepThinkingCheckbox');
         if (!row || !checkbox) return;
 
-        // Only show toggle in direct mode; plan/react/react_cot always use deep thinking
+        // Only show toggle in direct mode; plan/react always use deep thinking
         if (executionMode === 'direct') {
             row.style.display = 'flex';
             // Default off for direct mode
