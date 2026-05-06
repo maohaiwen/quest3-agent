@@ -37,12 +37,48 @@ class MCPServerConfig:
     headers: Dict[str, str] = field(default_factory=dict)
     server_type: str = "standard"  # "standard" or "streamable"
     tool_count: int = 0
-    # Use short ID as prefix to avoid conflicts
-    short_id: str = field(init=False)
+    # Human-readable prefix for tool names (derived from server name)
+    tool_prefix: str = field(init=False)
 
     def __post_init__(self):
-        # Generate a short prefix from ID (first 8 chars)
-        self.short_id = self.id[:8] if len(self.id) > 8 else self.id
+        # Generate a human-readable prefix from server name
+        self.tool_prefix = self._make_tool_prefix(self.name)
+
+    @staticmethod
+    def _make_tool_prefix(server_name: str) -> str:
+        """Generate a short, human-readable, ASCII-safe prefix from server name.
+
+        Examples:
+            "新闻服务" → "srv_abc1" (hash-based fallback for non-ASCII)
+            "News API" → "news_api"
+            "My-Tool Server" → "my_tool"
+        """
+        import re
+        import hashlib
+
+        # Try to use the name directly if it's ASCII
+        ascii_name = server_name.strip()
+        # Replace spaces and hyphens with underscores
+        ascii_name = re.sub(r'[\s\-]+', '_', ascii_name)
+        # Remove non-alphanumeric chars (except underscore)
+        ascii_name = re.sub(r'[^a-zA-Z0-9_]', '', ascii_name)
+        # Lowercase
+        ascii_name = ascii_name.lower()
+        # Collapse multiple underscores
+        ascii_name = re.sub(r'_+', '_', ascii_name)
+        # Strip leading/trailing underscores
+        ascii_name = ascii_name.strip('_')
+
+        # If nothing left (was all non-ASCII), use hash-based prefix
+        if not ascii_name:
+            hash_hex = hashlib.md5(server_name.encode('utf-8')).hexdigest()[:6]
+            ascii_name = f"srv_{hash_hex}"
+
+        # Truncate to max 20 chars to keep tool names reasonable
+        if len(ascii_name) > 20:
+            ascii_name = ascii_name[:20].rstrip('_')
+
+        return ascii_name
 
     def to_dict(self) -> dict:
         """Convert to dictionary
@@ -340,27 +376,34 @@ class MCPClientPool:
         """Get tools from all connected servers
 
         Returns:
-            Dictionary of all tools
+            Dictionary of all tools, keyed by original tool name.
+            If multiple servers provide a tool with the same name,
+            the first one wins and duplicates are logged as warnings.
         """
         all_tools = {}
 
-        # Add local tools first (higher priority, no prefix)
+        # Add local tools first (highest priority)
         logger.info(f"get_all_tools: local_tools has {len(self.local_tools)} tools: {list(self.local_tools.keys())}")
         for tool_name, tool in self.local_tools.items():
             all_tools[tool_name] = tool.copy()
-            all_tools[tool_name]["name"] = tool_name  # Use original name without prefix
+            all_tools[tool_name]["name"] = tool_name
 
-        # Add MCP server tools
+        # Add MCP server tools (using original_name without prefix)
         async with self.lock:
             for server_id, connection in self.connections.items():
                 if connection.config.status == ConnectionStatus.CONNECTED:
-                    # Use short_id as prefix to avoid encoding issues
-                    prefix = connection.config.short_id
                     for tool_name, tool in connection.tools.items():
-                        prefixed_name = f"{prefix}_{tool_name}"
-                        all_tools[prefixed_name] = {
-                            "name": prefixed_name,
-                            "original_name": tool_name,
+                        if tool_name in all_tools:
+                            existing_source = all_tools[tool_name].get("source", "unknown")
+                            existing_server = all_tools[tool_name].get("server_name", "unknown")
+                            logger.warning(
+                                f"Tool name conflict: '{tool_name}' from server '{connection.config.name}' "
+                                f"conflicts with existing tool from '{existing_server}' ({existing_source}). "
+                                f"Using the first one."
+                            )
+                            continue
+                        all_tools[tool_name] = {
+                            "name": tool_name,
                             "server_id": server_id,
                             "server_name": connection.config.name,
                             "description": tool.get("description", ""),
@@ -445,10 +488,10 @@ class MCPClientPool:
         timeout: int = 60,
         server_id: Optional[str] = None
     ) -> Any:
-        """Call a tool
+        """Call a tool by its original name.
 
         Args:
-            tool_name: Tool name (may have server prefix)
+            tool_name: Tool name (original name, no prefix)
             arguments: Tool arguments
             timeout: Request timeout
             server_id: Optional server ID to call tool on specific server
@@ -456,43 +499,30 @@ class MCPClientPool:
         Returns:
             Tool result
         """
-        # If server_id is provided, call tool on that server
+        # If server_id is provided, call tool on that server directly
         if server_id:
             connection = self.connections.get(server_id)
             if not connection:
                 raise ValueError(f"Server {server_id} not connected")
-            # Don't check tool_name here since it might have prefix
             return await self._call_server_tool(connection, tool_name, arguments, timeout)
 
-        # Check if tool_name has a server prefix (e.g., "1693271f_execute_code")
-        server_prefix_found = False
-        if "_" in tool_name:
-            parts = tool_name.split("_", 1)
-            server_prefix = parts[0]
-            actual_tool_name = parts[1]
-
-            # Find matching server by short_id
-            async with self.lock:
-                for server_id, connection in self.connections.items():
-                    if connection.config.short_id == server_prefix:
-                        if connection.client:
-                            logger.debug(f"Found matching server: {connection.config.name} (short_id={connection.config.short_id})")
-                            # Use actual_tool_name (original_name without prefix) when calling
-                            server_prefix_found = True
-                            return await self._call_server_tool(
-                                connection,
-                                actual_tool_name,
-                                arguments,
-                                timeout
-                            )
-
-        # If no server prefix matched or tool_name has no prefix, try local tools
+        # Try local tools first
         if tool_name in self.local_tools:
-            logger.info(f"call_tool: Found '{tool_name}' in local_tools, calling it")
+            logger.info(f"call_tool: Found '{tool_name}' in local_tools")
             return await self.call_local_tool(tool_name, arguments)
-        else:
-            logger.warning(f"call_tool: Tool '{tool_name}' not found in local_tools. Available: {list(self.local_tools.keys())}")
 
+        # Search across all connected MCP servers for this tool name
+        async with self.lock:
+            for server_id, connection in self.connections.items():
+                if connection.config.status != ConnectionStatus.CONNECTED:
+                    continue
+                if not connection.client:
+                    continue
+                if tool_name in connection.tools:
+                    logger.info(f"call_tool: Found '{tool_name}' on server '{connection.config.name}'")
+                    return await self._call_server_tool(connection, tool_name, arguments, timeout)
+
+        logger.warning(f"call_tool: Tool '{tool_name}' not found")
         raise ValueError(f"Tool '{tool_name}' not found")
 
     async def reconnect_all(self):

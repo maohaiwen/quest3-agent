@@ -406,7 +406,8 @@ async def chat_stream(
                         "max_tokens": agent.max_tokens,
                         "system_prompt": full_system_prompt_with_time,
                         "tools": agent.tools if hasattr(agent, "tools") else [],
-                        "mcp_servers": agent.mcp_servers if hasattr(agent, "mcp_servers") else []
+                        "mcp_servers": agent.mcp_servers if hasattr(agent, "mcp_servers") else [],
+                        "skills": agent.skills if hasattr(agent, "skills") else []
                     }
 
                     # 如果 agent 启用了长期记忆，注入记忆上下文

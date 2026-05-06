@@ -176,16 +176,19 @@ class SkillRegistry:
         if not summaries:
             return ""
 
-        lines = ["\n【可用技能】"]
+        lines = ["\n【绑定技能】"]
+        lines.append("你绑定了以下专业技能。当用户的问题涉及这些技能的领域时，你 MUST 先加载对应技能再执行，不要跳过技能自行回答。")
         for summary in summaries:
-            tags_str = f" (tags: {', '.join(summary.tags)})" if summary.tags else ""
-            lines.append(f"- {summary.name}: {summary.description}{tags_str}")
+            desc = summary.description or "（无描述）"
+            tags_str = f" [标签: {', '.join(summary.tags)}]" if summary.tags else ""
+            lines.append(f"- **{summary.name}**: {desc}{tags_str}")
 
-        lines.append("\n当用户的请求匹配某个技能时，按以下流程操作：")
-        lines.append("1. 调用 load_skill 工具加载该技能的完整说明书。")
-        lines.append("2. 如果返回结果中 has_entrypoint=true，说明该技能有可执行脚本，你 MUST 调用 execute_skill 工具来实际执行操作，将用户的意图传入 input_data 参数（如 {\"command\": \"调到最低亮度\"}）。不要只给出文字建议，必须执行脚本。")
-        lines.append("3. 如果 has_entrypoint=false，则根据技能说明书的内容给出指导建议。")
-        lines.append("4. 根据 execute_skill 的返回结果向用户汇报执行情况。")
+        lines.append("\n【技能使用流程 - 必须遵守】")
+        lines.append("1. 判断用户问题是否涉及上述技能领域。如果是，MUST 先调用 load_skill 加载对应技能的完整说明书。")
+        lines.append("2. 加载技能后，严格按照技能说明书中的工作方式、分析框架和步骤来执行任务。")
+        lines.append("3. 优先使用技能声明的工具来获取数据（如行业数据工具、搜索工具等），不要仅凭自身知识回答。")
+        lines.append("4. 如果技能有可执行脚本（has_entrypoint=true），MUST 调用 execute_skill 执行，将用户意图传入 input_data。")
+        lines.append("5. 禁止跳过技能直接用自己的知识回答相关领域问题，必须先加载技能再执行。")
         return "\n".join(lines)
 
     def reload(self) -> None:

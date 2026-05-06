@@ -302,6 +302,28 @@ class PlanningChatService:
                 # Create the plan with deep thinking callback and tool filtering
                 allowed_tools = agent_config.get("tools", []) if agent_config else None
                 # 注意：allowed_tools=[] 表示agent没配置工具，需要保留[]而非转为None
+
+                # Merge tools declared by bound skills
+                if agent_config:
+                    skill_names = agent_config.get("skills", [])
+                    if skill_names:
+                        try:
+                            from app.skills.registry import get_skill_registry
+                            registry = get_skill_registry()
+                            if not registry._loaded:
+                                registry.initialize()
+                            skill_tools = []
+                            for sn in skill_names:
+                                skill = registry.get_skill(sn)
+                                if skill and skill.tools:
+                                    skill_tools.extend(skill.tools)
+                            if skill_tools:
+                                tool_set = set(allowed_tools) if allowed_tools else set()
+                                tool_set.update(skill_tools)
+                                allowed_tools = list(tool_set)
+                                logger.info(f"Planning: Merged skill tools: {skill_tools}")
+                        except Exception as e:
+                            logger.warning(f"Failed to merge skill tools: {e}")
                 # Get enabled MCP servers from agent config
                 enabled_mcp_servers = None
                 if agent_config:
@@ -315,6 +337,22 @@ class PlanningChatService:
                                 enabled_server_ids.append(server_config)
                         if enabled_server_ids:
                             enabled_mcp_servers = enabled_server_ids
+
+                    # Auto-enable MCP servers that provide skill-declared tools
+                    if skill_tools:
+                        from app.core.tool_manager import get_tool_manager
+                        tm = get_tool_manager()
+                        skill_mcp_servers = await tm.get_mcp_server_ids_for_tools(skill_tools)
+                        if skill_mcp_servers:
+                            if enabled_mcp_servers is None:
+                                enabled_mcp_servers = list(skill_mcp_servers)
+                            else:
+                                existing = set(enabled_mcp_servers)
+                                for sid in skill_mcp_servers:
+                                    if sid not in existing:
+                                        enabled_mcp_servers.append(sid)
+                                        existing.add(sid)
+                            logger.info(f"Planning: Auto-enabled MCP servers for skill tools: {skill_mcp_servers}")
 
                 plan = await decision_engine.analyze_task(
                     message,

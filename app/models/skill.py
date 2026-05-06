@@ -114,6 +114,7 @@ class SkillScaffoldRequest(BaseModel):
     description: str = Field(default="", description="Skill description")
     author: str = Field(default="", description="Author name")
     tags: List[str] = Field(default_factory=list, description="Skill tags")
+    tools: List[str] = Field(default_factory=list, description="Required tool names")
 
 
 class SkillGenerateRequest(BaseModel):
@@ -150,3 +151,4 @@ class ChatRequest(BaseModel):
     skill_name: str = Field(default=None, description="Current skill name if any")
     current_file: str = Field(default=None, description="Current file being edited")
     file_content: str = Field(default=None, description="Current file content if any")
+    skill_type: Optional[str] = Field(default=None, description="Skill type: prompt-only, python, shell, powershell")

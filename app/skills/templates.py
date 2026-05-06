@@ -700,6 +700,205 @@ def test_basic_calculation():
     assert result["product"] == 6
 '''
         }
+    },
+
+    # Type-based templates (used by the new creation flow)
+    "prompt-only": {
+        "name": "纯提示词 Skill",
+        "description": "只需 skill.md，适合角色扮演、问答等",
+        "icon": "📝",
+        "files": {
+            "skill.md": '''---
+name: {{name}}
+version: "1.0.0"
+description: "{{description}}"
+author: "{{author}}"
+tags: [{{tags}}]
+tools: []
+---
+
+# {{name}}
+
+## 你的角色
+
+你是一个专业的{{name}}助手，善于帮助用户完成相关任务。
+
+## 能力范围
+
+- 提供专业的建议和解答
+- 帮助用户分析问题
+- 给出可行的解决方案
+
+## 工作方式
+
+当用户向你提问时，首先理解用户的需求，然后提供专业、准确、有帮助的回答。
+'''
+        }
+    },
+
+    "python": {
+        "name": "Python 脚本 Skill",
+        "description": "skill.md + main.py，需要自定义逻辑",
+        "icon": "🐍",
+        "files": {
+            "skill.md": '''---
+name: {{name}}
+version: "1.0.0"
+description: "{{description}}"
+author: "{{author}}"
+tags: [{{tags}}]
+tools: []
+requirements: []
+entrypoint: main.py
+files: [main.py]
+---
+
+# {{name}}
+
+## 你的角色
+
+这是一个使用 Python 脚本增强的技能。
+当被调用时，会执行 main.py 中的 execute 函数。
+
+## 脚本调用方式
+
+入口文件：main.py
+入口函数：execute(context)
+- context.input_data: 输入数据（字典）
+- context.state: 状态字典（可读写）
+- context.config: 配置
+- 返回: 字典格式的结果
+''',
+            "main.py": '''"""
+{{name}} Skill
+
+This is the main entrypoint for the {{name}} skill.
+"""
+from typing import Any, Dict
+from datetime import datetime
+
+def execute(context) -> Dict[str, Any]:
+    """
+    Execute the skill
+
+    Args:
+        context: Execution context with these attributes:
+            - input_data: Input data from user
+            - config: Skill configuration
+            - state: State for this skill (persisted between calls)
+
+    Returns:
+        Result dictionary
+    """
+    # Get input data
+    input_data = context.input_data or {}
+    name = input_data.get("name", "Guest")
+
+    # Access and update state
+    state = context.state
+    visit_count = state.get("visit_count", 0) + 1
+    state["visit_count"] = visit_count
+    state["last_visit"] = datetime.utcnow().isoformat()
+
+    # Generate response
+    return {
+        "message": f"Hello {name}!",
+        "visit_count": visit_count,
+        "skill": "{{name}}",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+'''
+        }
+    },
+
+    "shell": {
+        "name": "Shell 脚本 Skill",
+        "description": "skill.md + main.sh，Linux/Mac 系统命令",
+        "icon": "🖥️",
+        "files": {
+            "skill.md": '''---
+name: {{name}}
+version: "1.0.0"
+description: "{{description}}"
+author: "{{author}}"
+tags: [{{tags}}]
+tools: []
+entrypoint: main.sh
+files: [main.sh]
+---
+
+# {{name}}
+
+## 你的角色
+
+这是一个使用 Shell 脚本的技能，用于执行系统命令。
+
+## 脚本调用方式
+
+入口文件：main.sh
+输入：通过环境变量 INPUT_DATA 传入 JSON 数据
+输出：标准输出
+''',
+            "main.sh": '''#!/bin/bash
+# {{name}} Skill
+# Input is provided via INPUT_DATA environment variable (JSON format)
+
+if [ -z "$INPUT_DATA" ]; then
+    echo '{"status": "error", "message": "INPUT_DATA not set"}'
+    exit 1
+fi
+
+# Parse input (requires jq)
+INPUT=$(echo "$INPUT_DATA" | jq .)
+
+echo '{"status": "success", "message": "{{name}} executed"}'
+exit 0
+'''
+        }
+    },
+
+    "powershell": {
+        "name": "PowerShell 脚本 Skill",
+        "description": "skill.md + main.ps1，Windows 系统命令",
+        "icon": "⚡",
+        "files": {
+            "skill.md": '''---
+name: {{name}}
+version: "1.0.0"
+description: "{{description}}"
+author: "{{author}}"
+tags: [{{tags}}]
+tools: []
+entrypoint: main.ps1
+files: [main.ps1]
+---
+
+# {{name}}
+
+## 你的角色
+
+这是一个使用 PowerShell 脚本的技能，用于执行 Windows 系统命令。
+
+## 脚本调用方式
+
+入口文件：main.ps1
+输入：通过环境变量 $env:INPUT_DATA 传入 JSON 数据
+输出：Write-Host 输出
+''',
+            "main.ps1": '''# {{name}} Skill
+# Input is provided via $env:INPUT_DATA environment variable (JSON format)
+
+if (-not $env:INPUT_DATA) {
+    Write-Error "INPUT_DATA not set"
+    exit 1
+}
+
+$json = $env:INPUT_DATA | ConvertFrom-Json
+
+Write-Host '{"status": "success", "message": "{{name}} executed"}'
+exit 0
+'''
+        }
     }
 }
 

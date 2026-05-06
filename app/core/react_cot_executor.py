@@ -150,12 +150,34 @@ class ReActCotExecutor:
                         enabled_server_ids.append(server_config)
 
             agent_tools = self.agent_config.get("tools", [])
+
+            # Merge tools declared by bound skills into allowed_tools
+            skill_tools = self._get_skill_tools()
+            if skill_tools:
+                agent_tool_set = set(agent_tools) if agent_tools else set()
+                for t in skill_tools:
+                    if t not in agent_tool_set:
+                        agent_tool_set.add(t)
+                agent_tools = list(agent_tool_set)
+                logger.info(f"ReActCot: Merged {len(skill_tools)} skill tools into allowed_tools: {skill_tools}")
+
+                # Auto-enable MCP servers that provide skill-declared tools
+                skill_mcp_servers = await tool_manager.get_mcp_server_ids_for_tools(skill_tools)
+                if skill_mcp_servers:
+                    existing = set(enabled_server_ids)
+                    for sid in skill_mcp_servers:
+                        if sid not in existing:
+                            enabled_server_ids.append(sid)
+                            existing.add(sid)
+                    logger.info(f"ReActCot: Auto-enabled MCP servers for skill tools: {skill_mcp_servers}")
+
             tools = await tool_manager.get_tools_for_llm(
                 enabled_mcp_servers=enabled_server_ids if enabled_server_ids else None,
                 allowed_tools=agent_tools if agent_tools is not None else None
             )
 
-            logger.info(f"ReActCot: 已为 LLM 准备 {len(tools)} 个工具")
+            logger.info(f"ReActCot: 已为 LLM 准备 {len(tools)} 个工具: {[t['function']['name'] for t in tools]}")
+            logger.info(f"ReActCot: enabled_server_ids={enabled_server_ids}, allowed_tools={agent_tools}")
 
             # 主循环
             for step in range(1, self.max_steps + 1):
@@ -326,8 +348,28 @@ class ReActCotExecutor:
         # 获取 Agent 的工具白名单
         agent_tools = self.agent_config.get("tools", [])
 
+        # Merge tools declared by bound skills into allowed_tools
+        skill_tools = self._get_skill_tools()
+        if skill_tools:
+            agent_tool_set = set(agent_tools) if agent_tools else set()
+            for t in skill_tools:
+                if t not in agent_tool_set:
+                    agent_tool_set.add(t)
+            agent_tools = list(agent_tool_set)
+
         # 使用统一工具管理器获取可用工具
         tool_manager = get_tool_manager()
+
+        # Auto-enable MCP servers that provide skill-declared tools
+        if skill_tools:
+            skill_mcp_servers = await tool_manager.get_mcp_server_ids_for_tools(skill_tools)
+            if skill_mcp_servers:
+                existing = set(enabled_server_ids)
+                for sid in skill_mcp_servers:
+                    if sid not in existing:
+                        enabled_server_ids.append(sid)
+                        existing.add(sid)
+                logger.info(f"ReActCot: Auto-enabled MCP servers for skill tools: {skill_mcp_servers}")
         tools_dict = await tool_manager.get_available_tools(
             enabled_mcp_servers=enabled_server_ids,
             allowed_tools=agent_tools if agent_tools is not None else None
@@ -360,6 +402,49 @@ class ReActCotExecutor:
         except Exception as e:
             logger.error(f"ReActCot: 工具 {tool_name} 执行错误: {e}")
             return {'error': str(e)}
+
+    def _get_skill_tools(self) -> List[str]:
+        """Get tools declared by all skills bound to this agent.
+
+        Reads skill.tools from registry for each skill in agent_config["skills"].
+        Returns a flat list of tool names (original names, no prefix).
+        """
+        skill_names = self.agent_config.get("skills", [])
+        if not skill_names:
+            logger.info("ReActCot: No skills bound to agent, skipping skill tools merge")
+            return []
+
+        try:
+            from app.skills.registry import get_skill_registry
+            registry = get_skill_registry()
+            if not registry._loaded:
+                registry.initialize()
+
+            raw_tools = []
+            for skill_name in skill_names:
+                skill = registry.get_skill(skill_name)
+                if skill:
+                    if skill.tools:
+                        logger.info(f"ReActCot: Skill '{skill_name}' declares tools: {skill.tools}")
+                        raw_tools.extend(skill.tools)
+                    else:
+                        logger.info(f"ReActCot: Skill '{skill_name}' has no tools declared")
+                else:
+                    logger.warning(f"ReActCot: Skill '{skill_name}' not found in registry. Available: {list(registry._skills.keys())}")
+
+            # Deduplicate while preserving order
+            seen = set()
+            unique = []
+            for t in normalized:
+                if t not in seen:
+                    seen.add(t)
+                    unique.append(t)
+
+            logger.info(f"ReActCot: Resolved skill tools: {unique}")
+            return unique
+        except Exception as e:
+            logger.warning(f"Failed to get skill tools: {e}", exc_info=True)
+            return []
 
     def pause(self):
         """暂停执行"""

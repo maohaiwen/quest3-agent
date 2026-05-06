@@ -191,9 +191,13 @@ class SkillFileManager:
         description: str = "",
         author: str = "",
         tags: Optional[List[str]] = None,
+        tools: Optional[List[str]] = None,
     ) -> Path:
         """
-        Create a new skill from a template
+        Create a new skill from a template, or return existing skill dir.
+
+        If the skill already exists (skill.md present), returns its directory
+        without overwriting. Otherwise creates from template.
 
         Args:
             skill_name: Name of the new skill
@@ -201,17 +205,23 @@ class SkillFileManager:
             description: Description of the skill
             author: Author of the skill
             tags: Tags for the skill
+            tools: Required tool names
 
         Returns:
-            Path to the created skill directory
+            Path to the skill directory
         """
+        skill_dir = self.get_skill_dir(skill_name, SkillSource.USER)
+        skill_md_path = skill_dir / "skill.md"
+
+        # If skill already exists, just return its directory
+        if skill_md_path.exists():
+            logger.info(f"Skill {skill_name} already exists, loading existing skill")
+            return skill_dir
+
+        # Create new skill from template
         template = SKILL_TEMPLATES.get(template_name)
         if not template:
             raise ValueError(f"Template {template_name} not found")
-
-        skill_dir = self.get_skill_dir(skill_name, SkillSource.USER)
-        if skill_dir.exists():
-            raise ValueError(f"Skill {skill_name} already exists")
 
         skill_dir.mkdir(parents=True, exist_ok=True)
 
@@ -234,7 +244,23 @@ class SkillFileManager:
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text(content, encoding="utf-8")
 
-        logger.info(f"Created skill {skill_name} from template {template_name}")
+        # If tools were selected, update skill.md frontmatter
+        if tools:
+            import re
+            skill_md_path = skill_dir / "skill.md"
+            if skill_md_path.exists():
+                skill_md_content = skill_md_path.read_text(encoding="utf-8")
+                # Replace tools: [] with actual tools list
+                tools_yaml = "[" + ", ".join(f'"{t}"' for t in tools) + "]"
+                skill_md_content = re.sub(
+                    r'^tools:\s*\[.*?\]',
+                    f'tools: {tools_yaml}',
+                    skill_md_content,
+                    flags=re.MULTILINE
+                )
+                skill_md_path.write_text(skill_md_content, encoding="utf-8")
+
+        logger.info(f"Created skill {skill_name} from template {template_name} with {len(tools or [])} tools")
         return skill_dir
 
     def delete_skill(self, skill_name: str, source: SkillSource = SkillSource.USER) -> bool:

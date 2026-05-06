@@ -94,6 +94,7 @@ class UnifiedToolManager:
                 return {"error": f"Skill '{skill_name}' not found"}
             skill = registry.get_skill(skill_name)
             has_entrypoint = False
+            tool_definitions = []
             if skill:
                 if skill.entrypoint and __import__('pathlib').Path(skill.entrypoint).exists():
                     has_entrypoint = True
@@ -110,10 +111,35 @@ class UnifiedToolManager:
                         if __import__('pathlib').Path(skill.dir_path, name).exists():
                             has_entrypoint = True
                             break
+
+                # Collect tool definitions (name + description + parameters)
+                # so the model knows how to call each declared tool
+                if skill.tools:
+                    all_mcp_tools = await mcp_client_pool.get_all_tools()
+                    for tool_name in skill.tools:
+                        if tool_name in self._local_tools:
+                            td = self._local_tools[tool_name]
+                            tool_definitions.append({
+                                "name": tool_name,
+                                "description": td.description,
+                                "parameters": td.input_schema,
+                                "source": "local"
+                            })
+                        elif tool_name in all_mcp_tools:
+                            info = all_mcp_tools[tool_name]
+                            tool_definitions.append({
+                                "name": tool_name,
+                                "description": info.get("description", ""),
+                                "parameters": info.get("input_schema", {}),
+                                "source": "mcp",
+                                "server_name": info.get("server_name", "")
+                            })
+
             return {
                 "skill_name": skill_name,
                 "content": content,
                 "has_entrypoint": has_entrypoint,
+                "tool_definitions": tool_definitions,
                 "message": f"Successfully loaded skill: {skill_name}"
             }
 
@@ -142,6 +168,40 @@ class UnifiedToolManager:
         ) -> Dict[str, Any]:
             """执行技能的入口脚本"""
             from app.skills.executor import get_skill_executor
+
+            # Check if skill has an entrypoint before executing
+            registry = get_skill_registry()
+            skill = registry.get_skill(skill_name)
+            if skill:
+                has_entrypoint = False
+                if skill.entrypoint and __import__('pathlib').Path(skill.entrypoint).exists():
+                    has_entrypoint = True
+                elif skill.dir_path:
+                    import os
+                    is_windows = os.name == "nt"
+                    candidates = (
+                        ["main.py", "main.ps1", "main.sh"]
+                        if is_windows
+                        else ["main.py", "main.sh", "main.ps1"]
+                    )
+                    for name in candidates:
+                        if __import__('pathlib').Path(skill.dir_path, name).exists():
+                            has_entrypoint = True
+                            break
+                if not has_entrypoint:
+                    # Prompt-only skill: no script to execute
+                    # Return a clear message so the model knows to use declared tools directly
+                    declared_tools = skill.tools or []
+                    tool_hint = ""
+                    if declared_tools:
+                        tool_hint = f" This skill declares the following tools that you can call directly: {', '.join(declared_tools)}. Call them directly instead of execute_skill."
+                    return {
+                        "status": "error",
+                        "skill_name": skill_name,
+                        "error": f"Skill '{skill_name}' is a prompt-only skill with no executable script. Its instructions have already been loaded into your context via load_skill. Follow the skill's instructions to complete the task.{tool_hint}",
+                        "execution_time_ms": 0,
+                        "logs": []
+                    }
 
             executor = get_skill_executor()
             result = await executor.execute(
@@ -230,8 +290,7 @@ class UnifiedToolManager:
                         description=tool_info.get("description", ""),
                         input_schema=tool_info.get("input_schema", {}),
                         source="mcp",
-                        server_id=tool_server_id,
-                        original_name=tool_info.get("original_name")
+                        server_id=tool_server_id
                     )
 
         # 3. 按白名单过滤（混合模式）
@@ -297,6 +356,28 @@ class UnifiedToolManager:
         logger.info(f"Prepared {len(llm_tools)} tools for LLM")
         return llm_tools
 
+    async def get_mcp_server_ids_for_tools(self, tool_names: List[str]) -> List[str]:
+        """Find MCP server IDs that provide the given tools (by original name).
+
+        Since tools are now identified by original_name (no prefix),
+        we simply look up each tool name in each server's tool list.
+        """
+        server_ids = set()
+        async with mcp_client_pool.lock:
+            for tool_name in tool_names:
+                for server_id, connection in mcp_client_pool.connections.items():
+                    from app.services.mcp_pool import ConnectionStatus
+                    if connection.config.status != ConnectionStatus.CONNECTED:
+                        continue
+                    if tool_name in connection.tools:
+                        server_ids.add(server_id)
+                        logger.info(f"  Tool '{tool_name}' found on server '{connection.config.name}' (id={server_id})")
+                        break
+
+        if not server_ids and tool_names:
+            logger.warning(f"No MCP servers found for tools: {tool_names}")
+        return list(server_ids)
+
     async def call_tool(
         self,
         tool_name: str,
@@ -312,20 +393,21 @@ class UnifiedToolManager:
         Returns:
             工具执行结果
         """
-        # 先检查本地工具
+        # 1. Check local tools
         if tool_name in self._local_tools:
             tool_def = self._local_tools[tool_name]
             if tool_def.handler:
                 logger.info(f"Calling local tool: {tool_name}")
                 return await tool_def.handler(**arguments)
 
-        # 否则尝试通过MCP客户端池调用
+        # 2. Try MCP tools via pool (uses original_name, no prefix)
         try:
             logger.info(f"Calling MCP tool: {tool_name}")
             return await mcp_client_pool.call_tool(tool_name, arguments)
+        except ValueError:
+            raise ValueError(f"Tool '{tool_name}' not found")
         except Exception as e:
-            logger.error(f"Failed to call tool {tool_name}: {e}")
-            raise ValueError(f"Tool '{tool_name}' not found or failed to execute")
+            raise ValueError(f"Tool '{tool_name}' failed: {e}")
 
 
 # 全局单例

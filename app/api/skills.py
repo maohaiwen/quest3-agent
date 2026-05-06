@@ -1,9 +1,11 @@
 """Skill API endpoints"""
+import json
 import logging
+import re
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 
 from pydantic import BaseModel, Field
 from app.models.skill import (
@@ -29,6 +31,7 @@ from app.database.connection import DatabaseConnection
 from app.database.skill_repository import SkillRepository
 from app.config import settings
 from app.skills.registry import get_skill_registry
+from app.core.tool_manager import get_tool_manager
 
 
 class GitHubImportRequest(BaseModel):
@@ -101,6 +104,101 @@ async def list_skill_summaries():
     """Get skill summaries (token-efficient)"""
     registry = get_skill_registry()
     return registry.get_all_summaries()
+
+
+@router.get("/available-tools")
+async def list_available_tools():
+    """List all available tools (local + MCP) for skill tool selection"""
+    from app.services.mcp_pool import mcp_client_pool
+
+    # Chinese display names for common local tools
+    LOCAL_TOOL_DISPLAY_NAMES = {
+        "read_file": "读取文件",
+        "write_file": "写入文件",
+        "list_directory": "列出目录",
+        "web_search": "网页搜索",
+        "load_skill": "加载技能",
+        "execute_skill": "执行技能",
+    }
+
+    tools_list = []
+    tool_manager = get_tool_manager()
+    for tool_name, tool_def in tool_manager._local_tools.items():
+        tools_list.append({
+            "name": tool_name,
+            "description": tool_def.description,
+            "display_name": LOCAL_TOOL_DISPLAY_NAMES.get(tool_name, ""),
+            "source": tool_def.source,
+            "server_id": "local",
+        })
+    all_mcp_tools = await mcp_client_pool.get_all_tools()
+    for tool_name, tool_info in all_mcp_tools.items():
+        desc = tool_info.get("description", "")
+        display = desc.split("\n")[0].strip() if desc else ""
+        tools_list.append({
+            "name": tool_name,
+            "description": desc,
+            "display_name": display or tool_name,
+            "source": tool_info.get("source", "mcp"),
+            "server_id": tool_info.get("server_id", ""),
+            "server_name": tool_info.get("server_name", ""),
+        })
+    return {"tools": tools_list}
+
+
+@router.post("/recommend-tools")
+async def recommend_tools(request: dict):
+    """AI recommends tools based on skill content"""
+    from app.services.mcp_pool import mcp_client_pool
+    from app.services.llm_service import llm_service
+
+    skill_name = request.get("skill_name", "")
+    skill_content = request.get("skill_content", "")
+
+    # Collect all available tools
+    tools_info = []
+    tool_manager = get_tool_manager()
+    for tool_name, tool_def in tool_manager._local_tools.items():
+        tools_info.append({"name": tool_name, "description": tool_def.description})
+    all_mcp_tools = await mcp_client_pool.get_all_tools()
+    for tool_name, tool_info in all_mcp_tools.items():
+        tools_info.append({
+            "name": tool_name,
+            "description": tool_info.get("description", ""),
+        })
+
+    if not tools_info:
+        return {"recommended_tools": []}
+
+    # Build prompt
+    tools_desc = "\n".join([f"- {t['name']}: {t['description']}" for t in tools_info])
+    prompt = f"""根据以下技能描述，从可用工具列表中推荐最相关的工具。只返回推荐的工具名称，用JSON数组格式返回。
+
+技能名称：{skill_name}
+技能内容：
+{skill_content[:2000]}
+
+可用工具：
+{tools_desc}
+
+请返回推荐的工具名称列表，格式：["tool_name_1", "tool_name_2"]
+只返回JSON数组，不要其他内容。"""
+
+    try:
+        response_text = await llm_service._chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=1024,
+        )
+        # Extract JSON array from response
+        match = re.search(r'\[.*?\]', response_text, re.DOTALL)
+        if match:
+            recommended = json.loads(match.group())
+            return {"recommended_tools": recommended}
+    except Exception as e:
+        logger.error(f"Failed to recommend tools: {e}")
+
+    return {"recommended_tools": []}
 
 
 @router.get("/{skill_name}", response_model=Skill)
@@ -420,6 +518,7 @@ async def create_skill_from_template(request: SkillScaffoldRequest):
             description=request.description,
             author=request.author,
             tags=request.tags,
+            tools=request.tools,
         )
 
         # Reload registry to pick up new skill
@@ -430,7 +529,7 @@ async def create_skill_from_template(request: SkillScaffoldRequest):
         new_skill = registry.get_skill(request.name)
 
         return {
-            "message": f"Skill {request.name} created successfully",
+            "message": f"Skill {request.name} ready",
             "skill_dir": str(skill_dir),
             "skill": new_skill,
         }
@@ -494,10 +593,13 @@ async def read_skill_file(skill_name: str, file_path: str):
 
 
 @router.post("/{skill_name}/files/{file_path:path}")
-async def write_skill_file(skill_name: str, file_path: str, content: str):
+async def write_skill_file(skill_name: str, file_path: str, request: Request):
     """Write a file to a skill directory"""
     from app.skills.file_manager import get_skill_file_manager
     from app.skills.registry import get_skill_registry
+
+    content = await request.body()
+    content = content.decode("utf-8")
 
     file_manager = get_skill_file_manager()
     # 用户技能总是写到USER目录
@@ -728,7 +830,8 @@ async def chat_with_ai_assistant(request: ChatRequest):
             messages=request.messages,
             skill_name=request.skill_name,
             current_file=request.current_file,
-            file_content=request.file_content
+            file_content=request.file_content,
+            skill_type=request.skill_type,
         )
 
         return result

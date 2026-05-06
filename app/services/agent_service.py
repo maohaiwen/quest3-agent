@@ -88,6 +88,11 @@ class AgentService:
             ))
 
             for server_id in agent_data.mcp_servers:
+                # Validate server_id exists before inserting
+                row = await db.fetch_all("SELECT id FROM mcp_servers WHERE id = ?", (server_id,))
+                if not row:
+                    logger.warning(f"Skipping invalid MCP server_id: {server_id}")
+                    continue
                 await db.execute("""
                 INSERT INTO agent_mcp_servers (id, agent_id, server_id, enabled)
                 VALUES (?, ?, ?, ?)
@@ -337,7 +342,13 @@ class AgentService:
 
             if update_data.mcp_servers is not None:
                 await db.execute("DELETE FROM agent_mcp_servers WHERE agent_id = ?", (agent_id,))
+                # Validate server_ids exist before inserting (avoid FK constraint errors)
+                valid_rows = await db.fetch_all("SELECT id FROM mcp_servers")
+                valid_ids = {row["id"] for row in valid_rows}
                 for server_id in update_data.mcp_servers:
+                    if server_id not in valid_ids:
+                        logger.warning(f"Skipping invalid MCP server_id: {server_id}")
+                        continue
                     await db.execute("""
                     INSERT INTO agent_mcp_servers (id, agent_id, server_id, enabled)
                     VALUES (?, ?, ?, ?)

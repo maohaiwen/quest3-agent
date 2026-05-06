@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Skill 编辑器 - Quest3 Agent</title>
-    <!-- CodeMirror 6 from CDN -->
+    <!-- CodeMirror 5 from CDN -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.css">
     <script src="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/markdown/markdown.js"></script>
@@ -80,7 +80,7 @@
 
         /* Sidebar - File Tree */
         .sidebar {
-            width: 280px;
+            width: 220px;
             background: white;
             border-right: 1px solid #e5e7eb;
             display: flex;
@@ -178,68 +178,65 @@
             font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
         }
 
-        /* AI Assistant Sidebar */
-        .ai-sidebar {
-            width: 340px;
+        /* Right Sidebar (AI + Tools) */
+        .right-sidebar {
+            width: 380px;
             background: white;
             border-left: 1px solid #e5e7eb;
             display: flex;
             flex-direction: column;
         }
-        .ai-header {
-            padding: 16px;
+        .right-sidebar-tabs {
+            display: flex;
             border-bottom: 1px solid #e5e7eb;
+            background: #f9fafb;
+        }
+        .right-sidebar-tab {
+            flex: 1;
+            padding: 12px 0;
+            text-align: center;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            color: #666;
+        }
+        .right-sidebar-tab:hover { color: #333; background: #f0f2f5; }
+        .right-sidebar-tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            background: white;
+        }
+        .right-sidebar-panel {
+            flex: 1;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .right-sidebar-panel.active {
+            display: flex;
+        }
+
+        /* AI Chat Panel */
+        .ai-header-banner {
+            padding: 12px 16px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
         }
-        .ai-title {
-            font-weight: 600;
-            font-size: 16px;
-        }
-        .ai-description {
-            font-size: 12px;
-            opacity: 0.9;
-            margin-top: 4px;
-        }
-        .ai-actions {
-            padding: 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            border-bottom: 1px solid #e5e7eb;
-        }
-        .ai-action-btn {
-            padding: 10px;
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            background: white;
-            cursor: pointer;
-            text-align: left;
-            font-size: 13px;
-            transition: all 0.2s;
-        }
-        .ai-action-btn:hover {
-            background: #f0f2f5;
-            border-color: #667eea;
-        }
-        .ai-action-btn span {
-            font-weight: 500;
-            display: block;
-        }
-        .ai-action-btn small {
-            color: #666;
-            font-size: 11px;
-        }
+        .ai-title { font-weight: 600; font-size: 15px; }
+        .ai-description { font-size: 12px; opacity: 0.9; margin-top: 2px; }
         .ai-chat {
             flex: 1;
             display: flex;
             flex-direction: column;
+            min-height: 0;
         }
         .ai-chat-messages {
             flex: 1;
             padding: 12px;
             overflow-y: auto;
-            min-height: 0; /* Important for flexbox scrolling */
+            min-height: 0;
         }
         .chat-message {
             padding: 10px 14px;
@@ -259,13 +256,11 @@
             margin-right: 20px;
             border-bottom-left-radius: 4px;
         }
-
         .chat-message.assistant.loading {
             background: linear-gradient(90deg, #f0f2f5 25%, #e8f0fd 50%, #f0f2f5 75%);
             background-size: 200% 100%;
             animation: loading-shimmer 1.5s ease-in-out infinite;
         }
-
         @keyframes loading-shimmer {
             0% { background-position: 200% 0; }
             100% { background-position: -200% 0; }
@@ -291,6 +286,133 @@
             width: 100%;
         }
 
+        /* Tools Panel */
+        .tools-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        .tools-toolbar {
+            padding: 12px 16px;
+            display: flex;
+            gap: 8px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .tools-search {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 13px;
+        }
+        .tools-search:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .btn-ai-suggest {
+            padding: 8px 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            white-space: nowrap;
+            transition: opacity 0.2s;
+        }
+        .btn-ai-suggest:hover { opacity: 0.9; }
+        .btn-ai-suggest:disabled { opacity: 0.5; cursor: not-allowed; }
+        .tools-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 12px;
+        }
+        .tool-group-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: #999;
+            padding: 8px 4px 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .tool-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            padding: 8px 6px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .tool-item:hover { background: #f0f2f5; }
+        .tool-item input[type="checkbox"] {
+            margin-top: 3px;
+            width: 15px;
+            height: 15px;
+            flex-shrink: 0;
+        }
+        .tool-item-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .tool-item-display-name {
+            font-weight: 600;
+            font-size: 13px;
+            color: #333;
+        }
+        .tool-item-tech-name {
+            font-size: 11px;
+            color: #888;
+            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+        }
+        .tool-item-desc {
+            font-size: 11px;
+            color: #888;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            margin-top: 2px;
+        }
+        .tool-item-source {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 6px;
+            background: #f0f2f5;
+            color: #666;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+        .tool-item-source.mcp { background: #f3e5f5; color: #9c27b0; }
+        .tools-footer {
+            padding: 12px 16px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .tools-selected-count {
+            font-size: 12px;
+            color: #666;
+            flex: 1;
+        }
+        .tools-selected-count strong { color: #667eea; }
+        .ai-suggest-hint {
+            padding: 12px 16px;
+            background: #f0f4ff;
+            border-bottom: 1px solid #e5e7eb;
+            font-size: 13px;
+            color: #555;
+            display: none;
+        }
+        .ai-suggest-hint.visible { display: block; }
+        .ai-suggest-hint.loading {
+            background: linear-gradient(90deg, #f0f4ff 25%, #e8f0fd 50%, #f0f4ff 75%);
+            background-size: 200% 100%;
+            animation: loading-shimmer 1.5s ease-in-out infinite;
+        }
+
         /* Test Panel */
         .test-panel {
             background: white;
@@ -298,9 +420,7 @@
             max-height: 300px;
             display: none;
         }
-        .test-panel.open {
-            display: block;
-        }
+        .test-panel.open { display: block; }
         .test-header {
             padding: 12px 16px;
             background: #f9fafb;
@@ -309,9 +429,7 @@
             justify-content: space-between;
             align-items: center;
         }
-        .test-title {
-            font-weight: 600;
-        }
+        .test-title { font-weight: 600; }
         .test-toggle {
             background: none;
             border: none;
@@ -323,9 +441,7 @@
             display: flex;
             gap: 16px;
         }
-        .test-input-section {
-            flex: 1;
-        }
+        .test-input-section { flex: 1; }
         .test-output-section {
             flex: 1;
             background: #f9fafb;
@@ -379,12 +495,8 @@
             font-size: 22px;
             font-weight: 600;
         }
-        .modal-body {
-            padding: 24px;
-        }
-        .form-group {
-            margin-bottom: 20px;
-        }
+        .modal-body { padding: 24px; }
+        .form-group { margin-bottom: 20px; }
         .form-group label {
             display: block;
             margin-bottom: 8px;
@@ -397,29 +509,30 @@
             border-radius: 8px;
             font-size: 14px;
         }
-        .template-grid {
+        .type-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            grid-template-columns: repeat(2, 1fr);
             gap: 12px;
         }
-        .template-card {
+        .type-card {
             padding: 16px;
             border: 2px solid #e5e7eb;
             border-radius: 12px;
             cursor: pointer;
             transition: all 0.2s;
+            text-align: center;
         }
-        .template-card:hover {
+        .type-card:hover {
             border-color: #667eea;
             background: #f0f4ff;
         }
-        .template-card.selected {
+        .type-card.selected {
             border-color: #667eea;
             background: #e8f0fd;
         }
-        .template-icon { font-size: 32px; margin-bottom: 8px; }
-        .template-name { font-weight: 600; margin-bottom: 4px; }
-        .template-desc { color: #666; font-size: 13px; }
+        .type-icon { font-size: 28px; margin-bottom: 6px; }
+        .type-name { font-weight: 600; margin-bottom: 4px; font-size: 14px; }
+        .type-desc { color: #666; font-size: 12px; line-height: 1.4; }
         .modal-actions {
             padding: 16px 24px 24px;
             display: flex;
@@ -485,26 +598,54 @@
                 </div>
             </div>
 
-            <!-- AI Assistant Sidebar -->
-            <div class="ai-sidebar">
-                <div class="ai-header">
-                    <div class="ai-title">🤖 AI 助手</div>
-                    <div class="ai-description">帮助你编写更好的 Skill</div>
+            <!-- Right Sidebar (AI Chat + Tools) -->
+            <div class="right-sidebar">
+                <!-- Tab Bar -->
+                <div class="right-sidebar-tabs">
+                    <div class="right-sidebar-tab active" onclick="switchRightTab('chat')">💬 对话</div>
+                    <div class="right-sidebar-tab" onclick="switchRightTab('tools')">🔧 工具</div>
                 </div>
-                <div class="ai-actions" style="padding: 12px;">
-                    <div style="font-size: 13px; color: #666; margin-bottom: 8px;">
-                        💡 提示：直接跟AI对话，它会帮你编辑文件！
+
+                <!-- AI Chat Panel -->
+                <div class="right-sidebar-panel active" id="aiChatPanel">
+                    <div class="ai-header-banner">
+                        <div class="ai-title">🤖 AI 助手</div>
+                        <div class="ai-description">帮助你编写更好的 Skill</div>
                     </div>
-                </div>
-                <div class="ai-chat">
-                    <div class="ai-chat-messages" id="aiChatMessages">
-                        <div class="chat-message assistant">
-                            你好！我是你的 AI 助手。跟我对话，我会帮你编辑 skill.md 和 main.py 文件！
+                    <div class="ai-chat">
+                        <div class="ai-chat-messages" id="aiChatMessages">
+                            <div class="chat-message assistant">
+                                你好！我是你的 AI 助手。告诉我你想要什么技能，我会帮你编写！<br><br>
+                                💡 只需要提示词？直接描述即可。<br>
+                                ⚡ 需要脚本逻辑？告诉我要写代码。
+                            </div>
+                        </div>
+                        <div class="ai-input-area">
+                            <textarea class="ai-input" id="aiInput" placeholder="描述你想要的技能...">帮我写一个技能</textarea>
+                            <button class="btn btn-primary ai-send-btn" onclick="sendAiMessage()">发送</button>
                         </div>
                     </div>
-                    <div class="ai-input-area">
-                        <textarea class="ai-input" id="aiInput" placeholder="告诉 AI 你需要什么...">帮我按照描述完善这个skill</textarea>
-                        <button class="btn btn-primary ai-send-btn" onclick="sendAiMessage()">发送</button>
+                </div>
+
+                <!-- Tools Panel -->
+                <div class="right-sidebar-panel" id="aiToolsPanel">
+                    <div class="tools-panel">
+                        <!-- AI suggest hint -->
+                        <div class="ai-suggest-hint" id="aiSuggestHint"></div>
+                        <!-- Toolbar: search + AI suggest -->
+                        <div class="tools-toolbar">
+                            <input class="tools-search" type="text" placeholder="🔍 搜索工具..." oninput="filterTools(this.value)">
+                            <button class="btn-ai-suggest" id="btnAiSuggest" onclick="aiRecommendTools()">🤖 AI 帮选</button>
+                        </div>
+                        <!-- Tool list -->
+                        <div class="tools-list" id="toolSelector">
+                            <div style="color: #888; font-size: 12px; text-align: center; padding: 20px;">加载中...</div>
+                        </div>
+                        <!-- Footer: count + save -->
+                        <div class="tools-footer">
+                            <span class="tools-selected-count" id="toolsSelectedCount">已选 <strong>0</strong> 个工具</span>
+                            <button class="btn btn-primary" style="padding: 8px 16px; font-size: 13px;" onclick="saveToolSelection()">保存配置</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -530,7 +671,7 @@
         </div>
     </div>
 
-    <!-- Template Modal -->
+    <!-- Create Skill Modal -->
     <div class="modal" id="templateModal">
         <div class="modal-content">
             <div class="modal-header">
@@ -543,25 +684,44 @@
                 </div>
                 <div class="form-group">
                     <label>描述</label>
-                    <textarea id="newSkillDesc" placeholder="简单描述这个 Skill 的功能"></textarea>
+                    <textarea id="newSkillDesc" rows="2" placeholder="简单描述这个 Skill 的功能"></textarea>
                 </div>
                 <div class="form-group">
                     <label>作者</label>
                     <input type="text" id="newSkillAuthor" placeholder="你的名字">
                 </div>
                 <div class="form-group">
-                    <label>选择模板</label>
-                    <div class="template-grid" id="templateGrid">
-                        <!-- Templates will be loaded here -->
+                    <label>技能类型</label>
+                    <div class="type-grid">
+                        <div class="type-card selected" data-type="prompt-only" onclick="selectSkillType('prompt-only', this)">
+                            <div class="type-icon">📝</div>
+                            <div class="type-name">纯提示词</div>
+                            <div class="type-desc">角色扮演、问答、建议类<br>只需 skill.md</div>
+                        </div>
+                        <div class="type-card" data-type="python" onclick="selectSkillType('python', this)">
+                            <div class="type-icon">🐍</div>
+                            <div class="type-name">Python 脚本</div>
+                            <div class="type-desc">复杂逻辑、API 调用<br>skill.md + main.py</div>
+                        </div>
+                        <div class="type-card" data-type="shell" onclick="selectSkillType('shell', this)">
+                            <div class="type-icon">🖥️</div>
+                            <div class="type-name">Shell 脚本</div>
+                            <div class="type-desc">Linux/Mac 系统命令<br>skill.md + main.sh</div>
+                        </div>
+                        <div class="type-card" data-type="powershell" onclick="selectSkillType('powershell', this)">
+                            <div class="type-icon">⚡</div>
+                            <div class="type-name">PowerShell</div>
+                            <div class="type-desc">Windows 系统命令<br>skill.md + main.ps1</div>
+                        </div>
                     </div>
                 </div>
             </div>
             <div class="modal-actions">
                 <button class="btn btn-secondary" onclick="closeTemplateModal()">取消</button>
-                <button class="btn btn-primary" onclick="createFromTemplate()">创建</button>
+                <button class="btn btn-primary" onclick="createFromType()">创建</button>
             </div>
         </div>
-        </div>
+    </div>
 
     <!-- Toast -->
     <div class="toast" id="toast"></div>
@@ -571,7 +731,9 @@
         let currentSkillName = null;
         let currentFile = null;
         let currentFileContent = {};
-        let selectedTemplate = 'basic';
+        let selectedSkillType = 'prompt-only';
+        let selectedTools = [];  // array of tool names
+        let allToolsData = [];   // cached full tools list from API
         let isNewSkill = false;
         let codeMirror = null;
 
@@ -583,7 +745,7 @@
 
             if (mode === 'create' || !skillName) {
                 isNewSkill = true;
-                showTemplateModal();
+                showCreateModal();
             } else {
                 loadSkill(skillName);
             }
@@ -618,8 +780,7 @@
             window.location.href = '/static/skill_manager.html';
         }
 
-        async function showTemplateModal() {
-            await loadTemplates();
+        function showCreateModal() {
             document.getElementById('templateModal').classList.add('active');
         }
 
@@ -630,30 +791,238 @@
             document.getElementById('templateModal').classList.remove('active');
         }
 
-        async function loadTemplates() {
-            try {
-                const response = await fetch('/api/skills/templates');
-                const data = await response.json();
-                const grid = document.getElementById('templateGrid');
-                grid.innerHTML = data.templates.map(t => `
-                    <div class="template-card ${t.id === selectedTemplate ? 'selected' : ''}"
-                         onclick="selectTemplate('${t.id}')">
-                        <div class="template-icon">${t.icon}</div>
-                        <div class="template-name">${t.name}</div>
-                        <div class="template-desc">${t.description}</div>
-                    </div>
-                `).join('');
-            } catch (e) {
-                console.error('Failed to load templates', e);
+        function selectSkillType(type, el) {
+            selectedSkillType = type;
+            document.querySelectorAll('.type-card').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+        }
+
+        // ===== Right Sidebar Tab Switching =====
+        function switchRightTab(tab) {
+            document.querySelectorAll('.right-sidebar-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.right-sidebar-panel').forEach(p => p.classList.remove('active'));
+
+            if (tab === 'chat') {
+                document.querySelectorAll('.right-sidebar-tab')[0].classList.add('active');
+                document.getElementById('aiChatPanel').classList.add('active');
+            } else {
+                document.querySelectorAll('.right-sidebar-tab')[1].classList.add('active');
+                document.getElementById('aiToolsPanel').classList.add('active');
             }
         }
 
-        function selectTemplate(templateId) {
-            selectedTemplate = templateId;
-            loadTemplates();
+        // ===== Tool Selection =====
+        function getCurrentToolsFromSkillMd() {
+            const skillMd = currentFileContent['skill.md'] || '';
+            const match = skillMd.match(/^tools:\s*\[(.*?)\]/m);
+            if (!match) return [];
+            try {
+                return JSON.parse('[' + match[1] + ']');
+            } catch { return []; }
         }
 
-        async function createFromTemplate() {
+        function updateToolCount() {
+            const el = document.getElementById('toolsSelectedCount');
+            el.innerHTML = `已选 <strong>${selectedTools.length}</strong> 个工具`;
+        }
+
+        async function loadAvailableTools() {
+            const container = document.getElementById('toolSelector');
+            container.innerHTML = '<div style="color: #888; font-size: 12px; text-align: center; padding: 20px;">加载中...</div>';
+
+            selectedTools = getCurrentToolsFromSkillMd();
+            updateToolCount();
+
+            try {
+                const response = await fetch('/api/skills/available-tools');
+                const data = await response.json();
+                allToolsData = data.tools || [];
+
+                if (allToolsData.length === 0) {
+                    container.innerHTML = '<div style="color: #888; font-size: 12px; text-align: center; padding: 20px;">暂无可用工具</div>';
+                    return;
+                }
+
+                renderToolsList(allToolsData);
+            } catch (e) {
+                container.innerHTML = '<div style="color: #f44336; font-size: 12px; text-align: center; padding: 20px;">加载失败</div>';
+            }
+        }
+
+        function renderToolsList(tools, searchTerm = '') {
+            const container = document.getElementById('toolSelector');
+
+            // Group by source
+            const localTools = tools.filter(t => t.source === 'local' || t.source === 'skill');
+            const mcpTools = tools.filter(t => t.source === 'mcp');
+            const mcpGroups = {};
+            for (const t of mcpTools) {
+                const key = t.server_name || t.server_id || 'unknown';
+                if (!mcpGroups[key]) mcpGroups[key] = [];
+                mcpGroups[key].push(t);
+            }
+
+            let html = '';
+
+            if (localTools.length > 0) {
+                html += '<div class="tool-group-label">本地工具</div>';
+                for (const t of localTools) {
+                    html += renderToolItem(t, searchTerm);
+                }
+            }
+
+            for (const [serverName, serverTools] of Object.entries(mcpGroups)) {
+                html += `<div class="tool-group-label">MCP: ${serverName}</div>`;
+                for (const t of serverTools) {
+                    html += renderToolItem(t, searchTerm);
+                }
+            }
+
+            container.innerHTML = html || '<div style="color: #888; font-size: 12px; text-align: center; padding: 20px;">无匹配工具</div>';
+        }
+
+        function renderToolItem(t, searchTerm) {
+            const checked = selectedTools.includes(t.name) ? 'checked' : '';
+            const displayName = t.display_name || t.name;
+            const desc = (t.description || '').substring(0, 60);
+            const serverLabel = t.server_name ? ` · ${t.server_name}` : '';
+            const sourceBadge = t.source === 'mcp' ? '<span class="tool-item-source mcp">MCP</span>' : '<span class="tool-item-source">本地</span>';
+
+            // Highlight search term in display name
+            let highlightedName = displayName;
+            if (searchTerm) {
+                const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+                highlightedName = displayName.replace(regex, '<mark>$1</mark>');
+            }
+
+            return `<label class="tool-item">
+                <input type="checkbox" value="${t.name}" ${checked} onchange="toggleTool(this)">
+                <div class="tool-item-info">
+                    <div class="tool-item-display-name">${highlightedName}</div>
+                    <div class="tool-item-tech-name">${t.name}${serverLabel}</div>
+                    ${desc ? `<div class="tool-item-desc">${desc}</div>` : ''}
+                </div>
+                ${sourceBadge}
+            </label>`;
+        }
+
+        function filterTools(searchTerm) {
+            if (!allToolsData.length) return;
+            const term = searchTerm.toLowerCase().trim();
+            if (!term) {
+                renderToolsList(allToolsData);
+                return;
+            }
+            const filtered = allToolsData.filter(t => {
+                const displayName = (t.display_name || '').toLowerCase();
+                const name = (t.name || '').toLowerCase();
+                const desc = (t.description || '').toLowerCase();
+                return displayName.includes(term) || name.includes(term) || desc.includes(term);
+            });
+            renderToolsList(filtered, term);
+        }
+
+        function toggleTool(checkbox) {
+            const name = checkbox.value;
+            if (checkbox.checked) {
+                if (!selectedTools.includes(name)) selectedTools.push(name);
+            } else {
+                selectedTools = selectedTools.filter(t => t !== name);
+            }
+            updateToolCount();
+        }
+
+        async function saveToolSelection() {
+            if (!currentSkillName) return;
+
+            const skillMd = currentFileContent['skill.md'] || '';
+            const toolsYaml = '[' + selectedTools.map(t => `"${t}"`).join(', ') + ']';
+            let updated = skillMd;
+
+            if (/^tools:/m.test(updated)) {
+                updated = updated.replace(/^tools:\s*\[.*?\]/m, `tools: ${toolsYaml}`);
+            } else {
+                updated = updated.replace(/^(---\n[\s\S]*?)(---)/m, `$1tools: ${toolsYaml}\n$2`);
+            }
+
+            try {
+                const response = await fetch(`/api/skills/${currentSkillName}/files/skill.md`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: updated
+                });
+                if (response.ok) {
+                    currentFileContent['skill.md'] = updated;
+                    if (currentFile === 'skill.md' && codeMirror) {
+                        codeMirror.setValue(updated);
+                    }
+                    showToast('工具配置已保存', 'success');
+                } else {
+                    showToast('保存失败', 'error');
+                }
+            } catch (e) {
+                showToast('保存失败: ' + e.message, 'error');
+            }
+        }
+
+        async function aiRecommendTools() {
+            if (!currentSkillName) {
+                showToast('请先创建或加载一个技能', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('btnAiSuggest');
+            const hint = document.getElementById('aiSuggestHint');
+            btn.disabled = true;
+            btn.textContent = '🤔 分析中...';
+            hint.className = 'ai-suggest-hint visible loading';
+            hint.textContent = '🤖 AI 正在分析技能内容，推荐合适的工具...';
+
+            try {
+                const response = await fetch('/api/skills/recommend-tools', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        skill_name: currentSkillName,
+                        skill_content: currentFileContent['skill.md'] || ''
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const recommended = data.recommended_tools || [];
+
+                    if (recommended.length === 0) {
+                        hint.className = 'ai-suggest-hint visible';
+                        hint.textContent = '🤖 AI 未找到特别相关的工具，你可以手动选择。';
+                    } else {
+                        // Merge recommended tools into selectedTools
+                        const newTools = recommended.filter(t => !selectedTools.includes(t));
+                        selectedTools = [...new Set([...selectedTools, ...recommended])];
+                        updateToolCount();
+                        // Re-render
+                        renderToolsList(allToolsData);
+                        // Save automatically
+                        await saveToolSelection();
+
+                        hint.className = 'ai-suggest-hint visible';
+                        hint.textContent = `🤖 AI 推荐了 ${recommended.length} 个工具${newTools.length > 0 ? `，新增 ${newTools.length} 个` : ''}，已自动保存。`;
+                    }
+                } else {
+                    hint.className = 'ai-suggest-hint visible';
+                    hint.textContent = '❌ AI 推荐失败，请手动选择工具。';
+                }
+            } catch (e) {
+                hint.className = 'ai-suggest-hint visible';
+                hint.textContent = '❌ 网络错误：' + e.message;
+            }
+
+            btn.disabled = false;
+            btn.textContent = '🤖 AI 帮选';
+        }
+
+        // ===== Skill CRUD =====
+        async function createFromType() {
             const name = document.getElementById('newSkillName').value.trim();
             const description = document.getElementById('newSkillDesc').value.trim();
             const author = document.getElementById('newSkillAuthor').value.trim();
@@ -669,13 +1038,12 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         name, description, author,
-                        template: selectedTemplate,
+                        template: selectedSkillType,
                         tags: ['custom']
                     })
                 });
 
                 if (response.ok) {
-                    const data = await response.json();
                     currentSkillName = name;
                     document.getElementById('skillName').textContent = name;
                     closeTemplateModal();
@@ -699,7 +1067,6 @@
                 initCodeMirror();
             }
 
-            // Clear current file content before loading
             currentFileContent = {};
             currentFile = null;
 
@@ -715,13 +1082,14 @@
                 const data = await response.json();
 
                 if (data.files && data.files.length > 0) {
-                    // Load all files in parallel
                     await Promise.all(data.files.map(file =>
                         loadFileContent(skillName, file.path)
                     ));
                     renderFileTree(data.files);
                     selectFile(data.files[0].path);
-                    console.log('Loaded files:', Object.keys(currentFileContent));
+                    selectedSkillType = detectSkillTypeFromFiles(data.files);
+                    loadAvailableTools();
+                    console.log('Loaded files:', Object.keys(currentFileContent), 'type:', selectedSkillType);
                 } else {
                     showToast('没有找到文件', 'info');
                 }
@@ -776,7 +1144,17 @@
             if (filename.endsWith('.txt')) return '📄';
             if (filename.endsWith('.json')) return '📋';
             if (filename.endsWith('.yaml') || filename.endsWith('.yml')) return '⚙️';
+            if (filename.endsWith('.sh')) return '🖥️';
+            if (filename.endsWith('.ps1')) return '⚡';
             return '📄';
+        }
+
+        function detectSkillTypeFromFiles(files) {
+            const paths = files.map(f => f.path || f);
+            if (paths.some(p => p.endsWith('.py'))) return 'python';
+            if (paths.some(p => p.endsWith('.ps1'))) return 'powershell';
+            if (paths.some(p => p.endsWith('.sh'))) return 'shell';
+            return 'prompt-only';
         }
 
         function selectFile(filePath) {
@@ -865,7 +1243,6 @@
             addAiMessage('user', input);
             document.getElementById('aiInput').value = '';
 
-            // 显示AI正在思考的状态
             const messagesDiv = document.getElementById('aiChatMessages');
             aiLoadingDiv = document.createElement('div');
             aiLoadingDiv.className = 'chat-message assistant loading';
@@ -874,10 +1251,9 @@
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
 
             try {
-                // Collect chat history
                 const messageElements = messagesDiv.querySelectorAll('.chat-message');
                 const messages = Array.from(messageElements)
-                    .filter(el => el !== aiLoadingDiv) // 排除加载状态
+                    .filter(el => el !== aiLoadingDiv)
                     .map(el => ({
                         role: el.classList.contains('user') ? 'user' : 'assistant',
                         content: el.textContent
@@ -890,11 +1266,11 @@
                         messages: messages,
                         skill_name: currentSkillName,
                         current_file: currentFile,
-                        file_content: currentFile ? (currentFileContent[currentFile] || '') : ''
+                        file_content: currentFile ? (currentFileContent[currentFile] || '') : '',
+                        skill_type: selectedSkillType
                     })
                 });
 
-                // 移除加载状态
                 if (aiLoadingDiv && aiLoadingDiv.parentNode) {
                     aiLoadingDiv.parentNode.removeChild(aiLoadingDiv);
                     aiLoadingDiv = null;
@@ -902,11 +1278,8 @@
 
                 if (response.ok) {
                     const data = await response.json();
-
-                    // Add AI response to chat
                     addAiMessage('assistant', data.content);
 
-                    // If files were edited, reload the skill
                     if (data.files_edited && data.files_edited.length > 0) {
                         await loadSkill(currentSkillName);
                         showToast('文件已更新！', 'success');
@@ -915,7 +1288,6 @@
                     addAiMessage('assistant', '抱歉，我遇到了一些问题。');
                 }
             } catch (e) {
-                // 移除加载状态
                 if (aiLoadingDiv && aiLoadingDiv.parentNode) {
                     aiLoadingDiv.parentNode.removeChild(aiLoadingDiv);
                     aiLoadingDiv = null;

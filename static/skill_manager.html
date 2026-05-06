@@ -245,15 +245,10 @@
 
         <div class="content">
             <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 16px; margin-bottom: 24px;">
-                <div class="add-skill-card" onclick="openCreateModal()">
-                    <div class="icon">+</div>
-                    <h2>创建新 Skill (简易)</h2>
-                    <p>只编写 skill.md 提示词</p>
-                </div>
                 <div class="add-skill-card" onclick="openNewEditor()" style="background: linear-gradient(135deg, #667eea20 0%, #764ba220 100%);">
-                    <div class="icon">⚡</div>
-                    <h2>创建新 Skill (高级)</h2>
-                    <p>完整文件管理 + AI 辅助</p>
+                    <div class="icon">+</div>
+                    <h2>创建新 Skill</h2>
+                    <p>AI 辅助编写，支持纯提示词和脚本模式</p>
                 </div>
                 <div class="github-import-card" onclick="openGitHubImportModal()">
                     <div class="icon">📦</div>
@@ -279,37 +274,6 @@
 
             <div class="skills-list" id="skillsList">
                 <div class="loading">加载中...</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 创建/编辑 Skill 模态框 -->
-    <div class="modal" id="createModal">
-        <div class="modal-content">
-            <h2 id="createModalTitle">创建新 Skill</h2>
-            <div class="form-group">
-                <label for="skillName">Skill 名称 *</label>
-                <input type="text" id="skillName" placeholder="例如：code_reviewer">
-            </div>
-            <div class="form-group">
-                <label for="skillContent">Skill 内容 (Markdown with YAML Frontmatter) *</label>
-                <textarea id="skillContent" placeholder="---
-name: example_skill
-version: 1.0.0
-description: 描述这个Skill
-author: yourname
-tags: [tag1, tag2]
-tools: []
----
-
-# Example Skill
-
-## 描述
-描述内容..."></textarea>
-            </div>
-            <div class="modal-actions">
-                <button class="btn btn-secondary" onclick="closeCreateModal()">取消</button>
-                <button class="btn btn-primary" onclick="saveSkill()">保存</button>
             </div>
         </div>
     </div>
@@ -372,7 +336,6 @@ tools: []
     <script>
         const SKILLS_API = '/api/skills';
         let skills = [];
-        let editingSkillId = null;
 
         // Load data on page load
         loadSkills();
@@ -442,9 +405,8 @@ tools: []
                     </div>
                     <div class="skill-actions">
                         <button class="btn btn-secondary" onclick="viewSkill('${skill.name}')">查看</button>
+                        <button class="btn btn-primary" onclick="openEditor('${skill.name}')">编辑</button>
                         ${skill.source !== 'builtin' ? `
-                            <button class="btn btn-secondary" onclick="editSkill('${skill.name}')">简易编辑</button>
-                            <button class="btn btn-primary" onclick="openEditor('${skill.name}')">高级编辑</button>
                             <button class="btn btn-danger" onclick="deleteSkill('${skill.name}')">删除</button>
                         ` : ''}
                     </div>
@@ -460,63 +422,6 @@ tools: []
 
         function filterSkills() { renderSkills(); }
 
-        function openCreateModal() {
-            editingSkillId = null;
-            document.getElementById('createModalTitle').textContent = '创建新 Skill';
-            document.getElementById('skillName').value = '';
-            document.getElementById('skillContent').value = `---
-name: my_skill
-version: 1.0.0
-description: 我的自定义 Skill
-author: yourname
-tags: [tag1]
-tools: []
----
-
-# 我的 Skill
-
-## 描述
-
-在这里编写 Skill 说明书...
-`;
-            document.getElementById('createModal').classList.add('active');
-        }
-
-        function closeCreateModal() {
-            document.getElementById('createModal').classList.remove('active');
-            editingSkillId = null;
-        }
-
-        async function saveSkill() {
-            const name = document.getElementById('skillName').value.trim();
-            const content = document.getElementById('skillContent').value.trim();
-
-            if (!name || !content) {
-                alert('请填写 Skill 名称和内容');
-                return;
-            }
-
-            try {
-                const url = editingSkillId ? `${SKILLS_API}/${name}` : `${SKILLS_API}/`;
-                const response = await fetch(url, {
-                    method: editingSkillId ? 'PUT' : 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, skill_content: content })
-                });
-
-                if (response.ok) {
-                    closeCreateModal();
-                    await loadSkills();
-                    alert(editingSkillId ? 'Skill 更新成功!' : 'Skill 创建成功!');
-                } else {
-                    alert('操作失败');
-                }
-            } catch (error) {
-                console.error('Error saving skill:', error);
-                alert('保存失败');
-            }
-        }
-
         async function viewSkill(skillName) {
             try {
                 const response = await fetch(`${SKILLS_API}/${skillName}/content`);
@@ -528,24 +433,6 @@ tools: []
                 }
             } catch (error) {
                 console.error('Error loading skill content:', error);
-                alert('加载失败');
-            }
-        }
-
-        async function editSkill(skillName) {
-            try {
-                const response = await fetch(`${SKILLS_API}/${skillName}`);
-                const skill = await response.json();
-
-                if (skill) {
-                    editingSkillId = skill.id;
-                    document.getElementById('createModalTitle').textContent = '编辑 Skill';
-                    document.getElementById('skillName').value = skill.name;
-                    document.getElementById('skillContent').value = skill.skill_content || '';
-                    document.getElementById('createModal').classList.add('active');
-                }
-            } catch (error) {
-                console.error('Error loading skill:', error);
                 alert('加载失败');
             }
         }
