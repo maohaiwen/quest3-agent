@@ -51,11 +51,13 @@ const ChatModule = {
             ChatView.updateConnectionStatus('connected', '已连接');
             ChatView.setInputsEnabled(true);
             ChatView.showTypingIndicator(false);
+            ChatView.removePendingResponse();
         });
 
         ChatService.on('history', (data) => {
             // Server sends history via WebSocket after connection
             ChatView.clearMessages();
+            ChatView.removePendingResponse();
             if (data.messages && data.messages.length > 0) {
                 data.messages.forEach(msg => {
                     // Map "assistant" role from backend to "ai" for frontend rendering
@@ -84,8 +86,24 @@ const ChatModule = {
             // to prevent input being permanently greyed out
             if (ChatView._aiResponding) {
                 ChatView.finalizeAiMessage();
+                // Show pending placeholder since the response is still being generated
+                ChatView.showPendingResponse();
             }
             ChatView.setInputsEnabled(false);
+        });
+
+        // Pending response (AI is generating in background after disconnect)
+        ChatService.on('pending_response', (data) => {
+            ChatView.showPendingResponse(data.user_message);
+        });
+
+        // Response completed in background (after reconnect)
+        ChatService.on('response_completed', (data) => {
+            ChatView.removePendingResponse();
+            if (data.message) {
+                const sender = data.message.role === 'assistant' ? 'ai' : data.message.role;
+                ChatView.addMessage(sender, data.message.content, data.message.created_at);
+            }
         });
 
         // Direct mode streaming
@@ -100,6 +118,7 @@ const ChatModule = {
         // End of response (all modes)
         ChatService.on('end', () => {
             ChatView.showTypingIndicator(false);
+            ChatView.removePendingResponse();
             ChatView.finalizeAiMessage();
         });
 
@@ -285,7 +304,7 @@ const ChatModule = {
     async createSession() {
         try {
             const postData = {
-                title: `会话 ${new Date().toLocaleString('zh-CN')}`
+                title: `会话 ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`
             };
             // Include the currently selected agent (locked or from dropdown)
             const agentId = this._lockedAgentId || AppState.get('currentAgentId');

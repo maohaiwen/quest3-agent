@@ -3,193 +3,69 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Agent Playground - 多智能体协作</title>
+    <title>多智能体协作 - Quest3 Agent</title>
+    <link rel="stylesheet" href="/static/styles/main.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
         :root {
-            /* Primary Colors - matching main page */
-            --primary: #667eea;
-            --primary-dark: #5568d3;
-            --secondary: #764ba2;
-            --gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-
-            /* Backgrounds */
-            --bg-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            --container-bg: white;
-            --sidebar-bg: #f8f9fa;
             --panel-bg: #fafbfc;
-
-            /* Text */
-            --text-primary: #333;
-            --text-secondary: #666;
-            --text-muted: #999;
-
-            /* Borders */
-            --border-color: #e0e0e0;
-            --border-focus: #667eea;
-
-            /* Status */
-            --success-bg: #d4edda;
-            --success-color: #155724;
-            --error-bg: #fee;
-            --error-color: #dc3545;
-            --warning-bg: #fff3cd;
-            --warning-color: #856404;
-            --info-bg: #e8f4fd;
-            --info-color: #0c5460;
-
-            /* Shadows */
-            --container-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            --card-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
-            --hover-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-
-            /* Radius */
-            --radius-lg: 16px;
-            --radius: 12px;
-            --radius-sm: 8px;
-            --radius-full: 9999px;
-
-            /* Accent for running state */
             --accent-running: #00d4ff;
             --accent-success: #4caf50;
         }
 
         body {
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            background: var(--bg-gradient);
-            color: var(--text-primary);
-            height: 100vh;
             display: flex;
             justify-content: center;
-            align-items: center;
+            align-items: flex-start;
             padding: 20px;
+            height: 100vh;
             overflow: hidden;
         }
 
-        /* ========== App Container (matching main page) ========== */
-        .app-container {
-            width: 100%;
-            max-width: 1400px;
-            background: var(--container-bg);
-            border-radius: var(--radius-lg);
-            box-shadow: var(--container-shadow);
+        @media (max-width: 768px) {
+            body { padding: 0; }
+            .page-container { border-radius: 0; }
+            .page-container.page-wide { height: 100vh; }
+        }
+
+        .page-container.page-wide {
+            height: calc(100vh - 40px);
+        }
+
+        /* ========== Page Layout ========== */
+        .page-body.collab-page-body {
             display: flex;
             flex-direction: column;
-            height: 90vh;
+            flex: 1;
+            min-height: 0;
             overflow: hidden;
+            padding: var(--space-4) var(--space-6);
         }
 
-        /* ========== Header (matching main page) ========== */
-        .header {
-            background: var(--gradient);
-            color: white;
-            padding: 16px 24px;
+        .collab-toolbar {
             display: flex;
             align-items: center;
             justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 12px;
             flex-shrink: 0;
         }
 
-        .header-brand {
-            display: flex;
-            align-items: center;
-            gap: 12px;
+        .collab-toolbar h2 {
+            font-size: var(--text-xl);
+            font-weight: 700;
+            color: var(--text-primary);
         }
 
-        .header-brand h1 {
-            font-size: 20px;
-            font-weight: 600;
-        }
-
-        .header-actions {
+        .collab-toolbar-actions {
             display: flex;
             gap: 8px;
-            align-items: center;
-        }
-
-        .nav-btn {
-            background: rgba(255, 255, 255, 0.15);
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: var(--radius-full);
-            cursor: pointer;
-            font-size: 14px;
-            font-family: inherit;
-            transition: all 0.3s;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            text-decoration: none;
-        }
-
-        .nav-btn:hover {
-            background: rgba(255, 255, 255, 0.25);
-        }
-
-        .nav-btn.active {
-            background: rgba(255, 255, 255, 0.3);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            flex-wrap: wrap;
         }
 
         /* ========== Buttons ========== */
-        .btn {
-            padding: 8px 16px;
-            border: 1px solid var(--border-color);
-            background: white;
-            color: var(--text-primary);
-            border-radius: var(--radius-sm);
-            cursor: pointer;
-            font-size: 13px;
-            font-family: inherit;
-            transition: all 0.2s;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-        }
-
-        .btn:hover {
-            background: #f0f0f0;
-            transform: translateY(-1px);
-        }
-
-        .btn-primary {
-            background: var(--primary);
-            border-color: var(--primary);
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: var(--primary-dark);
-            border-color: var(--primary-dark);
-        }
-
-        .btn-success {
-            background: #4caf50;
-            border-color: #4caf50;
-            color: white;
-        }
-
-        .btn-success:hover {
-            background: #43a047;
-            border-color: #43a047;
-        }
-
-        .btn-danger {
-            color: var(--error-color);
-            border-color: var(--error-color);
-        }
-
-        .btn-danger:hover {
-            background: var(--error-bg);
-        }
-
         .btn:disabled {
             opacity: 0.6;
             cursor: not-allowed;
@@ -201,6 +77,7 @@
             display: flex;
             flex: 1;
             overflow: hidden;
+            min-height: 0;
         }
 
         /* ========== Left Panel - Topology ========== */
@@ -208,7 +85,7 @@
             width: 260px;
             display: flex;
             flex-direction: column;
-            background: var(--sidebar-bg);
+            background: var(--bg-sidebar);
             flex-shrink: 0;
             border-right: 1px solid var(--border-color);
         }
@@ -258,7 +135,7 @@
         }
 
         .topo-node:hover {
-            box-shadow: var(--hover-shadow);
+            box-shadow: var(--shadow-md);
         }
 
         .topo-node.thinking {
@@ -374,7 +251,7 @@
 
         .panel-header {
             padding: 12px 16px;
-            background: var(--sidebar-bg);
+            background: var(--bg-sidebar);
             border-bottom: 1px solid var(--border-color);
             display: flex;
             align-items: center;
@@ -438,7 +315,7 @@
             gap: 8px;
             padding: 4px 8px;
             margin-bottom: 8px;
-            background: var(--sidebar-bg);
+            background: var(--bg-sidebar);
             border-radius: 4px;
             cursor: pointer;
             user-select: none;
@@ -480,7 +357,7 @@
             color: var(--text-muted);
             padding: 4px 8px;
             margin-top: 6px;
-            border-top: 1px solid var(--sidebar-bg);
+            border-top: 1px solid var(--bg-sidebar);
         }
 
         .round-messages {
@@ -523,7 +400,7 @@
         }
 
         .message.agent {
-            background: var(--sidebar-bg);
+            background: var(--bg-sidebar);
             border: 1px solid var(--border-color);
             border-left: 3px solid var(--agent-color, var(--primary));
             align-self: flex-start;
@@ -576,7 +453,7 @@
         .agent-role.participant { background: rgba(0, 150, 136, 0.15); color: #00695c; }
 
         .round-badge {
-            background: var(--sidebar-bg);
+            background: var(--bg-sidebar);
             padding: 2px 6px;
             border-radius: 3px;
             font-size: 10px;
@@ -587,7 +464,6 @@
         .message-content {
             font-size: 13px;
             line-height: 1.6;
-            white-space: pre-wrap;
             word-break: break-word;
             color: var(--text-primary);
         }
@@ -605,7 +481,7 @@
             position: absolute;
             bottom: 0;
             right: 0;
-            background: linear-gradient(transparent, var(--msg-bg, var(--sidebar-bg)));
+            background: linear-gradient(transparent, var(--msg-bg, var(--bg-sidebar)));
             padding: 0 8px;
         }
 
@@ -623,7 +499,7 @@
             align-items: center;
             gap: 8px;
             padding: 8px 12px;
-            background: var(--sidebar-bg);
+            background: var(--bg-sidebar);
             border-radius: 6px;
             border-left: 3px solid var(--primary);
         }
@@ -659,7 +535,7 @@
             width: 320px;
             display: flex;
             flex-direction: column;
-            background: var(--sidebar-bg);
+            background: var(--bg-sidebar);
             flex-shrink: 0;
             border-left: 1px solid var(--border-color);
         }
@@ -739,7 +615,7 @@
         }
 
         .agent-card:hover {
-            box-shadow: var(--hover-shadow);
+            box-shadow: var(--shadow-md);
         }
 
         .agent-card-header {
@@ -807,7 +683,7 @@
         }
 
         .shared-state-viewer.flash {
-            background: var(--sidebar-bg);
+            background: var(--bg-sidebar);
         }
 
         /* ========== Edit Mode Panel ========== */
@@ -834,7 +710,7 @@
 
         .edit-tab:hover {
             color: var(--text-secondary);
-            background: var(--sidebar-bg);
+            background: var(--bg-sidebar);
         }
 
         .edit-tab.active {
@@ -1052,12 +928,12 @@
 
         /* ========== Input Bar ========== */
         .input-bar {
-            padding: 16px 24px;
+            padding: 12px 16px;
             background: white;
             border-top: 1px solid var(--border-color);
             display: flex;
-            gap: 10px;
-            align-items: flex-end;
+            gap: 8px;
+            align-items: center;
             flex-shrink: 0;
         }
 
@@ -1065,14 +941,14 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            gap: 2px;
         }
 
         .input-bar textarea {
             width: 100%;
-            min-height: 40px;
+            min-height: 38px;
             max-height: 120px;
-            padding: 10px 14px;
+            padding: 8px 12px;
             background: white;
             border: 1px solid var(--border-color);
             border-radius: var(--radius-sm);
@@ -1081,6 +957,7 @@
             font-family: inherit;
             resize: none;
             transition: border-color 0.2s;
+            line-height: 1.5;
         }
 
         .input-bar textarea:focus {
@@ -1099,7 +976,7 @@
         }
 
         .send-btn {
-            padding: 10px 24px;
+            padding: 0 20px;
             background: var(--primary);
             border: none;
             border-radius: var(--radius-sm);
@@ -1108,11 +985,12 @@
             font-weight: 500;
             cursor: pointer;
             transition: all 0.2s;
-            height: 40px;
+            height: 38px;
             font-family: inherit;
             display: inline-flex;
             align-items: center;
             gap: 6px;
+            flex-shrink: 0;
         }
 
         .send-btn:hover {
@@ -1128,7 +1006,7 @@
         }
 
         .stop-btn {
-            padding: 10px 20px;
+            padding: 0 16px;
             background: var(--error-color);
             border: none;
             border-radius: var(--radius-sm);
@@ -1137,9 +1015,10 @@
             font-weight: 500;
             cursor: pointer;
             transition: all 0.2s;
-            height: 40px;
+            height: 38px;
             font-family: inherit;
             display: none;
+            flex-shrink: 0;
         }
 
         .stop-btn.visible {
@@ -1155,7 +1034,7 @@
         /* ========== Status Bar ========== */
         .status-bar {
             padding: 8px 24px;
-            background: var(--sidebar-bg);
+            background: var(--bg-sidebar);
             border-top: 1px solid var(--border-color);
             font-size: 11px;
             color: var(--text-muted);
@@ -1243,8 +1122,6 @@
 
         .modal-header {
             padding: 16px 24px;
-            background: var(--gradient);
-            color: white;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -1252,7 +1129,6 @@
 
         .modal-header h2 {
             font-size: 18px;
-            color: white;
         }
 
         .modal-header-actions {
@@ -1262,9 +1138,9 @@
         }
 
         .modal-close {
-            background: rgba(255, 255, 255, 0.15);
+            background: none;
             border: none;
-            color: white;
+            color: var(--text-muted);
             font-size: 20px;
             cursor: pointer;
             padding: 4px 10px;
@@ -1273,7 +1149,8 @@
         }
 
         .modal-close:hover {
-            background: rgba(255, 255, 255, 0.3);
+            background: var(--bg-muted);
+            color: var(--text-primary);
         }
 
         .modal-body {
@@ -1311,7 +1188,7 @@
         /* Collab card in modal */
         .collab-card {
             padding: 14px;
-            background: var(--sidebar-bg);
+            background: var(--bg-sidebar);
             border: 1px solid var(--border-color);
             border-radius: var(--radius-sm);
             cursor: pointer;
@@ -1320,7 +1197,7 @@
         }
 
         .collab-card:hover {
-            box-shadow: var(--hover-shadow);
+            box-shadow: var(--shadow-md);
             border-color: var(--primary);
         }
 
@@ -1416,7 +1293,7 @@
         /* ========== Task Progress ========== */
         .task-progress {
             padding: 8px 16px;
-            background: var(--sidebar-bg);
+            background: var(--bg-sidebar);
             border-bottom: 1px solid var(--border-color);
             font-size: 12px;
             color: var(--text-secondary);
@@ -1461,7 +1338,7 @@
             color: white;
             font-size: 14px;
             animation: toastSlideIn 0.3s ease;
-            box-shadow: var(--hover-shadow);
+            box-shadow: var(--shadow-md);
             max-width: 360px;
         }
 
@@ -1487,32 +1364,33 @@
         }
     </style>
 </head>
-<body>
-    <!-- App Container -->
-    <div class="app-container">
-        <!-- Header (matching main page) -->
-        <div class="header">
-            <div class="header-brand">
-                <a href="/static/agent_manager.html" class="nav-btn" title="返回Agent管理">
-                    &#8592; 返回
-                </a>
-                <h1>多智能体协作平台</h1>
-            </div>
-            <div class="header-actions">
-                <button class="nav-btn" id="btnSelectCollab" onclick="showCollabSelector()">
-                    &#128203; 选择配置
-                </button>
-                <button class="nav-btn" id="btnNewCollab" onclick="startNewCollab()">
-                    &#10010; 新建配置
-                </button>
-                <button class="nav-btn" id="btnRefresh" onclick="loadCollabs()">
-                    &#8635; 刷新
-                </button>
-            </div>
-        </div>
+<body class="gradient-bg">
+    <!-- Page Container -->
+    <div class="page-container page-wide">
+        <div id="pageNav"></div>
 
-        <!-- Main Container - Three Panels -->
-        <div class="main-container">
+        <div class="page-body collab-page-body">
+            <!-- Toolbar -->
+            <div class="collab-toolbar">
+                <h2>多智能体协作</h2>
+                <div class="collab-toolbar-actions">
+                    <button class="btn btn-secondary" id="btnSelectCollab" onclick="showCollabSelector()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                        选择配置
+                    </button>
+                    <button class="btn btn-primary" id="btnNewCollab" onclick="startNewCollab()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        新建配置
+                    </button>
+                    <button class="btn btn-ghost" id="btnRefresh" onclick="loadCollabs()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                        刷新
+                    </button>
+                </div>
+            </div>
+
+            <!-- Main Container - Three Panels -->
+            <div class="main-container">
             <!-- Left: Topology Panel -->
             <div class="topology-panel" id="topologyPanel">
                 <div class="panel-header" onclick="togglePanel('topology')">
@@ -1542,7 +1420,7 @@
                 <div class="chat-messages" id="chatMessages">
                     <div class="empty-state">
                         <div class="icon">&#128640;</div>
-                        <p style="margin-bottom: 16px;">欢迎使用多智能体协作平台</p>
+                        <p style="margin-bottom: 16px;">欢迎使用多智能体协作</p>
                         <div style="display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;">
                             <button class="btn btn-primary" onclick="showCollabSelector()">
                                 选择已有配置
@@ -1614,6 +1492,7 @@
                 <span class="collab-mode-badge" id="collabModeBadge" style="display: none;"></span>
             </div>
         </div>
+        </div>
     </div>
 
     <!-- Toast Container -->
@@ -1625,7 +1504,7 @@
             <div class="modal-header">
                 <h2>选择协作配置</h2>
                 <div class="modal-header-actions">
-                    <button class="nav-btn" style="font-size: 12px; padding: 6px 14px;" onclick="startNewCollab(); closeCollabSelector();">+ 新建配置</button>
+                    <button class="btn btn-secondary btn-sm" onclick="startNewCollab(); closeCollabSelector();">+ 新建配置</button>
                     <button class="modal-close" onclick="closeCollabSelector()">&times;</button>
                 </div>
             </div>
@@ -1640,7 +1519,14 @@
         </div>
     </div>
 
+    <script src="/static/core/Auth.js"></script>
+    <script src="/static/shared/utils.js"></script>
+    <script src="/static/shared/toast.js"></script>
+    <script src="/static/shared/modal.js"></script>
+    <script src="/static/shared/nav.js"></script>
     <script>
+        if (typeof Auth !== 'undefined' && !Auth.isLoggedIn()) { window.location.href = '/static/login.html'; }
+        SharedNav.render(document.getElementById('pageNav'), { active: 'playground' });
         // State
         let currentCollab = null;
         let isRunning = false;
@@ -2683,7 +2569,7 @@
                     currentRoundContainer = null;
                     thinkingIndicators = {};
                     document.getElementById('topologyContent').innerHTML = '<div class="empty-state" style="padding:20px;"><div class="icon" style="font-size:36px;">&#128279;</div><p style="font-size:12px;">选择协作配置后显示拓扑关系</p></div>';
-                    document.getElementById('chatMessages').innerHTML = '<div class="empty-state"><div class="icon">&#128640;</div><p style="margin-bottom: 16px;">欢迎使用多智能体协作平台</p><div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;"><button class="btn btn-primary" onclick="showCollabSelector()">选择已有配置</button><button class="btn btn-success" onclick="startNewCollab()">新建协作配置</button></div><p style="margin-top:16px;font-size:12px;color:var(--text-muted);">选择已有配置，或新建一个多智能体协作任务</p></div>';
+                    document.getElementById('chatMessages').innerHTML = '<div class="empty-state"><div class="icon">&#128640;</div><p style="margin-bottom: 16px;">欢迎使用多智能体协作</p><div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;"><button class="btn btn-primary" onclick="showCollabSelector()">选择已有配置</button><button class="btn btn-success" onclick="startNewCollab()">新建协作配置</button></div><p style="margin-top:16px;font-size:12px;color:var(--text-muted);">选择已有配置，或新建一个多智能体协作任务</p></div>';
                     document.getElementById('viewPanel').innerHTML = '<div class="empty-state" style="padding:20px;"><div class="icon">&#9881;</div><p>请选择协作配置以查看详情</p></div>';
                     document.getElementById('collabInfo').textContent = '未选择协作配置';
                     document.getElementById('collabModeBadge').style.display = 'none';
@@ -3080,7 +2966,7 @@
             const isLong = content && content.length > 500;
             const collapsibleClass = isLong ? 'collapsible' : '';
 
-            let msgBg = 'var(--sidebar-bg)';
+            let msgBg = 'var(--bg-sidebar)';
             if (type === 'user') msgBg = 'rgba(102, 126, 234, 0.1)';
             else if (type === 'system') msgBg = 'var(--info-bg)';
             else if (type === 'error') msgBg = 'var(--error-bg)';

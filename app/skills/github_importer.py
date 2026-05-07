@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import zipfile
 from datetime import datetime
+from app.utils.timezone import beijing_now
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse

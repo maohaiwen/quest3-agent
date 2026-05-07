@@ -127,6 +127,8 @@ class ExecutionStrategyRouter:
                         "type": "message",
                         "content": content
                     }
+                    # 让出控制权，确保 WebSocket 能及时发送
+                    await asyncio.sleep(0)
 
             # Send thinking_end if needed
             if thinking_started and not full_response:

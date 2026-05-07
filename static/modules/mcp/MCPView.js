@@ -177,6 +177,6 @@ const MCPView = {
         if (diff < 60000) return '刚刚';
         if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
         if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
-        return date.toLocaleDateString();
+        return date.toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' });
     }
 };

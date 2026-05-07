@@ -1,6 +1,7 @@
 """Settings service - manages application configuration from database"""
 import logging
 from datetime import datetime
+from app.utils.timezone import beijing_now
 from typing import Optional, Dict, Any, List
 
 from app.database.connection import DatabaseConnection
@@ -56,7 +57,7 @@ class SettingsService:
             logger.error("Database not set for SettingsService")
             return
 
-        now = datetime.utcnow().isoformat()
+        now = beijing_now().isoformat()
         inserted = 0
         for key, default_value, description, group_name, value_type, editable in DEFAULT_SETTINGS:
             existing = await self._db.fetch_one(
@@ -147,7 +148,7 @@ class SettingsService:
         if not self._db:
             return {"success": False, "error": "Database not available"}
 
-        now = datetime.utcnow().isoformat()
+        now = beijing_now().isoformat()
         changed_keys = []
         needs_reconfigure = False
 

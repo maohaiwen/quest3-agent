@@ -6,6 +6,7 @@ import logging
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 from datetime import datetime
+from app.utils.timezone import beijing_now
 
 from app.models.skill import (
     Skill,

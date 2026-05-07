@@ -4,6 +4,7 @@ import logging
 import uuid
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from app.utils.timezone import beijing_now
 
 from app.models.agent import AgentCreate, AgentUpdate, AgentResponse, AgentType
 from app.database.connection import DatabaseConnection
@@ -60,7 +61,7 @@ class AgentService:
 
         try:
             agent_id = str(uuid.uuid4())
-            now = datetime.utcnow()
+            now = beijing_now()
 
             await db.execute("""
             INSERT INTO agents (id, name, description, type, execution_mode, system_prompt, model,
@@ -189,8 +190,8 @@ class AgentService:
                 max_tokens=agent_data.get("max_tokens"),
                 enabled=bool(agent_data.get("enabled", 1)),
                 priority=agent_data.get("priority", 0),
-                created_at=datetime.fromisoformat(agent_data["created_at"]) if agent_data.get("created_at") else datetime.utcnow(),
-                updated_at=datetime.fromisoformat(agent_data["updated_at"]) if agent_data.get("updated_at") else datetime.utcnow(),
+                created_at=datetime.fromisoformat(agent_data["created_at"]) if agent_data.get("created_at") else beijing_now(),
+                updated_at=datetime.fromisoformat(agent_data["updated_at"]) if agent_data.get("updated_at") else beijing_now(),
                 usage_count=agent_data.get("usage_count", 0),
                 mcp_servers=[{"server_id": s["server_id"], "enabled": bool(s["enabled"])} for s in mcp_servers],
                 tools=[t["tool_name"] for t in tools],
@@ -250,8 +251,8 @@ class AgentService:
                     max_tokens=agent_data.get("max_tokens"),
                     enabled=bool(agent_data.get("enabled", 1)),
                     priority=agent_data.get("priority", 0),
-                    created_at=datetime.fromisoformat(agent_data["created_at"]) if agent_data.get("created_at") else datetime.utcnow(),
-                    updated_at=datetime.fromisoformat(agent_data["updated_at"]) if agent_data.get("updated_at") else datetime.utcnow(),
+                    created_at=datetime.fromisoformat(agent_data["created_at"]) if agent_data.get("created_at") else beijing_now(),
+                    updated_at=datetime.fromisoformat(agent_data["updated_at"]) if agent_data.get("updated_at") else beijing_now(),
                     usage_count=agent_data.get("usage_count", 0),
                     mcp_servers=[{"server_id": s["server_id"], "enabled": bool(s["enabled"])} for s in mcp_servers],
                     tools=[t["tool_name"] for t in tools],
@@ -334,7 +335,7 @@ class AgentService:
 
             if updates:
                 updates.append("updated_at = ?")
-                params.append(datetime.utcnow().isoformat())
+                params.append(beijing_now().isoformat())
                 params.append(agent_id)
 
                 query = f"UPDATE agents SET {', '.join(updates)} WHERE id = ?"

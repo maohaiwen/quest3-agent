@@ -8,6 +8,7 @@ import importlib.metadata
 import logging
 import sys
 from datetime import datetime
+from app.utils.timezone import beijing_now
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -34,8 +35,8 @@ class SkillEnvironment(BaseModel):
     skill_id: str = Field(..., description="Skill ID")
     env_path: str = Field(..., description="环境路径")
     dependencies: List[SkillDependency] = Field(default_factory=list, description="依赖列表")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    last_used: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=beijing_now)
+    last_used: datetime = Field(default_factory=beijing_now)
 
 
 # ============================================
@@ -140,8 +141,8 @@ class DependencyManager:
             skill_id=skill.id,
             env_path=str(env_path),
             dependencies=dependencies,
-            created_at=datetime.utcnow(),
-            last_used=datetime.utcnow(),
+            created_at=beijing_now(),
+            last_used=beijing_now(),
         )
 
         return len(issues) == 0, issues

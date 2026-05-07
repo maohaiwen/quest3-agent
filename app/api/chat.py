@@ -1,9 +1,11 @@
 """Chat API endpoints"""
+import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import json
 import logging
 from datetime import datetime
+from app.utils.timezone import beijing_now
 
 from app.models.chat import ChatRequest, ChatResponse, StreamMessage, MessageCreate, MessageRole
 from app.database.repositories import MessageRepository, SessionRepository
@@ -13,6 +15,55 @@ from app.services.planning_chat_service import planning_chat_service
 from app.core.strategy_router import strategy_router
 
 logger = logging.getLogger(__name__)
+
+
+class PendingResponseTracker:
+    """追踪正在后台生成的回复，用于断连后继续处理及重连时通知"""
+
+    def __init__(self):
+        self._pending: Dict[str, dict] = {}  # session_id -> info
+        self._completion_events: Dict[str, asyncio.Event] = {}
+        self._generation: Dict[str, int] = {}
+
+    def mark_pending(self, session_id: str, user_message: str, agent_id: Optional[str] = None):
+        gen = self._generation.get(session_id, 0) + 1
+        self._generation[session_id] = gen
+
+        # 如果有旧的 watcher 在等，先唤醒它让它退出
+        old_event = self._completion_events.get(session_id)
+        if old_event and not old_event.is_set():
+            old_event.set()
+
+        self._pending[session_id] = {
+            "status": "generating",
+            "started_at": beijing_now().isoformat(),
+            "user_message": user_message,
+            "agent_id": agent_id,
+            "generation": gen,
+        }
+        self._completion_events[session_id] = asyncio.Event()
+
+    def mark_completed(self, session_id: str):
+        self._pending.pop(session_id, None)
+        event = self._completion_events.pop(session_id, None)
+        if event and not event.is_set():
+            event.set()
+
+    def is_pending(self, session_id: str) -> bool:
+        return session_id in self._pending
+
+    def get_pending(self, session_id: str) -> Optional[dict]:
+        return self._pending.get(session_id)
+
+    def get_completion_event(self, session_id: str) -> Optional[asyncio.Event]:
+        return self._completion_events.get(session_id)
+
+    def get_generation(self, session_id: str) -> int:
+        return self._generation.get(session_id, 0)
+
+
+# 全局实例
+pending_tracker = PendingResponseTracker()
 
 
 async def _inject_memory_into_agent_config(
@@ -92,6 +143,133 @@ async def _extract_memories_on_session_end(
             logger.info(f"Extracted {count} memories from session {session_id} for agent {agent_id}")
     except Exception as e:
         logger.error(f"Error extracting memories on session end: {e}", exc_info=True)
+
+async def _run_llm_and_save(
+    session_id: str,
+    message: str,
+    history: list,
+    agent_config_dict: Optional[dict],
+    execution_mode: str,
+    deep_thinking: bool,
+    agent_id: Optional[str],
+    memory_service: SessionWorkingMemory,
+    message_repo: MessageRepository,
+    websocket: Optional[WebSocket] = None,
+) -> str:
+    """执行 LLM 调用并保存结果。
+
+    WebSocket 断连后会继续处理：send 失败时标记断连，后续只积累不发送，
+    LLM 完成后无论如何都将回答保存到数据库和工作记忆。
+
+    Args:
+        websocket: 可选的 WebSocket 连接，断连后本函数内部自动感知
+
+    Returns:
+        full_response: 完整的 AI 回答文本
+    """
+    ws_connected = websocket is not None
+    full_response = ""
+    sent_end = False
+
+    async def _send_event(event: dict):
+        """安全发送事件，断连后静默跳过"""
+        nonlocal ws_connected
+        if not ws_connected:
+            return
+        try:
+            await websocket.send_json(event)
+        except Exception:
+            ws_connected = False
+            logger.info(f"WebSocket disconnected during LLM processing for session {session_id}, continuing in background")
+
+    # ── Direct mode ──
+    if execution_mode == "direct":
+        logger.info(f"Starting strategy_router.execute() for message: {message[:50]}...")
+        try:
+            gen = strategy_router.execute(
+                message,
+                agent_config=agent_config_dict,
+                conversation_history=history,
+                deep_thinking=deep_thinking,
+            )
+            async for event in gen:
+                await _send_event(event)
+                if event.get("type") == "message":
+                    full_response += event.get("content", "")
+                if event.get("type") == "end":
+                    sent_end = True
+        except Exception as e:
+            logger.error(f"Error in strategy_router.execute() loop: {e}", exc_info=True)
+            await _send_event({"type": "error", "message": f"Execution error: {str(e)}"})
+        finally:
+            if not sent_end:
+                await _send_event({"type": "end"})
+
+    # ── React mode ──
+    elif execution_mode == "react":
+        from app.core.react_cot_executor import ReActCotExecutor
+
+        if agent_config_dict:
+            agent_config_dict["thinking_effort"] = agent_config_dict.get("thinking_effort", "medium")
+            agent_config_dict["max_react_steps"] = agent_config_dict.get("max_react_steps", 15)
+
+        executor = ReActCotExecutor(agent_config=agent_config_dict)
+        try:
+            async for event in executor.execute(
+                message,
+                conversation_history=history,
+                deep_thinking=True,
+            ):
+                await _send_event(event)
+                if event.get("type") == "cot_complete":
+                    full_response = event.get("message", "") or full_response
+                if event.get("type") == "end":
+                    sent_end = True
+        except Exception as e:
+            logger.error(f"ReAct execution error: {e}", exc_info=True)
+            await _send_event({"type": "error", "content": f"执行错误: {str(e)}"})
+        finally:
+            if not sent_end:
+                await _send_event({"type": "end"})
+
+    # ── Plan mode ──
+    else:
+        try:
+            async for event in planning_chat_service.chat(
+                message,
+                conversation_history=history,
+                enable_planning=True,
+                use_react=False,
+                agent_config=agent_config_dict,
+                deep_thinking=True,
+            ):
+                await _send_event(event)
+                if event.get("type") == "message":
+                    full_response += event.get("content", "")
+        except Exception as e:
+            logger.error(f"Plan mode execution error: {e}", exc_info=True)
+            await _send_event({"type": "error", "content": f"执行错误: {str(e)}"})
+
+    # ── 无论 WebSocket 状态如何，保存结果 ──
+    if full_response:
+        try:
+            await message_repo.create(MessageCreate(
+                session_id=session_id,
+                content=full_response,
+                role=MessageRole.ASSISTANT,
+            ))
+            await _add_assistant_message(
+                memory_service, session_id, full_response,
+                agent_model=agent_config_dict.get("model") if agent_config_dict else None,
+            )
+            logger.info(f"Saved assistant response for session {session_id} (ws_connected={ws_connected})")
+        except Exception as e:
+            logger.error(f"Failed to save assistant response for session {session_id}: {e}", exc_info=True)
+    else:
+        logger.warning(f"No full_response generated for session {session_id}")
+
+    return full_response
+
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -208,6 +386,7 @@ async def chat_stream(
     await websocket.accept()
 
     session_id = None
+    agent_id = None
 
     try:
         # Wait for initial message with session_id
@@ -289,6 +468,53 @@ async def chat_stream(
                 "has_more": total_messages > HISTORY_LIMIT
             }
             await websocket.send_json(history_message)
+
+        # Notify frontend if there's a pending response being generated in the background
+        pending = pending_tracker.get_pending(session_id)
+        if pending:
+            await websocket.send_json({
+                "type": "pending_response",
+                "status": pending["status"],
+                "user_message": pending["user_message"],
+            })
+
+            # 启动后台 watcher，等待后台生成完成后通知前端
+            async def _watch_pending_response():
+                gen = pending["generation"]
+                event = pending_tracker.get_completion_event(session_id)
+                if not event:
+                    return
+                try:
+                    await asyncio.wait_for(event.wait(), timeout=300)
+                except asyncio.TimeoutError:
+                    logger.warning(f"Pending response watch timed out for session {session_id}")
+                    return
+                except Exception:
+                    return
+
+                # 检查 generation 是否匹配（如果用户已发新消息，由新 watcher 处理）
+                if pending_tracker.get_generation(session_id) != gen:
+                    return
+
+                # 从 DB 获取已保存的助手回复
+                try:
+                    db_msgs = await session_repo.get_history(session_id, limit=5)
+                    for msg in reversed(db_msgs):
+                        if msg.role.value == "assistant":
+                            await websocket.send_json({
+                                "type": "response_completed",
+                                "message": {
+                                    "id": str(msg.id),
+                                    "role": msg.role.value,
+                                    "content": msg.content,
+                                    "created_at": msg.created_at.isoformat() if msg.created_at else None,
+                                }
+                            })
+                            return
+                except Exception as e:
+                    logger.warning(f"Failed to send response_completed: {e}")
+
+            asyncio.create_task(_watch_pending_response())
 
         # Handle chat messages
         while True:
@@ -423,162 +649,32 @@ async def chat_stream(
                     execution_mode = "react"
                 logger.info(f"Execution mode: {execution_mode}")
 
-                # Use strategy router for direct mode
-                if execution_mode == "direct":
-                    full_response = ""
-                    event_count = 0
-                    sent_events = []
+                # Mark pending state (for reconnection notification)
+                pending_tracker.mark_pending(session_id, message, agent_id=agent_id)
 
-                    logger.info(f"Starting strategy_router.execute() for message: {message[:50]}...")
-
-                    try:
-                        # Get generator
-                        gen = strategy_router.execute(
-                            message,
-                            agent_config=agent_config_dict,
-                            conversation_history=history,
-                            deep_thinking=current_deep_thinking
-                        )
-                        logger.info("Generator created, starting iteration...")
-
-                        async for event in gen:
-                            event_count += 1
-                            event_type = event.get('type')
-                            logger.info(f"Iteration {event_count}: Received event '{event_type}' from strategy_router")
-
-                            try:
-                                await websocket.send_json(event)
-                                sent_events.append(event_type)
-                                logger.info(f"Iteration {event_count}: Event '{event_type}' sent to client successfully")
-                            except Exception as send_error:
-                                logger.error(f"Iteration {event_count}: Failed to send event '{event_type}': {send_error}", exc_info=True)
-                                raise
-
-                            if event_type == "message":
-                                full_response += event.get("content", "")
-
-                        logger.info(f"Strategy router generator completed. Total iterations: {event_count}")
-
-                    except Exception as e:
-                        logger.error(f"Error in strategy_router.execute() loop: {e}", exc_info=True)
-                        await websocket.send_json({
-                            "type": "error",
-                            "message": f"Execution error: {str(e)}"
-                        })
-                        return
-
-                    finally:
-                        # Always ensure end event is sent
-                        logger.info(f"Finally block executing... Sent event types: {sent_events}")
-                        if 'end' not in sent_events:
-                            logger.warning(f"Finally: 'end' event NOT sent! (total: {len(sent_events)} events). Sending fallback.")
-                            try:
-                                await websocket.send_json({"type": "end"})
-                                sent_events.append("end")
-                                logger.info(f"Finally: Fallback 'end' event sent successfully (total: {len(sent_events)} events)")
-                            except Exception as e:
-                                logger.error(f"Finally: Failed to send fallback 'end' event: {e}", exc_info=True)
-                        else:
-                            logger.info(f"Finally: 'end' event was sent (total: {len(sent_events)} events)")
-
-                    # Save assistant message
-                    if full_response:
-                        await message_repo.create(MessageCreate(
-                            session_id=session_id,
-                            content=full_response,
-                            role=MessageRole.ASSISTANT
-                        ))
-
-                        # Add to memory
-                        await _add_assistant_message(memory_service, session_id, full_response, agent_model=agent_config_dict.get("model"))
-                elif execution_mode in ["plan", "react"]:
-                    logger.info(f"Using execution mode: {execution_mode}")
-
-                    if execution_mode == "react":
-                        # ReAct 模式：思考-行动-观察循环
-                        logger.info("Using ReActCotExecutor for react mode")
-                        from app.core.react_cot_executor import ReActCotExecutor
-
-                        # 添加 thinking_effort 到配置
-                        if agent_config_dict:
-                            agent_config_dict["thinking_effort"] = getattr(agent, "thinking_effort", "medium")
-                            agent_config_dict["max_react_steps"] = getattr(agent, "max_react_steps", 15)
-
-                        executor = ReActCotExecutor(agent_config=agent_config_dict)
-
-                        full_response = ""
-                        sent_end = False
-                        try:
-                            async for event in executor.execute(
-                                message,
-                                conversation_history=history,
-                                deep_thinking=True
-                            ):
-                                await websocket.send_json(event)
-                                if event.get("type") == "cot_complete":
-                                    full_response = event.get("message", "") or full_response
-                                if event.get("type") == "end":
-                                    sent_end = True
-                        except Exception as e:
-                            logger.error(f"ReAct execution error: {e}", exc_info=True)
-                            try:
-                                await websocket.send_json({
-                                    "type": "error",
-                                    "content": f"执行错误: {str(e)}"
-                                })
-                            except:
-                                pass
-                        finally:
-                            if not sent_end:
-                                try:
-                                    await websocket.send_json({"type": "end"})
-                                except:
-                                    pass
-
-                        # Save assistant message
-                        if full_response:
-                            await message_repo.create(MessageCreate(
-                                session_id=session_id,
-                                content=full_response,
-                                role=MessageRole.ASSISTANT
-                            ))
-                            await _add_assistant_message(memory_service, session_id, full_response, agent_model=agent_config_dict.get("model"))
-
-                    else:
-                        # plan 模式：先规划再执行
-                        from app.services.planning_chat_service import planning_chat_service
-
-                        actual_deep_thinking = True
-                        logger.info("Plan mode: forcing deep thinking enabled")
-
-                        full_response = ""
-                        async for event in planning_chat_service.chat(
-                            message,
-                            conversation_history=history,
-                            enable_planning=True,
-                            use_react=False,
-                            agent_config=agent_config_dict,
-                            deep_thinking=actual_deep_thinking
-                        ):
-                            await websocket.send_json(event)
-                            if event.get("type") == "message":
-                                full_response += event.get("content", "")
-
-                        # Save assistant message
-                        if full_response:
-                            await message_repo.create(MessageCreate(
-                                session_id=session_id,
-                                content=full_response,
-                                role=MessageRole.ASSISTANT
-                            ))
-                            await _add_assistant_message(memory_service, session_id, full_response, agent_model=agent_config_dict.get("model"))
+                # Execute LLM — will continue in background if WebSocket disconnects
+                full_response = await _run_llm_and_save(
+                    session_id=session_id,
+                    message=message,
+                    history=history,
+                    agent_config_dict=agent_config_dict,
+                    execution_mode=execution_mode,
+                    deep_thinking=current_deep_thinking,
+                    agent_id=agent_id,
+                    memory_service=memory_service,
+                    message_repo=message_repo,
+                    websocket=websocket,
+                )
 
             except ValueError as e:
                 logger.error(f"ValueError in chat: {e}", exc_info=True)
-                await websocket.send_json({
-                    "type": "error",
-                    "content": str(e)
-                })
+                try:
+                    await websocket.send_json({
+                        "type": "error",
+                        "content": str(e)
+                    })
+                except Exception:
+                    pass
             except Exception as e:
                 logger.error(f"Error in chat loop: {e}", exc_info=True)
                 try:
@@ -586,8 +682,11 @@ async def chat_stream(
                         "type": "error",
                         "content": str(e)
                     })
-                except:
+                except Exception:
                     pass
+            finally:
+                # Always clear pending state
+                pending_tracker.mark_completed(session_id)
 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected for session {session_id}")

@@ -1,5 +1,6 @@
 """Data access layer repositories"""
 from datetime import datetime
+from app.utils.timezone import beijing_now
 from typing import Optional, List
 import json
 import uuid
@@ -25,7 +26,7 @@ class SessionRepository:
             Created session response
         """
         session_id = str(uuid.uuid4())
-        now = datetime.utcnow().isoformat()
+        now = beijing_now().isoformat()
 
         sql = """
         INSERT INTO sessions (id, user_id, title, agent_id, status, created_at, updated_at)
@@ -80,7 +81,7 @@ class SessionRepository:
         Returns:
             Updated session response or None
         """
-        now = datetime.utcnow().isoformat()
+        now = beijing_now().isoformat()
         updates = []
         params = []
 
@@ -209,7 +210,7 @@ class MessageRepository:
             Created message response
         """
         message_id = str(uuid.uuid4())
-        now = datetime.utcnow().isoformat()
+        now = beijing_now().isoformat()
 
         sql = """
         INSERT INTO messages (id, session_id, content, role, created_at)
@@ -283,7 +284,7 @@ class MemoryRepository:
             Memory ID
         """
         memory_id = str(uuid.uuid4())
-        now = datetime.utcnow().isoformat()
+        now = beijing_now().isoformat()
         metadata_json = json.dumps(metadata) if metadata else None
 
         sql = """
@@ -368,7 +369,7 @@ class AgentMemoryRepository:
         """
         import uuid
         memory_id = str(uuid.uuid4())
-        now = datetime.utcnow().isoformat()
+        now = beijing_now().isoformat()
         metadata_json = json.dumps(metadata) if metadata else None
 
         sql = """
@@ -434,7 +435,7 @@ class AgentMemoryRepository:
         Args:
             memory_id: Memory ID
         """
-        now = datetime.utcnow().isoformat()
+        now = beijing_now().isoformat()
         sql = """
         UPDATE agent_memories
         SET access_count = access_count + 1, last_accessed_at = ?

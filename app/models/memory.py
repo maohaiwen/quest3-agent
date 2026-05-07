@@ -1,6 +1,7 @@
 """Memory models"""
 from pydantic import BaseModel, Field
 from datetime import datetime
+from app.utils.timezone import beijing_now
 from typing import Optional, List, Dict, Any
 
 
@@ -24,7 +25,7 @@ class MemoryItem(BaseModel):
     session_id: str = Field(..., description="Session ID")
     content: str = Field(..., description="Content")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Metadata")
-    created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
+    created_at: datetime = Field(default_factory=beijing_now, description="Creation timestamp")
 
 
 class MemorySearchResponse(BaseModel):
@@ -37,4 +38,4 @@ class MemorySearchResponse(BaseModel):
 class MemoryStoreResponse(BaseModel):
     """Memory store response model"""
     memory_id: str = Field(..., description="Memory ID")
-    created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
+    created_at: datetime = Field(default_factory=beijing_now, description="Creation timestamp")

@@ -14,6 +14,7 @@ import logging
 from typing import Dict, List, Any, Optional, AsyncGenerator
 from dataclasses import dataclass
 from datetime import datetime
+from app.utils.timezone import beijing_now
 from enum import Enum
 
 from app.config import settings
@@ -45,7 +46,7 @@ class ReActCotStep:
 
     def __post_init__(self):
         if self.timestamp is None:
-            self.timestamp = datetime.utcnow()
+            self.timestamp = beijing_now()
         if self.tool_args is None:
             self.tool_args = {}
 
@@ -194,7 +195,7 @@ class ReActCotExecutor:
 
                 thinking_content = ""
                 final_content = ""
-                content_buffer = []  # 缓冲 content，待确认是最终步骤后再流式发送
+                has_streamed_content = False  # 标记是否已流式发送过 content
                 tool_calls_to_execute = []
                 tool_calls_accumulator = {}
 
@@ -215,7 +216,8 @@ class ReActCotExecutor:
 
                     elif event["type"] == "content":
                         final_content += event["content"]
-                        content_buffer.append(event["content"])
+                        has_streamed_content = True
+                        yield {"type": "message", "content": event["content"]}
 
                     elif event["type"] == "tool_calls":
                         # 累加 tool_calls
@@ -299,11 +301,8 @@ class ReActCotExecutor:
                     else:
                         response_message = final_content or thinking_content
 
-                    # 回放缓冲的 content 作为流式消息（仅在 content 是最终答案时）
-                    is_streamed = response_message == final_content and len(content_buffer) > 0
-                    if is_streamed:
-                        for chunk in content_buffer:
-                            yield {"type": "message", "content": chunk}
+                    # content 已在流式过程中实时发送，无需回放
+                    is_streamed = response_message == final_content and has_streamed_content
 
                     yield {"type": "cot_phase", "phase": "summarizing"}
                     yield {"type": "cot_phase", "phase": "complete"}

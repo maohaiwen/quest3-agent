@@ -80,6 +80,7 @@ This is the main entrypoint for the {{name}} skill.
 """
 from typing import Any, Dict
 from datetime import datetime
+from app.utils.timezone import beijing_now
 
 def execute(context) -> Dict[str, Any]:
     """
@@ -102,14 +103,14 @@ def execute(context) -> Dict[str, Any]:
     state = context.state
     visit_count = state.get("visit_count", 0) + 1
     state["visit_count"] = visit_count
-    state["last_visit"] = datetime.utcnow().isoformat()
+    state["last_visit"] = beijing_now().isoformat()
 
     # Generate response
     return {
         "message": f"Hello {name}!",
         "visit_count": visit_count,
         "skill": "{{name}}",
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": beijing_now().isoformat()
     }
 '''
         }
@@ -776,6 +777,7 @@ This is the main entrypoint for the {{name}} skill.
 """
 from typing import Any, Dict
 from datetime import datetime
+from app.utils.timezone import beijing_now
 
 def execute(context) -> Dict[str, Any]:
     """
@@ -798,14 +800,14 @@ def execute(context) -> Dict[str, Any]:
     state = context.state
     visit_count = state.get("visit_count", 0) + 1
     state["visit_count"] = visit_count
-    state["last_visit"] = datetime.utcnow().isoformat()
+    state["last_visit"] = beijing_now().isoformat()
 
     # Generate response
     return {
         "message": f"Hello {name}!",
         "visit_count": visit_count,
         "skill": "{{name}}",
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": beijing_now().isoformat()
     }
 '''
         }

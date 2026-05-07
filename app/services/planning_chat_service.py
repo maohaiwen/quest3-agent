@@ -3,6 +3,7 @@ import logging
 import json
 from typing import Optional, AsyncGenerator, List, Dict, Any
 from datetime import datetime
+from app.utils.timezone import beijing_now
 
 from app.config import settings
 from app.core.decision import decision_engine
@@ -20,7 +21,7 @@ class ChatEvent:
         return {
             "type": "thinking",
             "message": message,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": beijing_now().isoformat()
         }
 
     @staticmethod
@@ -29,7 +30,7 @@ class ChatEvent:
         return {
             "type": "planning",
             "plan": plan,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": beijing_now().isoformat()
         }
 
     @staticmethod
@@ -38,7 +39,7 @@ class ChatEvent:
         return {
             "type": "step_start",
             "step": step,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": beijing_now().isoformat()
         }
 
     @staticmethod
@@ -48,7 +49,7 @@ class ChatEvent:
             "type": "step_progress",
             "step_id": step_id,
             "message": message,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": beijing_now().isoformat()
         }
 
     @staticmethod
@@ -67,7 +68,7 @@ class ChatEvent:
             "type": "step_complete",
             "step_id": step_id,
             "result": result_preview,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": beijing_now().isoformat()
         }
 
     @staticmethod
@@ -77,7 +78,7 @@ class ChatEvent:
             "type": "step_error",
             "step_id": step_id,
             "error": error,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": beijing_now().isoformat()
         }
 
     @staticmethod
@@ -86,7 +87,7 @@ class ChatEvent:
         return {
             "type": "message",
             "content": content,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": beijing_now().isoformat()
         }
 
     @staticmethod
@@ -94,7 +95,7 @@ class ChatEvent:
         """Done event"""
         return {
             "type": "done",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": beijing_now().isoformat()
         }
 
 
@@ -189,7 +190,7 @@ class PlanningChatService:
                     yield {
                         "type": "complete",
                         "message": final_response,
-                        "timestamp": datetime.utcnow().isoformat()
+                        "timestamp": beijing_now().isoformat()
                     }
                     logger.info(f"PlanningChat: complete event yielded after {(time.time() - start_time) * 1000:.2f}ms")
 
@@ -271,7 +272,7 @@ class PlanningChatService:
                     # Forward end event directly
                     yield {
                         "type": "end",
-                        "timestamp": datetime.utcnow().isoformat()
+                        "timestamp": beijing_now().isoformat()
                     }
 
                 elif event_type == "phase":

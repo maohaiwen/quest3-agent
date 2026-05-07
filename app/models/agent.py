@@ -1,6 +1,7 @@
 """Agent models for intelligent assistant configuration"""
 from pydantic import BaseModel, Field
 from datetime import datetime
+from app.utils.timezone import beijing_now
 from typing import Optional, List, Dict, Any
 from enum import Enum
 
@@ -90,8 +91,8 @@ class AgentResponse(BaseModel):
     skills: List[str] = Field(default_factory=list, description="List of enabled skill names")
     enabled: bool = Field(default=True, description="Enabled status")
     priority: int = Field(default=0, description="Priority")
-    created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
-    updated_at: datetime = Field(default_factory=datetime.utcnow, description="Update timestamp")
+    created_at: datetime = Field(default_factory=beijing_now, description="Creation timestamp")
+    updated_at: datetime = Field(default_factory=beijing_now, description="Update timestamp")
     usage_count: int = Field(default=0, description="Usage count")
     thinking_effort: str = Field(default="medium", description="Thinking depth")
     max_react_steps: int = Field(default=15, description="Maximum ReAct steps")

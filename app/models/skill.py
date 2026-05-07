@@ -1,6 +1,7 @@
 """Skill models for the agent system"""
 from pydantic import BaseModel, Field
 from datetime import datetime
+from app.utils.timezone import beijing_now
 from typing import Optional, List, Dict, Any
 from enum import Enum
 
@@ -52,8 +53,8 @@ class Skill(BaseModel):
     skill_content: str = Field(..., description="Full skill.md content")
     dir_path: Optional[str] = Field(default=None, description="Directory path if loaded from file")
     enabled: bool = Field(default=True, description="Whether skill is enabled")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=beijing_now)
+    updated_at: datetime = Field(default_factory=beijing_now)
 
     def get_metadata(self) -> SkillMetadata:
         """Get metadata object"""

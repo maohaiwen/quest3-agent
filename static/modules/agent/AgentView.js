@@ -128,6 +128,6 @@ const AgentView = {
     formatDate(dateString) {
         if (!dateString) return '';
         const date = new Date(dateString);
-        return date.toLocaleDateString('zh-CN') + ' ' + date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        return date.toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) + ' ' + date.toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit' });
     }
 };

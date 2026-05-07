@@ -2,6 +2,7 @@
 import json
 import logging
 from datetime import datetime
+from app.utils.timezone import beijing_now
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 
@@ -36,7 +37,7 @@ class SkillRepository:
         )
 
         skill_id = skill.id
-        now = datetime.utcnow().isoformat()
+        now = beijing_now().isoformat()
 
         sql = """
         INSERT INTO skills (
@@ -140,7 +141,7 @@ class SkillRepository:
 
         if updates:
             updates.append("updated_at = ?")
-            params.append(datetime.utcnow().isoformat())
+            params.append(beijing_now().isoformat())
             params.append(skill_id)
 
             sql = f"UPDATE skills SET {', '.join(updates)} WHERE id = ?"
@@ -162,7 +163,7 @@ class SkillRepository:
 
     async def link_agent_skill(self, link: AgentSkillLink) -> None:
         """Link a skill to an agent"""
-        now = datetime.utcnow().isoformat()
+        now = beijing_now().isoformat()
         sql = """
         INSERT OR REPLACE INTO agent_skills (agent_id, skill_id, enabled, priority, created_at)
         VALUES (?, ?, ?, ?, ?)

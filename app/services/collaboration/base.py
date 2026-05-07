@@ -3,6 +3,7 @@ import json
 import logging
 import uuid
 from datetime import datetime
+from app.utils.timezone import beijing_now
 from typing import Dict, Any
 
 from app.models.a2a import A2ATask, A2ATaskStatus, A2ATaskStatusState, A2AMessage, A2AMessageRole
@@ -43,7 +44,7 @@ class BaseCollaborationMode:
         db = DatabaseConnection(settings.DATABASE_URL)
         await db.connect()
         try:
-            now = datetime.utcnow().isoformat()
+            now = beijing_now().isoformat()
             await db.execute("""
             INSERT INTO collaboration_tasks
             (id, collaboration_id, task_id, input, output, status, messages_json, started_at, completed_at)
@@ -68,7 +69,7 @@ class BaseCollaborationMode:
         db = DatabaseConnection(settings.DATABASE_URL)
         await db.connect()
         try:
-            completed_at = datetime.utcnow().isoformat() if completed else None
+            completed_at = beijing_now().isoformat() if completed else None
             await db.execute("""
             UPDATE collaboration_tasks
             SET output = ?, status = ?, messages_json = ?, completed_at = ?

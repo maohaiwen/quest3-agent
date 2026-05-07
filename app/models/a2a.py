@@ -2,6 +2,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal
 from datetime import datetime
+from app.utils.timezone import beijing_now
 from enum import Enum
 
 
@@ -28,7 +29,7 @@ class A2AMessage(BaseModel):
     """A2A protocol message"""
     role: A2AMessageRole = A2AMessageRole.USER
     parts: List[A2APart] = Field(default_factory=list, description="Multi-part message content")
-    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = Field(default_factory=lambda: beijing_now().isoformat())
 
     def get_text(self) -> str:
         """Get concatenated text from all text parts"""
@@ -57,8 +58,8 @@ class A2ATask(BaseModel):
     input: str = Field(default="", description="Task input text")
     output: Optional[str] = Field(default=None, description="Task output text")
     messages: List[A2AMessage] = Field(default_factory=list, description="Message history for this task")
-    created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
-    updated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = Field(default_factory=lambda: beijing_now().isoformat())
+    updated_at: str = Field(default_factory=lambda: beijing_now().isoformat())
 
     def add_message(self, role: A2AMessageRole, text: str):
         """Add a message to the task"""
@@ -67,19 +68,19 @@ class A2ATask(BaseModel):
             parts=[A2APart(type=A2APartType.TEXT, content=text)]
         )
         self.messages.append(msg)
-        self.updated_at = datetime.utcnow().isoformat()
+        self.updated_at = beijing_now().isoformat()
 
     def set_completed(self, output: str):
         """Mark task as completed with output"""
         self.status.state = A2ATaskStatusState.COMPLETED
         self.output = output
-        self.updated_at = datetime.utcnow().isoformat()
+        self.updated_at = beijing_now().isoformat()
 
     def set_failed(self, error: str):
         """Mark task as failed with error message"""
         self.status.state = A2ATaskStatusState.FAILED
         self.status.message = error
-        self.updated_at = datetime.utcnow().isoformat()
+        self.updated_at = beijing_now().isoformat()
 
 
 class AgentCard(BaseModel):

@@ -4,6 +4,7 @@ import logging
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
+from app.utils.timezone import beijing_now
 import uuid
 import json
 
@@ -30,7 +31,7 @@ class MCPServerConfig:
     description: str = ""
     priority: int = 0
     enabled: bool = True
-    added_at: datetime = field(default_factory=datetime.utcnow)
+    added_at: datetime = field(default_factory=beijing_now)
     last_connected: Optional[datetime] = None
     status: str = ConnectionStatus.DISCONNECTED
     tool: int = 0
@@ -268,7 +269,7 @@ class MCPClientPool:
         Returns:
             Test result
         """
-        start_time = datetime.utcnow()
+        start_time = beijing_now()
 
         async with self.lock:
             connection = self.connections.get(server_id)
@@ -292,7 +293,7 @@ class MCPClientPool:
                     request_body = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
 
                     async with test_client.stream('POST', test_url, json=request_body) as response:
-                        end_time = datetime.utcnow()
+                        end_time = beijing_now()
                         latency_ms = int((end_time - start_time).total_seconds() * 1000)
 
                         if response.status_code != 200:
@@ -339,7 +340,7 @@ class MCPClientPool:
 
                     await test_client.aclose()
 
-                    end_time = datetime.utcnow()
+                    end_time = beijing_now()
                     latency_ms = int((end_time - start_time).total_seconds() * 1000)
 
                     if response.status_code == 200:
@@ -362,7 +363,7 @@ class MCPClientPool:
                         }
 
             except Exception as e:
-                end_time = datetime.utcnow()
+                end_time = beijing_now()
                 latency_ms = int((end_time - start_time).total_seconds() * 1000)
 
                 return {
@@ -579,7 +580,7 @@ class MCPClientPool:
             }
             connection.config.tool_count = len(connection.tools)
             connection.config.status = ConnectionStatus.CONNECTED
-            connection.config.last_connected = datetime.utcnow()
+            connection.config.last_connected = beijing_now()
 
             logger.info(
                 f"Connected to {connection.config.name}, "
@@ -640,7 +641,7 @@ class MCPClientPool:
             connection.tools = {tool["name"]: tool for tool in tools}
             connection.config.tool_count = len(connection.tools)
             connection.config.status = ConnectionStatus.CONNECTED
-            connection.config.last_connected = datetime.utcnow()
+            connection.config.last_connected = beijing_now()
 
             logger.info(
                 f"Connected to streamable server {connection.config.name}, "
@@ -649,7 +650,7 @@ class MCPClientPool:
         else:
             # If no tools found, still mark as connected
             connection.config.status = ConnectionStatus.CONNECTED
-            connection.config.last_connected = datetime.utcnow()
+            connection.config.last_connected = beijing_now()
             logger.info(f"Connected to streamable server {connection.config.name}")
 
     async def _call_server_tool(

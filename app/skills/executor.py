@@ -13,6 +13,7 @@ import time
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
+from app.utils.timezone import beijing_now
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Dict, List, Optional, Tuple
@@ -42,7 +43,7 @@ class SkillExecutionContext(BaseModel):
     config: Dict[str, Any] = Field(default_factory=dict, description="Skill 配置")
     state: Dict[str, Any] = Field(default_factory=dict, description="执行状态（可写）")
     tools: List[str] = Field(default_factory=list, description="可用工具")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=beijing_now)
 
     def __getitem__(self, key: str) -> Any:
         """Support dict-style access: context["input_data"]"""
@@ -466,7 +467,7 @@ class SkillContextManager:
             config=config or {},
             state=self._states[session_id],
             tools=[],
-            created_at=datetime.utcnow(),
+            created_at=beijing_now(),
         )
 
         self._contexts[execution_id] = context

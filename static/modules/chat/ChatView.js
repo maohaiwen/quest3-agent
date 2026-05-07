@@ -20,15 +20,19 @@ const ChatView = {
         this.messageCount = 0;
 
         container.innerHTML = `
-            <div class="chat-container" style="display: flex; height: 100%;">
+            <div class="chat-container">
+                <!-- Sidebar overlay (mobile) -->
+                <div class="chat-sidebar-overlay" id="chatSidebarOverlay" onclick="ChatView.closeSidebar()"></div>
+
                 <!-- Sidebar -->
-                <div class="chat-sidebar" style="width: 280px; background: var(--sidebar-bg); border-right: 1px solid var(--border-color); display: flex; flex-direction: column;">
-                    <div style="padding: 16px; border-bottom: 1px solid var(--border-color);">
-                        <button class="btn btn-primary" style="width: 100%;" onclick="ChatModule.createSession()">
-                            ➕ 新建会话
+                <div class="chat-sidebar" id="chatSidebar">
+                    <div style="padding: var(--space-4); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between;">
+                        <span style="font-weight: 600; font-size: var(--text-sm); color: var(--text-primary);">会话列表</span>
+                        <button class="btn btn-primary btn-sm" onclick="ChatModule.createSession()">
+                            + 新建
                         </button>
                     </div>
-                    <div id="sessionsList" class="sessions-list" style="flex: 1; overflow-y: auto; padding: 8px;">
+                    <div id="sessionsList" class="sessions-list">
                         <div class="empty-state">
                             <div class="icon">📝</div>
                             <h3>暂无会话</h3>
@@ -37,32 +41,29 @@ const ChatView = {
                 </div>
 
                 <!-- Chat Panel -->
-                <div class="chat-panel" style="flex: 1; display: flex; flex-direction: column;">
+                <div class="chat-panel">
                     <!-- Header -->
-                    <div class="chat-header" style="padding: 16px 24px; border-bottom: 1px solid var(--border-color);">
-                        <div style="display: flex; align-items: center; gap: 12px;">
-                            <div id="connectionStatus" class="connection-status disconnected">
-                                <span class="status-dot disconnected" id="statusDot"></span>
-                                <span id="statusText">未连接</span>
-                            </div>
+                    <div class="chat-header">
+                        <button class="chat-sidebar-toggle" onclick="ChatView.openSidebar()" aria-label="会话列表">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                        </button>
+                        <div id="connectionStatus" class="connection-status disconnected">
+                            <span class="status-dot disconnected" id="statusDot"></span>
+                            <span id="statusText">未连接</span>
                         </div>
-                        <div style="margin-top: 12px; display: flex; align-items: center; gap: 8px;">
-                            <span style="font-size: 14px; color: var(--text-secondary);">Agent:</span>
-                            <select id="agentSelector" class="form-control" style="width: 200px;">
+                        <div style="display: flex; align-items: center; gap: var(--space-2); margin-left: auto;">
+                            <select id="agentSelector" class="form-control" style="width: 200px; min-height: 32px; padding: var(--space-1) var(--space-2); font-size: var(--text-sm);">
                                 <option value="">默认（自动选择）</option>
                             </select>
-                            <button class="btn btn-secondary" onclick="Router.navigate('agent')" title="新建Agent">➕</button>
+                            <button class="btn btn-icon btn-secondary" onclick="Router.navigate('agent')" title="新建Agent" aria-label="新建Agent">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            </button>
                         </div>
-                        <div id="activeAgentInfo" style="margin-top: 8px;"></div>
                     </div>
+                    <div id="activeAgentInfo" style="padding: 0 var(--space-5) var(--space-2);"></div>
 
                     <!-- Messages -->
-                    <div id="messagesArea" class="messages-area" style="flex: 1; min-height: 0; overflow-y: auto; padding: 20px;">
-                        <div class="empty-state" id="emptyState">
-                            <div class="icon">👋</div>
-                            <h3>欢迎使用 Quest3 Agent</h3>
-                            <p>选择一个会话或创建新会话开始聊天</p>
-                        </div>
+                    <div id="messagesArea" class="messages-area">
                         <div class="typing-indicator" id="typingIndicator" style="display: none;">
                             <span>AI正在思考</span>
                             <div class="typing-dots">
@@ -74,12 +75,12 @@ const ChatView = {
                     </div>
 
                     <!-- Input Area -->
-                    <div class="input-area" style="padding: 16px 24px; border-top: 1px solid var(--border-color);">
-                        <div style="display: flex; gap: 12px; align-items: flex-end;">
-                            <div style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
+                    <div class="input-area">
+                        <div style="display: flex; gap: var(--space-3); align-items: flex-end;">
+                            <div style="flex: 1; display: flex; flex-direction: column; gap: var(--space-2);">
                                 <textarea id="messageInput" class="form-control"
                                     placeholder="输入您的消息..." disabled
-                                    style="flex: 1; height: 60px; resize: none;"></textarea>
+                                    style="flex: 1; height: 56px; resize: none; min-height: 44px;"></textarea>
                                 <div id="deepThinkingRow" class="deep-thinking-toggle-row" style="display: none;">
                                     <label class="deep-thinking-switch" for="deepThinkingCheckbox">
                                         <input type="checkbox" id="deepThinkingCheckbox">
@@ -89,7 +90,7 @@ const ChatView = {
                                 </div>
                             </div>
                             <button id="sendButton" class="btn btn-primary" onclick="ChatModule.sendMessage()" disabled
-                                style="height: 60px; padding: 0 24px;">发送</button>
+                                style="height: 56px; padding: 0 var(--space-5); min-width: 72px;">发送</button>
                         </div>
                     </div>
                 </div>
@@ -109,6 +110,24 @@ const ChatView = {
                 }
             });
         }
+    },
+
+    // ═══════════════════════════════════════
+    // Sidebar toggle (mobile)
+    // ═══════════════════════════════════════
+
+    openSidebar() {
+        const sidebar = document.getElementById('chatSidebar');
+        const overlay = document.getElementById('chatSidebarOverlay');
+        if (sidebar) sidebar.classList.add('open');
+        if (overlay) { overlay.style.display = 'block'; requestAnimationFrame(() => overlay.classList.add('open')); }
+    },
+
+    closeSidebar() {
+        const sidebar = document.getElementById('chatSidebar');
+        const overlay = document.getElementById('chatSidebarOverlay');
+        if (sidebar) sidebar.classList.remove('open');
+        if (overlay) { overlay.classList.remove('open'); setTimeout(() => { if (overlay) overlay.style.display = ''; }, 300); }
     },
 
     // ═══════════════════════════════════════
@@ -183,8 +202,8 @@ const ChatView = {
         if (!messagesArea) return;
 
         const timeStr = timestamp
-            ? new Date(timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-            : new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+            ? new Date(timestamp).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit' })
+            : new Date().toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit' });
 
         const avatarIcon = sender === 'user' ? '👤' : sender === 'ai' ? '🤖' : '⚙️';
         const avatarClass = sender === 'user' ? 'user' : sender === 'ai' ? 'ai' : '';
@@ -220,7 +239,7 @@ const ChatView = {
             <div class="message-header">
                 <span class="message-avatar ai">🤖</span>
                 <span class="message-sender">AI</span>
-                <span class="message-time">${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
+                <span class="message-time">${new Date().toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit' })}</span>
             </div>
             <div class="message-content"></div>
         `;
@@ -639,6 +658,45 @@ const ChatView = {
         }
     },
 
+    /** Show a pending-response placeholder (AI is generating in the background) */
+    showPendingResponse(userMessage) {
+        this._clearEmptyState();
+        const messagesArea = document.getElementById('messagesArea');
+        if (!messagesArea) return;
+
+        // Remove existing pending placeholder if any
+        this.removePendingResponse();
+
+        const div = document.createElement('div');
+        div.id = 'pendingResponsePlaceholder';
+        div.className = 'message';
+        div.innerHTML = `
+            <div class="message-header">
+                <span class="message-avatar ai">🤖</span>
+                <span class="message-sender">AI</span>
+                <span class="message-time">${new Date().toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
+            <div class="message-content">
+                <span class="pending-response-text">AI 正在生成回答...</span>
+                <span class="typing-dots" style="display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle;">
+                    <span class="typing-dot"></span>
+                    <span class="typing-dot"></span>
+                    <span class="typing-dot"></span>
+                </span>
+            </div>
+        `;
+
+        const indicator = document.getElementById('typingIndicator');
+        messagesArea.insertBefore(div, indicator);
+        div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    },
+
+    /** Remove the pending-response placeholder */
+    removePendingResponse() {
+        const el = document.getElementById('pendingResponsePlaceholder');
+        if (el) el.remove();
+    },
+
     _clearEmptyState() {
         const empty = document.getElementById('emptyState');
         if (empty) empty.remove();
@@ -659,7 +717,7 @@ const ChatView = {
         if (diff < 60000) return '刚刚';
         if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
         if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
-        return date.toLocaleDateString('zh-CN');
+        return date.toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' });
     },
 
     clearMessages() {
@@ -711,8 +769,8 @@ const ChatView = {
         messages.forEach(msg => {
             const sender = msg.role === 'assistant' ? 'ai' : msg.role;
             const timeStr = msg.created_at
-                ? new Date(msg.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-                : new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+                ? new Date(msg.created_at).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit' })
+                : new Date().toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit' });
 
             const avatarIcon = sender === 'user' ? '👤' : '🤖';
             const avatarClass = sender === 'user' ? 'user' : 'ai';
@@ -838,5 +896,7 @@ chatStyles.textContent = `
     .typing-dot:nth-child(2) { animation-delay: 0.2s; }
     .typing-dot:nth-child(3) { animation-delay: 0.4s; }
     @keyframes typingBounce { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
+
+    .pending-response-text { color: #888; font-style: italic; }
 `;
 document.head.appendChild(chatStyles);

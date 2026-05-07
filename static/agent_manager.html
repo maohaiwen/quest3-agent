@@ -4,778 +4,53 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agent管理 - Quest3 Agent</title>
+    <link rel="stylesheet" href="/static/styles/main.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-
-        .container {
-            width: 100%;
-            max-width: 1200px;
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            display: flex;
-            flex-direction: column;
-            height: 85vh;
-        }
-
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px 30px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .header h1 {
-            font-size: 24px;
-        }
-
-        .header-actions button {
-            background: rgba(255, 255, 255, 0.2);
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 20px;
-            cursor: pointer;
-            transition: background 0.3s;
-            margin-left: 10px;
-            font-size: 15px;
-            font-weight: 500;
-        }
-
-        .header-actions button:hover {
-            background: rgba(255, 255, 255, 0.3);
-        }
-
-        .main-content {
-            flex: 1;
-            overflow-y: auto;
-            padding: 30px;
-        }
-
-        .agent-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 20px;
-        }
-
-        .agent-card {
-            background: #f8f9fa;
-            border: 1px solid #e0e0e0;
-            border-radius: 12px;
-            padding: 20px;
-            transition: all 0.3s;
-        }
-
-        .agent-card:hover {
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
-            transform: translateY(-2px);
-        }
-
-        .agent-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: start;
-            margin-bottom: 15px;
-        }
-
-        .agent-name {
-            font-size: 18px;
-            font-weight: 600;
-            color: #333;
-        }
-
-        .agent-status {
-            font-size: 12px;
-            padding: 4px 10px;
-            border-radius: 10px;
-            background: #e0e0e0;
-            color: #666;
-        }
-
-        .agent-status.enabled {
-            background: #d4edda;
-            color: #155724;
-        }
-
-        .agent-type {
-            display: inline-block;
-            padding: 4px 10px;
-            background: rgba(102, 126, 234, 0.1);
-            color: #667eea;
-            border-radius: 6px;
-            font-size: 13px;
-            margin-bottom: 10px;
-        }
-
-        .agent-mode {
-            display: inline-block;
-            padding: 4px 10px;
-            background: rgba(118, 75, 162, 0.1);
-            color: #764ba2;
-            border-radius: 6px;
-            font-size: 13px;
-            margin-left: 6px;
-        }
-
-        .agent-description {
-            color: #666;
-            font-size: 14px;
-            line-height: 1.5;
-            margin-bottom: 15px;
-        }
-
-        .agent-info {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-
-        .info-item {
-            font-size: 13px;
-            color: #777;
-        }
-
-        .info-item span:first-child {
-            color: #999;
-            margin-right: 5px;
-        }
-
-        .agent-actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 15px;
-            padding-top: 15px;
-            border-top: 1px solid #e0e0e0;
-        }
-
-        .agent-actions button {
-            flex: 1;
-            padding: 10px 16px;
-            border-radius: 8px;
-            border: 1px solid #ddd;
-            background: white;
-            cursor: pointer;
-            transition: all 0.2s;
-            font-size: 14px;
-            font-weight: 500;
-        }
-
-        .agent-actions button:hover {
-            background: #f0f0f0;
-        }
-
-        .agent-actions button.primary {
-            background: #667eea;
-            color: white;
-            border-color: #667eea;
-        }
-
-        .agent-actions button.primary:hover {
-            background: #764ba2;
-            border-color: #764ba2;
-        }
-
-        .agent-actions button.danger {
-            color: #dc3545;
-            border-color: #dc3545;
-        }
-
-        .agent-actions button.danger:hover {
-            background: #fee;
-        }
-
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-
-        .modal.active {
-            display: flex;
-        }
-
-        .modal-content {
-            background: white;
-            border-radius: 16px;
-            width: 90%;
-            max-width: 750px;
-            max-height: 85vh;
-            overflow-y: auto;
-            animation: modalSlideIn 0.3s ease;
-        }
-
-        @keyframes modalSlideIn {
-            from {
-                transform: translateY(-50px);
-                opacity: 0;
-            }
-            to {
-                transform: translateY(0);
-                opacity: 1;
-            }
-        }
-
-        .modal-header {
-            padding: 20px 30px;
-            border-bottom: 1px solid #e0e0e0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .modal-header h2 {
-            font-size: 20px;
-            color: #333;
-        }
-
-        .modal-close {
-            background: none;
-            border: none;
-            font-size: 24px;
-            color: #999;
-            cursor: pointer;
-        }
-
-        .modal-close:hover {
-            color: #333;
-        }
-
-        .modal-body {
-            padding: 30px;
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 500;
-            color: #555;
-        }
-
-        .form-group input,
-        .form-group select,
-        .form-group textarea {
-            width: 100%;
-            padding: 10px 15px;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            font-size: 14px;
-            transition: border-color 0.2s;
-        }
-
-        .form-group input:focus,
-        .form-group select:focus,
-        .form-group textarea:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .form-group textarea {
-            min-height: 100px;
-            resize: vertical;
-        }
-
-        .checkbox-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .checkbox-group input[type="checkbox"] {
-            width: auto;
-        }
-
-        .form-section {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-        }
-
-        .form-section h3 {
-            font-size: 16px;
-            margin-bottom: 15px;
-            color: #333;
-        }
-
-        .checkbox-list {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 10px;
-        }
-
-        .checkbox-item {
-            display: flex;
-            align-items: center;
-            padding: 8px 12px;
-            background: white;
-            border-radius: 6px;
-            border: 1px solid #e0e0e0;
-        }
-
-        .checkbox-item input {
-            margin-right: 10px;
-        }
-
-        .modal-footer {
-            padding: 20px 30px;
-            border-top: 1px solid #e0e0e0;
-            display: flex;
-            justify-content: flex-end;
-            gap: 10px;
-        }
-
-        .modal-footer button {
-            padding: 10px 24px;
-            border-radius: 8px;
-            border: 1px solid #ddd;
-            background: white;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.2s;
-        }
-
-        .modal-footer button:hover {
-            background: #f0f0f0;
-        }
-
-        .modal-footer button.primary {
-            background: #667eea;
-            color: white;
-            border-color: #667eea;
-        }
-
-        .modal-footer button.primary:hover {
-            background: #764ba2;
-            border-color: #764ba2;
-        }
-
-        .error-message {
-            color: #dc3545;
-            background: #fee;
-            padding: 10px 15px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-        }
-
-        .success-message {
-            color: #155724;
-            background: #d4edda;
-            padding: 10px 15px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: #999;
-            grid-column: 1 / -1;
-        }
-
-        .empty-state-icon {
-            font-size: 64px;
-            margin-bottom: 20px;
-        }
-
-        .fab-button {
-            position: fixed;
-            bottom: 40px;
-            right: 40px;
-            width: 64px;
-            height: 64px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            font-size: 32px;
-            cursor: pointer;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-            transition: transform 0.2s, box-shadow 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .fab-button:hover {
-            transform: scale(1.1);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
-        }
-
-        /* Step Indicator */
-        .step-indicator {
-            display: flex;
-            gap: 20px;
-            justify-content: center;
-            margin-bottom: 30px;
-        }
-
-        .step-item {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 8px;
-            opacity: 0.5;
-            transition: opacity 0.3s;
-        }
-
-        .step-item.active {
-            opacity: 1;
-        }
-
-        .step-item.completed {
-            opacity: 1;
-        }
-
-        .step-number {
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            background: #e0e0e0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 600;
-            color: #666;
-            transition: all 0.3s;
-        }
-
-        .step-item.active .step-number,
-        .step-item.completed .step-number {
-            background: #667eea;
-            color: white;
-        }
-
-        .step-label {
-            font-size: 13px;
-            color: #666;
-        }
-
-        /* Mode Cards */
-        .mode-cards {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 12px;
-            margin-bottom: 20px;
-        }
-
-        .mode-card {
-            border: 2px solid #e0e0e0;
-            border-radius: 12px;
-            padding: 16px;
-            cursor: pointer;
-            transition: all 0.3s;
-            background: white;
-        }
-
-        .mode-card:hover {
-            border-color: #667eea;
-            background: rgba(102, 126, 234, 0.05);
-        }
-
-        .mode-card.selected {
-            border-color: #667eea;
-            background: rgba(102, 126, 234, 0.1);
-        }
-
-        .mode-icon {
-            font-size: 28px;
-            margin-bottom: 10px;
-        }
-
-        .mode-name {
-            font-size: 15px;
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 8px;
-        }
-
-        .mode-description {
-            font-size: 13px;
-            color: #666;
-            line-height: 1.5;
-        }
-
-        .mode-note {
-            margin-top: 12px;
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 12px;
-        }
-
-        .mode-note.tools {
-            background: #e8f4fd;
-            color: #155724;
-        }
-
-        .mode-note.no-tools {
-            background: #fff3cd;
-            color: #856404;
-        }
-
-        /* Tool Selector */
-        .ts-empty {
-            color: #999;
-            font-size: 13px;
-            padding: 12px 0;
-        }
-        .ts-group {
-            border: 1px solid #e4e7ed;
-            border-radius: 10px;
-            margin-bottom: 10px;
-            overflow: hidden;
-            transition: border-color 0.2s, box-shadow 0.2s;
-        }
-        .ts-group:hover {
-            border-color: #c0c6d0;
-        }
-        .ts-header {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 10px 14px;
-            background: #f7f8fa;
-            cursor: pointer;
-            user-select: none;
-            transition: background 0.15s;
-        }
-        .ts-header:hover {
-            background: #eef0f4;
-        }
-        .ts-checkbox {
-            width: 16px !important;
-            height: 16px !important;
-            padding: 0 !important;
-            border: none !important;
-            border-radius: 0 !important;
-            accent-color: #667eea;
-            cursor: pointer;
-            flex-shrink: 0;
-        }
-        .ts-icon {
-            font-size: 15px;
-            flex-shrink: 0;
-        }
-        .ts-name {
-            font-weight: 600;
-            font-size: 14px;
-            color: #303133;
-            flex: 1 1 0;
-            min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        .ts-count {
-            font-size: 12px;
-            color: #909399;
-            margin-left: auto;
-            flex-shrink: 0;
-        }
-        .ts-toggle {
-            font-size: 10px;
-            color: #909399;
-            transition: transform 0.2s;
-            flex-shrink: 0;
-        }
-        .ts-toggle.open {
-            transform: rotate(90deg);
-        }
-        .ts-body {
-            display: none;
-            border-top: 1px solid #e4e7ed;
-        }
-        .ts-body.open {
-            display: block;
-        }
-        .ts-actions {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 8px 14px 4px;
-            font-size: 12px;
-        }
-        .ts-actions a {
-            color: #667eea;
-            text-decoration: none;
-            cursor: pointer;
-        }
-        .ts-actions a:hover {
-            text-decoration: underline;
-        }
-        .ts-actions .ts-deselect {
-            color: #909399;
-        }
-        .ts-actions .ts-divider {
-            color: #dcdfe6;
-        }
-        .ts-tools {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-            gap: 2px 8px;
-            padding: 4px 14px 10px;
-            max-height: 280px;
-            overflow-y: auto;
-        }
-        .ts-tool {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 5px 8px;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background 0.15s;
-            line-height: 1.4;
-            white-space: nowrap;
-            overflow: hidden;
-        }
-        .ts-tool:hover {
-            background: #f0f2f5;
-        }
-        .ts-tool input {
-            width: 14px !important;
-            height: 14px !important;
-            padding: 0 !important;
-            border: none !important;
-            border-radius: 0 !important;
-            accent-color: #667eea;
-            flex-shrink: 0;
-        }
-        .ts-tool-name {
-            font-size: 13px;
-            font-weight: 500;
-            color: #303133;
-            flex-shrink: 0;
-        }
-        .ts-tool-desc {
-            font-size: 12px;
-            color: #a0a4ab;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        /* AI Recommend */
-        .ts-ai-recommend {
-            margin-bottom: 10px;
-        }
-        .ts-ai-row {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-        .ts-ai-row .form-control {
-            flex: 1;
-        }
-        .btn-ai-recommend {
-            padding: 9px 16px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 13px;
-            font-family: inherit;
-            font-weight: 500;
-            white-space: nowrap;
-            transition: opacity 0.2s, transform 0.15s;
-        }
-        .btn-ai-recommend:hover {
-            opacity: 0.9;
-            transform: translateY(-1px);
-        }
-        .btn-ai-recommend:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-        .ts-ai-status {
-            margin-top: 6px;
-            font-size: 12px;
-            color: #667eea;
-        }
-        .ts-ai-status.error {
-            color: #dc3545;
-        }
+        body { display: flex; justify-content: center; align-items: flex-start; padding: 20px; min-height: 100vh; }
+        @media (max-width: 768px) { body { padding: 0; } .page-container { border-radius: 0; } }
+        .page-header-bar {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: var(--space-5); flex-wrap: wrap; gap: var(--space-3);
+        }
+        .page-header-bar h2 { font-size: var(--text-2xl); font-weight: 700; color: var(--text-primary); }
     </style>
 </head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🤖 Agent管理</h1>
-            <div class="header-actions">
-                <a href="/static/collaboration_playground.html">
-                    <button>🧪 Agent Playground</button>
-                </a>
-                <a href="/static/skill_manager.html">
-                    <button>🛠️ 技能管理</button>
-                </a>
-                <a href="/static/mcp_manager.html">
-                    <button>🔗 MCP管理</button>
-                </a>
-                <a href="/static/settings.html">
-                    <button>⚙️ 设置</button>
-                </a>
-            </div>
-        </div>
+<body class="gradient-bg">
+    <div class="page-container">
+        <div id="pageNav"></div>
 
-        <div class="main-content">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-                <h2 style="font-size: 20px; font-weight: 600;">Agent列表</h2>
-                <button class="modal-footer button primary" onclick="openCreateModal()" style="padding: 12px 28px; font-size: 15px; font-weight: 600; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer;">
-                    ➕ 新建Agent
+        <div class="page-body">
+            <div class="page-header-bar">
+                <h2>Agent列表</h2>
+                <button class="btn btn-primary" onclick="openCreateModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    新建Agent
                 </button>
             </div>
-            <div id="agentGrid" class="agent-grid">
-            </div>
-            <button class="fab-button" onclick="openCreateModal()" title="新建Agent">➕</button>
+            <div id="agentGrid" class="agent-grid"></div>
+            <button class="fab-button" onclick="openCreateModal()" title="新建Agent" aria-label="新建Agent">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
         </div>
     </div>
 
+    <!-- Agent Create/Edit Modal -->
     <div id="agentModal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content wide">
             <div class="modal-header">
                 <h2 id="modalTitle">新建Agent</h2>
-                <button class="modal-close" onclick="closeModal()">×</button>
+                <button class="modal-close" onclick="SharedModal.close('agentModal')" aria-label="关闭">&times;</button>
             </div>
 
             <div class="modal-body">
                 <div id="messageContainer"></div>
 
-                <!-- Step Indicator -->
                 <div class="step-indicator" id="stepIndicator">
                     <div class="step-item active" id="step1">
                         <div class="step-number">1</div>
                         <div class="step-label">选择模式</div>
                     </div>
+                    <div class="step-connector" id="stepConnector"></div>
                     <div class="step-item" id="step2">
                         <div class="step-number">2</div>
                         <div class="step-label">配置信息</div>
@@ -786,42 +61,27 @@
                 <div id="stepContent1">
                     <div class="form-section">
                         <h3>选择执行模式</h3>
-                        <p style="color: #666; font-size: 13px; margin-bottom: 15px;">
+                        <p style="color: var(--text-secondary); font-size: var(--text-sm); margin-bottom: var(--space-4);">
                             这决定了Agent的工作方式，创建后也可以随时修改
                         </p>
-
-                        <div class="mode-cards" style="grid-template-columns: repeat(2, 1fr);">
+                        <div class="mode-cards">
                             <div class="mode-card" data-mode="plan" onclick="selectMode('plan')">
                                 <div class="mode-icon">📋</div>
                                 <div class="mode-name">Plan模式</div>
-                                <div class="mode-description">
-                                    先规划完整的执行步骤，再按步骤执行。适合复杂、多步骤的任务。
-                                </div>
-                                <div class="mode-note tools">
-                                    🔧 需要配置工具
-                                </div>
+                                <div class="mode-description">先规划完整的执行步骤，再按步骤执行。适合复杂、多步骤的任务。</div>
+                                <div class="mode-note tools">🔧 需要配置工具</div>
                             </div>
-
                             <div class="mode-card" data-mode="react" onclick="selectMode('react')">
                                 <div class="mode-icon">🔄</div>
                                 <div class="mode-name">ReAct模式</div>
-                                <div class="mode-description">
-                                    利用深度思维链能力，边思考边调用工具。可以实时观察思考过程。适合需要多步推理的任务。
-                                </div>
-                                <div class="mode-note tools">
-                                    🔧 需要配置工具
-                                </div>
+                                <div class="mode-description">利用深度思维链能力，边思考边调用工具。可以实时观察思考过程。适合需要多步推理的任务。</div>
+                                <div class="mode-note tools">🔧 需要配置工具</div>
                             </div>
-
                             <div class="mode-card" data-mode="direct" onclick="selectMode('direct')">
                                 <div class="mode-icon">⚡</div>
                                 <div class="mode-name">Direct模式</div>
-                                <div class="mode-description">
-                                    直接调用LLM生成回复，不使用工具。适合简单问答、日常聊天。
-                                </div>
-                                <div class="mode-note no-tools">
-                                    💬 不需要工具
-                                </div>
+                                <div class="mode-description">直接调用LLM生成回复，不使用工具。适合简单问答、日常聊天。</div>
+                                <div class="mode-note no-tools">💬 不需要工具</div>
                             </div>
                         </div>
                     </div>
@@ -834,117 +94,101 @@
 
                         <div class="form-section">
                             <h3>基本信息</h3>
-
                             <div class="form-group">
                                 <label>名称 *</label>
-                                <input type="text" id="agentName" required placeholder="例如: Python代码助手">
+                                <input type="text" id="agentName" class="form-control" required placeholder="例如: Python代码助手">
                             </div>
-
                             <div class="form-group">
                                 <label>描述</label>
-                                <input type="text" id="agentDescription" placeholder="简要描述Agent的功能">
+                                <input type="text" id="agentDescription" class="form-control" placeholder="简要描述Agent的功能">
                             </div>
-
-                            <div class="form-group">
-                                <label>类型</label>
-                                <select id="agentType">
-                                    <option value="chat">💬 聊天助手</option>
-                                    <option value="coder">💻 代码助手</option>
-                                    <option value="researcher">📊 研究助手</option>
-                                    <option value="custom">⚙️ 自定义</option>
-                                </select>
+                            <div class="form-row">
+                                <div class="form-field">
+                                    <label>类型</label>
+                                    <select id="agentType" class="form-control">
+                                        <option value="chat">💬 聊天助手</option>
+                                        <option value="coder">💻 代码助手</option>
+                                        <option value="researcher">📊 研究助手</option>
+                                        <option value="custom">⚙️ 自定义</option>
+                                    </select>
+                                </div>
+                                <div class="form-field">
+                                    <label>优先级</label>
+                                    <input type="number" id="agentPriority" class="form-control" min="0" value="0" placeholder="数字越高优先级越高">
+                                </div>
                             </div>
-
-                            <div class="form-group">
-                                <label>优先级</label>
-                                <input type="number" id="agentPriority" min="0" value="0" placeholder="数字越高优先级越高">
-                            </div>
-
-                            <div class="checkbox-group">
+                            <div class="checkbox-group" style="margin-top: var(--space-3);">
                                 <input type="checkbox" id="enableLongTermMemory">
                                 <label for="enableLongTermMemory">启用长期记忆</label>
-                                <span style="font-size: 12px; color: #999; margin-left: 4px;">（开启后，Agent将跨会话记住用户偏好和重要信息）</span>
+                                <span style="font-size: var(--text-xs); color: var(--text-muted); margin-left: var(--space-1);">（开启后，Agent将跨会话记住用户偏好和重要信息）</span>
                             </div>
                         </div>
 
-                        <!-- Tool/MCP/Skill Section - only show for plan/react -->
                         <div class="form-section" id="toolsMcpSection">
                             <h3>🔧 工具与技能配置</h3>
-
                             <div class="form-group">
                                 <label>技能 (Skills)</label>
-                                <div id="skillsList" class="checkbox-list">
-                                </div>
+                                <div id="skillsList" class="checkbox-list"></div>
                             </div>
-
                             <div class="form-group">
                                 <label>MCP服务器与工具</label>
-                                <p style="color: #666; font-size: 13px; margin-bottom: 8px;">
+                                <p style="color: var(--text-secondary); font-size: var(--text-xs); margin-bottom: var(--space-2);">
                                     勾选服务器自动全选其工具；展开后可逐个选择。只勾选服务器不选具体工具则加载该服务器全部工具。
                                 </p>
                                 <div class="ts-ai-recommend">
                                     <div class="ts-ai-row">
                                         <input type="text" id="aiRecommendInput" placeholder="描述你的需求，AI帮你推荐工具..." class="form-control">
-                                        <button type="button" id="aiRecommendBtn" onclick="aiRecommendTools()" class="btn-ai-recommend">
-                                            ✨ AI推荐
-                                        </button>
+                                        <button type="button" id="aiRecommendBtn" onclick="aiRecommendTools()" class="btn-ai-recommend">AI推荐</button>
                                     </div>
                                     <div id="aiRecommendStatus" class="ts-ai-status" style="display:none;"></div>
                                 </div>
-                                <div id="toolSelector">
-                                </div>
+                                <div id="toolSelector"></div>
                             </div>
                         </div>
 
                         <div class="form-section" id="thinkingConfigSection">
                             <h3>🧠 思维链配置（仅适用于 ReAct Cot）</h3>
-
-                            <div class="form-group">
-                                <label>思考深度</label>
-                                <select id="thinkingEffort">
-                                    <option value="low">🔹 Low - 快速回答，思考较浅</option>
-                                    <option value="medium" selected>🔸 Medium - 平衡，推荐使用</option>
-                                    <option value="high">🔶 High - 深度推理，回答更全面</option>
-                                </select>
-                            </div>
-
-                            <div class="form-group">
-                                <label>最大执行步数</label>
-                                <input type="number" id="maxReactSteps" min="1" max="50" value="15" placeholder="1-50">
+                            <div class="form-row">
+                                <div class="form-field">
+                                    <label>思考深度</label>
+                                    <select id="thinkingEffort" class="form-control">
+                                        <option value="low">🔹 Low - 快速回答</option>
+                                        <option value="medium" selected>🔸 Medium - 平衡（推荐）</option>
+                                        <option value="high">🔶 High - 深度推理</option>
+                                    </select>
+                                </div>
+                                <div class="form-field">
+                                    <label>最大执行步数</label>
+                                    <input type="number" id="maxReactSteps" class="form-control" min="1" max="50" value="15" placeholder="1-50">
+                                </div>
                             </div>
                         </div>
 
                         <div class="form-section">
                             <h3>LLM参数（可选，将使用全局默认值）</h3>
-
-                            <div class="form-group">
-                                <label>模型</label>
-                                <input type="text" id="agentModel" placeholder="例如: doubao-seed-2-0-lite-260215">
-                            </div>
-
-                            <div class="form-group">
-                                <label>温度</label>
-                                <input type="number" id="agentTemperature" min="0" max="1" step="0.1" placeholder="0.0-1.0">
-                            </div>
-
-                            <div class="form-group">
-                                <label>最大Token数</label>
-                                <input type="number" id="agentMaxTokens" min="1" placeholder="例如: 8192">
+                            <div class="form-row">
+                                <div class="form-field">
+                                    <label>模型</label>
+                                    <input type="text" id="agentModel" class="form-control" placeholder="例如: doubao-seed-2-0-lite-260215">
+                                </div>
+                                <div class="form-field">
+                                    <label>温度</label>
+                                    <input type="number" id="agentTemperature" class="form-control" min="0" max="1" step="0.1" placeholder="0.0-1.0">
+                                </div>
+                                <div class="form-field">
+                                    <label>最大Token数</label>
+                                    <input type="number" id="agentMaxTokens" class="form-control" min="1" placeholder="例如: 8192">
+                                </div>
                             </div>
                         </div>
 
                         <div class="form-section">
                             <h3>系统提示词</h3>
-
                             <div class="form-group">
-                                <textarea id="agentSystemPrompt" placeholder="定义Agent的角色和行为..."></textarea>
-                                <div style="display: flex; gap: 10px; margin-top: 8px;">
-                                    <button type="button" onclick="loadTemplate()" style="padding: 5px 10px; font-size: 12px;">
-                                        📋 使用模板
-                                    </button>
-                                    <button type="button" onclick="resetSystemPrompt()" style="padding: 5px 10px; font-size: 12px;">
-                                        ↺ 重置为默认
-                                    </button>
+                                <textarea id="agentSystemPrompt" class="form-control" placeholder="定义Agent的角色和行为..." rows="4"></textarea>
+                                <div style="display: flex; gap: var(--space-2); margin-top: var(--space-2);">
+                                    <button type="button" class="btn btn-sm btn-secondary" onclick="loadTemplate()">使用模板</button>
+                                    <button type="button" class="btn btn-sm btn-secondary" onclick="resetSystemPrompt()">重置为默认</button>
                                 </div>
                             </div>
                         </div>
@@ -953,18 +197,29 @@
             </div>
 
             <div class="modal-footer" id="modalFooter">
-                <button type="button" onclick="closeModal()">取消</button>
-                <button type="button" class="primary" id="nextStepBtn" onclick="goToStep2()" disabled>下一步</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">取消</button>
+                <button type="button" class="btn btn-primary" id="nextStepBtn" onclick="goToStep2()" disabled>下一步</button>
             </div>
         </div>
     </div>
 
+    <script src="/static/core/Auth.js"></script>
+    <script src="/static/shared/utils.js"></script>
+    <script src="/static/shared/toast.js"></script>
+    <script src="/static/shared/modal.js"></script>
+    <script src="/static/shared/nav.js"></script>
     <script>
+        // Auth check
+        if (!Auth.requireAuth()) { throw new Error('Not authenticated'); }
+
+        // Render shared navigation
+        SharedNav.render(document.getElementById('pageNav'), { active: 'agents' });
+
         let agents = [];
         let mcpServers = [];
         let availableTools = [];
         let availableSkills = [];
-        let toolCatalog = [];   // [{server_id, server_name, tools: [{name, description, original_name}]}]
+        let toolCatalog = [];
         let currentAgentId = null;
         let currentStep = 1;
         let selectedMode = null;
@@ -982,26 +237,22 @@
             try {
                 const res = await fetch('/api/settings/init-status');
                 const data = await res.json();
-                if (!data.initialized) {
-                    showSetupDialog();
-                }
-            } catch (e) {
-                // Silently ignore
-            }
+                if (!data.initialized) showSetupDialog();
+            } catch (e) {}
         }
 
         function showSetupDialog() {
             const overlay = document.createElement('div');
             overlay.id = 'setupOverlay';
-            overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
+            overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,23,42,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px);';
             overlay.innerHTML = `
-                <div style="background:white;border-radius:16px;padding:40px;max-width:460px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
-                    <div style="font-size:48px;margin-bottom:16px;">🚀</div>
-                    <h2 style="color:#333;margin-bottom:12px;">欢迎使用 Quest3 Agent</h2>
-                    <p style="color:#666;margin-bottom:24px;font-size:14px;line-height:1.6;">检测到系统尚未完成初始配置，请先设置 LLM API Key 等必要参数。</p>
-                    <button onclick="window.location.href='/static/settings.html?setup=1'" style="padding:14px 36px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;">前往设置</button>
+                <div style="background:var(--bg-container);border-radius:var(--radius-xl);padding:40px;max-width:460px;text-align:center;box-shadow:var(--shadow-xl);">
+                    <div style="width:64px;height:64px;border-radius:var(--radius-md);background:var(--primary-light);display:flex;align-items:center;justify-content:center;margin:0 auto var(--space-4);font-size:28px;">🚀</div>
+                    <h2 style="color:var(--text-primary);margin-bottom:var(--space-3);font-size:var(--text-xl);font-weight:700;">欢迎使用 Quest3 Agent</h2>
+                    <p style="color:var(--text-secondary);margin-bottom:var(--space-6);font-size:var(--text-sm);line-height:1.6;">检测到系统尚未完成初始配置，请先设置 LLM API Key 等必要参数。</p>
+                    <button class="btn btn-primary btn-lg" onclick="window.location.href='/static/settings.html?setup=1'">前往设置</button>
                     <br><br>
-                    <a href="#" onclick="document.getElementById('setupOverlay').remove();return false;" style="color:#999;font-size:13px;">稍后再说</a>
+                    <a href="#" onclick="document.getElementById('setupOverlay').remove();return false;" style="color:var(--text-muted);font-size:var(--text-xs);">稍后再说</a>
                 </div>
             `;
             document.body.appendChild(overlay);
@@ -1015,22 +266,19 @@
                 renderAgents();
             } catch (error) {
                 console.error('Error loading agents:', error);
-                showError('加载Agent列表失败');
+                showToast('加载Agent列表失败', 'error');
             }
         }
 
         function renderAgents() {
             const grid = document.getElementById('agentGrid');
-
             if (!agents || agents.length === 0) {
                 grid.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">🤖</div>
+                    <div class="empty-state" style="grid-column: 1 / -1;">
+                        <div class="icon">🤖</div>
                         <h3>还没有创建Agent</h3>
-                        <p style="margin-bottom: 20px;">点击上方的"新建Agent"按钮来创建你的第一个智能助手</p>
-                        <button onclick="openCreateModal()" style="padding: 12px 28px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 600;">
-                            ➕ 创建第一个Agent
-                        </button>
+                        <p>点击上方的"新建Agent"按钮来创建你的第一个智能助手</p>
+                        <button class="btn btn-primary" onclick="openCreateModal()">创建第一个Agent</button>
                     </div>
                 `;
                 return;
@@ -1038,54 +286,34 @@
 
             grid.innerHTML = agents.map(agent => `
                 <div class="agent-card">
-                    <div class="agent-header" onclick="startChat('${agent.id}')">
+                    <div class="agent-header" onclick="startChat('${agent.id}')" style="cursor:pointer">
                         <div>
-                            <div class="agent-name">${escapeHtml(agent.name)}</div>
-                            <div style="margin-top: 8px;">
+                            <div class="agent-name">${Utils.escapeHtml(agent.name)}</div>
+                            <div style="margin-top: var(--space-2); display: flex; flex-wrap: wrap; gap: var(--space-1);">
                                 <span class="agent-type">${getTypeIcon(agent.type)} ${getTypeName(agent.type)}</span>
                                 <span class="agent-mode">${getModeIcon(agent.execution_mode)} ${getModeName(agent.execution_mode)}</span>
-                                <span class="agent-status ${agent.enabled ? 'enabled' : ''}">
-                                    ${agent.enabled ? '✓ 启用' : '✗ 禁用'}
-                                </span>
-                                ${agent.enable_long_term_memory ? '<span class="agent-status enabled" style="margin-left: 4px;">🧠 长期记忆</span>' : ''}
+                                <span class="agent-status ${agent.enabled ? 'enabled' : ''}">${agent.enabled ? '✓ 启用' : '✗ 禁用'}</span>
+                                ${agent.enable_long_term_memory ? '<span class="agent-status enabled">🧠 长期记忆</span>' : ''}
                             </div>
                         </div>
                     </div>
-
-                    ${agent.description ? `<div class="agent-description" onclick="startChat('${agent.id}')">${escapeHtml(agent.description)}</div>` : ''}
-
+                    ${agent.description ? `<div class="agent-description" onclick="startChat('${agent.id}')" style="cursor:pointer">${Utils.escapeHtml(agent.description)}</div>` : ''}
                     ${(agent.skills && agent.skills.length > 0) ? `
-                        <div style="margin-bottom: 15px;">
-                            <div style="font-size: 12px; color: #999; margin-bottom: 6px;">技能:</div>
-                            <div style="display: flex; flex-wrap: wrap; gap: 4px;">
-                                ${agent.skills.map(skill => `
-                                    <span style="font-size: 11px; padding: 2px 8px; background: rgba(118, 75, 162, 0.1); color: #764ba2; border-radius: 10px;">
-                                        ${escapeHtml(skill)}
-                                    </span>
-                                `).join('')}
+                        <div style="margin-bottom: var(--space-3);">
+                            <div class="skill-tags">
+                                ${agent.skills.map(skill => `<span class="skill-tag">${Utils.escapeHtml(skill)}</span>`).join('')}
                             </div>
                         </div>
                     ` : ''}
-
-                    <div class="agent-info" onclick="startChat('${agent.id}')">
-                        <div class="info-item">
-                            <span>使用次数:</span>
-                            <strong>${agent.usage_count || 0}</strong>
-                        </div>
-                        <div class="info-item">
-                            <span>优先级:</span>
-                            <strong>${agent.priority || 0}</strong>
-                        </div>
-                        <div class="info-item">
-                            <span>创建时间:</span>
-                            <span>${formatDate(agent.created_at)}</span>
-                        </div>
+                    <div class="agent-info" onclick="startChat('${agent.id}')" style="cursor:pointer">
+                        <div class="info-item"><span>使用次数</span><strong>${agent.usage_count || 0}</strong></div>
+                        <div class="info-item"><span>优先级</span><strong>${agent.priority || 0}</strong></div>
+                        <div class="info-item"><span>创建时间</span><span>${Utils.formatDate(agent.created_at)}</span></div>
                     </div>
-
                     <div class="agent-actions">
-                        <button type="button" onclick="startChat('${agent.id}')">💬 聊天</button>
-                        <button type="button" onclick="editAgent('${agent.id}')">✏️ 编辑</button>
-                        <button type="button" class="danger" onclick="deleteAgent('${agent.id}')">🗑️ 删除</button>
+                        <button type="button" class="primary" onclick="startChat('${agent.id}')">聊天</button>
+                        <button type="button" onclick="editAgent('${agent.id}')">编辑</button>
+                        <button type="button" class="danger" onclick="deleteAgent('${agent.id}')">删除</button>
                     </div>
                 </div>
             `).join('');
@@ -1096,15 +324,9 @@
                 const response = await fetch('/api/mcp/servers');
                 const data = await response.json();
                 mcpServers = data.servers || [];
-                renderMCPServers();
             } catch (error) {
                 console.error('Error loading MCP servers:', error);
             }
-        }
-
-        function renderMCPServers() {
-            // MCP server checkboxes are now rendered as part of the tool selector
-            // This function is kept for compatibility but the rendering is handled by renderToolSelector
         }
 
         async function loadToolCatalog() {
@@ -1122,26 +344,19 @@
         function renderToolSelector() {
             const container = document.getElementById('toolSelector');
             if (!container) return;
-
             if (!toolCatalog || toolCatalog.length === 0) {
                 container.innerHTML = '<div class="ts-empty">没有可用的工具服务器，请先在MCP管理中添加并连接服务器</div>';
                 return;
             }
-
             container.innerHTML = toolCatalog.map(server => {
                 const isLocal = server.server_id === 'local';
                 const toolCount = server.tools ? server.tools.length : 0;
-
                 return `
                     <div class="ts-group">
                         <div class="ts-header" onclick="toggleServerGroup('${server.server_id}')">
-                            ${isLocal ? '' : `
-                                <input type="checkbox" class="ts-checkbox" id="mcp_${server.server_id}" value="${server.server_id}"
-                                       onclick="event.stopPropagation()"
-                                       onchange="onServerCheckboxChange('${server.server_id}', this.checked)">
-                            `}
+                            ${isLocal ? '' : `<input type="checkbox" class="ts-checkbox" id="mcp_${server.server_id}" value="${server.server_id}" onclick="event.stopPropagation()" onchange="onServerCheckboxChange('${server.server_id}', this.checked)">`}
                             <span class="ts-icon">${isLocal ? '🏠' : '🔗'}</span>
-                            <span class="ts-name">${escapeHtml(server.server_name)}</span>
+                            <span class="ts-name">${Utils.escapeHtml(server.server_name)}</span>
                             <span class="ts-count">${toolCount} 个工具</span>
                             <span class="ts-toggle" id="toggle_icon_${server.server_id}">▶</span>
                         </div>
@@ -1153,11 +368,10 @@
                             </div>
                             <div class="ts-tools">
                                 ${(server.tools || []).map(tool => `
-                                    <label class="ts-tool" for="tool_${tool.name}" title="${tool.description ? escapeHtml(tool.description) : ''}">
-                                        <input type="checkbox" id="tool_${tool.name}" value="${tool.name}"
-                                               data-server-id="${server.server_id}" class="tool-cb-${server.server_id}">
-                                        <span class="ts-tool-name">${escapeHtml(tool.name)}</span>
-                                        ${tool.description ? `<span class="ts-tool-desc">${escapeHtml(tool.description)}</span>` : ''}
+                                    <label class="ts-tool" for="tool_${tool.name}" title="${tool.description ? Utils.escapeHtml(tool.description) : ''}">
+                                        <input type="checkbox" id="tool_${tool.name}" value="${tool.name}" data-server-id="${server.server_id}" class="tool-cb-${server.server_id}">
+                                        <span class="ts-tool-name">${Utils.escapeHtml(tool.name)}</span>
+                                        ${tool.description ? `<span class="ts-tool-desc">${Utils.escapeHtml(tool.description)}</span>` : ''}
                                     </label>
                                 `).join('')}
                             </div>
@@ -1179,20 +393,12 @@
             selectAllTools(serverId, checked);
             const toolsDiv = document.getElementById(`server_tools_${serverId}`);
             const icon = document.getElementById(`toggle_icon_${serverId}`);
-            if (toolsDiv) {
-                if (checked) {
-                    toolsDiv.classList.add('open');
-                } else {
-                    toolsDiv.classList.remove('open');
-                }
-            }
+            if (toolsDiv) checked ? toolsDiv.classList.add('open') : toolsDiv.classList.remove('open');
             if (icon) icon.classList.toggle('open', checked);
         }
 
         function selectAllTools(serverId, selected) {
-            document.querySelectorAll(`.tool-cb-${serverId}`).forEach(cb => {
-                cb.checked = selected;
-            });
+            document.querySelectorAll(`.tool-cb-${serverId}`).forEach(cb => cb.checked = selected);
         }
 
         async function aiRecommendTools() {
@@ -1200,15 +406,10 @@
             const btn = document.getElementById('aiRecommendBtn');
             const status = document.getElementById('aiRecommendStatus');
             const requirement = input.value.trim();
+            if (!requirement) { showToast('请先输入需求描述', 'error'); return; }
 
-            if (!requirement) {
-                showError('请先输入需求描述');
-                return;
-            }
-
-            // Show loading state
             btn.disabled = true;
-            btn.textContent = '✨ 分析中...';
+            btn.textContent = '分析中...';
             status.style.display = 'block';
             status.className = 'ts-ai-status';
             status.textContent = 'AI正在分析您的需求，请稍候...';
@@ -1219,129 +420,82 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ requirement })
                 });
-
-                if (!response.ok) {
-                    const err = await response.json();
-                    throw new Error(err.detail || '推荐失败');
-                }
-
+                if (!response.ok) { const err = await response.json(); throw new Error(err.detail || '推荐失败'); }
                 const data = await response.json();
                 const recommended = data.recommended_tools || [];
-
                 if (recommended.length === 0) {
                     status.className = 'ts-ai-status error';
                     status.textContent = 'AI未找到匹配的工具，请尝试更具体的需求描述';
                     return;
                 }
-
-                // Auto-check recommended tools
                 let checkedCount = 0;
                 const affectedServers = new Set();
-
                 recommended.forEach(toolName => {
                     const cb = document.getElementById('tool_' + toolName);
-                    if (cb) {
-                        cb.checked = true;
-                        checkedCount++;
-                        const serverId = cb.dataset.serverId;
-                        if (serverId) affectedServers.add(serverId);
-                    }
+                    if (cb) { cb.checked = true; checkedCount++; const sid = cb.dataset.serverId; if (sid) affectedServers.add(sid); }
                 });
-
-                // Check server-level checkboxes and expand affected groups
                 affectedServers.forEach(serverId => {
                     const serverCb = document.getElementById('mcp_' + serverId);
                     if (serverCb) serverCb.checked = true;
-
                     const toolsDiv = document.getElementById('server_tools_' + serverId);
                     const icon = document.getElementById('toggle_icon_' + serverId);
                     if (toolsDiv) toolsDiv.classList.add('open');
                     if (icon) icon.classList.add('open');
                 });
-
                 status.className = 'ts-ai-status';
-                status.textContent = `✨ AI推荐了 ${checkedCount} 个工具`;
-
+                status.textContent = `AI推荐了 ${checkedCount} 个工具`;
             } catch (error) {
-                console.error('AI recommend error:', error);
                 status.className = 'ts-ai-status error';
                 status.textContent = '推荐失败：' + error.message;
             } finally {
                 btn.disabled = false;
-                btn.textContent = '✨ AI推荐';
+                btn.textContent = 'AI推荐';
             }
-        }
-
-        function renderTools() {
-            // Tool checkboxes are now rendered as part of the tool selector
-            // This function is kept for compatibility but the rendering is handled by renderToolSelector
         }
 
         async function loadAvailableSkills() {
             try {
                 const response = await fetch('/api/skills/summaries');
                 const data = await response.json();
-                availableSkills = Object.entries(data).map(([name, summary]) => ({
-                    name,
-                    ...summary
-                }));
+                availableSkills = Object.entries(data).map(([name, summary]) => ({ name, ...summary }));
                 renderSkills();
-            } catch (error) {
-                console.error('Error loading skills:', error);
-            }
+            } catch (error) { console.error('Error loading skills:', error); }
         }
 
         function renderSkills() {
             const list = document.getElementById('skillsList');
             if (!list) return;
-
             if (!availableSkills || availableSkills.length === 0) {
-                list.innerHTML = '<small style="color: #999;">没有可用的技能</small>';
+                list.innerHTML = '<small style="color: var(--text-muted);">没有可用的技能</small>';
                 return;
             }
-
             list.innerHTML = availableSkills.map(skill => `
                 <div class="checkbox-item">
                     <input type="checkbox" id="skill_${skill.name}" value="${skill.name}">
-                    <label for="skill_${skill.name}">
-                        <strong>${escapeHtml(skill.name)}</strong>
-                        <small style="color: #999; margin-left: 5px;">${escapeHtml(skill.description || '')}</small>
-                    </label>
+                    <label for="skill_${skill.name}"><strong>${Utils.escapeHtml(skill.name)}</strong> <small style="color: var(--text-muted); margin-left: 5px;">${Utils.escapeHtml(skill.description || '')}</small></label>
                 </div>
             `).join('');
         }
 
         function selectMode(mode) {
             selectedMode = mode;
-
             document.querySelectorAll('.mode-card').forEach(card => {
                 card.classList.remove('selected');
-                if (card.dataset.mode === mode) {
-                    card.classList.add('selected');
-                }
+                if (card.dataset.mode === mode) card.classList.add('selected');
             });
-
             const nextBtn = document.getElementById('nextStepBtn');
-            if (nextBtn) {
-                nextBtn.disabled = false;
-            }
+            if (nextBtn) nextBtn.disabled = false;
         }
 
         function goToStep2() {
-            if (!selectedMode) {
-                showError('请先选择执行模式');
-                return;
-            }
-
+            if (!selectedMode) { showToast('请先选择执行模式', 'error'); return; }
             currentStep = 2;
-
             document.getElementById('step1').classList.remove('active');
             document.getElementById('step1').classList.add('completed');
             document.getElementById('step2').classList.add('active');
-
+            document.getElementById('stepConnector').classList.add('completed');
             document.getElementById('stepContent1').style.display = 'none';
             document.getElementById('stepContent2').style.display = 'block';
-
             updateFooterForStep2();
             updateToolsSectionVisibility();
             loadTemplate();
@@ -1349,60 +503,32 @@
 
         function goToStep1() {
             currentStep = 1;
-
             document.getElementById('step1').classList.add('active');
             document.getElementById('step1').classList.remove('completed');
             document.getElementById('step2').classList.remove('active');
-
+            document.getElementById('stepConnector').classList.remove('completed');
             document.getElementById('stepContent1').style.display = 'block';
             document.getElementById('stepContent2').style.display = 'none';
-
             updateFooterForStep1();
         }
 
         function updateFooterForStep1() {
             const footer = document.getElementById('modalFooter');
-            footer.innerHTML = `
-                <button type="button" onclick="closeModal()">取消</button>
-                <button type="button" class="primary" id="nextStepBtn" onclick="goToStep2()" ${!selectedMode ? 'disabled' : ''}>下一步</button>
-            `;
+            footer.innerHTML = `<button type="button" class="btn btn-secondary" onclick="closeModal()">取消</button><button type="button" class="btn btn-primary" id="nextStepBtn" onclick="goToStep2()" ${!selectedMode ? 'disabled' : ''}>下一步</button>`;
         }
 
         function updateFooterForStep2() {
             const footer = document.getElementById('modalFooter');
-            if (isEditMode) {
-                footer.innerHTML = `
-                    <button type="button" onclick="closeModal()">取消</button>
-                    <button type="button" class="primary" onclick="saveAgent()">保存</button>
-                `;
-            } else {
-                footer.innerHTML = `
-                    <button type="button" onclick="goToStep1()">上一步</button>
-                    <button type="button" onclick="closeModal()">取消</button>
-                    <button type="button" class="primary" onclick="saveAgent()">创建</button>
-                `;
-            }
+            footer.innerHTML = isEditMode
+                ? `<button type="button" class="btn btn-secondary" onclick="closeModal()">取消</button><button type="button" class="btn btn-primary" onclick="saveAgent()">保存</button>`
+                : `<button type="button" class="btn btn-secondary" onclick="goToStep1()">上一步</button><button type="button" class="btn btn-secondary" onclick="closeModal()">取消</button><button type="button" class="btn btn-primary" onclick="saveAgent()">创建</button>`;
         }
 
         function updateToolsSectionVisibility() {
             const section = document.getElementById('toolsMcpSection');
-            if (!section) return;
-
-            if (selectedMode === 'direct') {
-                section.style.display = 'none';
-            } else {
-                section.style.display = 'block';
-            }
-
-            // 更新思维链配置区域
+            if (section) section.style.display = selectedMode === 'direct' ? 'none' : 'block';
             const thinkingSection = document.getElementById('thinkingConfigSection');
-            if (thinkingSection) {
-                if (selectedMode === 'react') {
-                    thinkingSection.style.display = 'block';
-                } else {
-                    thinkingSection.style.display = 'none';
-                }
-            }
+            if (thinkingSection) thinkingSection.style.display = selectedMode === 'react' ? 'block' : 'none';
         }
 
         function openCreateModal() {
@@ -1410,52 +536,39 @@
             currentAgentId = null;
             selectedMode = null;
             currentStep = 1;
-
             document.getElementById('modalTitle').textContent = '新建Agent';
             document.getElementById('messageContainer').innerHTML = '';
-
             document.getElementById('step1').classList.add('active');
             document.getElementById('step1').classList.remove('completed');
             document.getElementById('step2').classList.remove('active');
-
-            document.querySelectorAll('.mode-card').forEach(card => {
-                card.classList.remove('selected');
-            });
-
+            document.getElementById('stepConnector').classList.remove('completed');
+            document.querySelectorAll('.mode-card').forEach(card => card.classList.remove('selected'));
             document.getElementById('agentForm').reset();
             document.getElementById('enableLongTermMemory').checked = false;
             document.getElementById('agentPriority').value = '0';
-
             document.getElementById('stepContent1').style.display = 'block';
             document.getElementById('stepContent2').style.display = 'none';
             updateFooterForStep1();
-
-            document.getElementById('agentModal').classList.add('active');
+            SharedModal.open('agentModal');
         }
 
         async function editAgent(agentId) {
             const agent = agents.find(a => a.id === agentId);
             if (!agent) return;
-
             isEditMode = true;
             currentAgentId = agentId;
             selectedMode = agent.execution_mode === 'react_cot' ? 'react' : (agent.execution_mode || 'plan');
             currentStep = 2;
-
             document.getElementById('modalTitle').textContent = '编辑Agent';
             document.getElementById('messageContainer').innerHTML = '';
-
             document.getElementById('step1').classList.remove('active');
             document.getElementById('step1').classList.add('completed');
             document.getElementById('step2').classList.add('active');
-
+            document.getElementById('stepConnector').classList.add('completed');
             document.querySelectorAll('.mode-card').forEach(card => {
                 card.classList.remove('selected');
-                if (card.dataset.mode === selectedMode) {
-                    card.classList.add('selected');
-                }
+                if (card.dataset.mode === selectedMode) card.classList.add('selected');
             });
-
             document.getElementById('agentId').value = agent.id;
             document.getElementById('agentName').value = agent.name || '';
             document.getElementById('agentDescription').value = agent.description || '';
@@ -1469,21 +582,11 @@
             document.getElementById('maxReactSteps').value = agent.max_react_steps || 15;
             document.getElementById('agentSystemPrompt').value = agent.system_prompt || '';
 
-            // Check MCP servers
-            const agentMcpIds = (agent.mcp_servers || []).map(mcp =>
-                typeof mcp === 'string' ? mcp : mcp.server_id
-            );
-            document.querySelectorAll('#toolSelector input[id^="mcp_"]').forEach(cb => {
-                cb.checked = agentMcpIds.includes(cb.value);
-            });
-
-            // Check individual tools
+            const agentMcpIds = (agent.mcp_servers || []).map(mcp => typeof mcp === 'string' ? mcp : mcp.server_id);
+            document.querySelectorAll('#toolSelector input[id^="mcp_"]').forEach(cb => cb.checked = agentMcpIds.includes(cb.value));
             const agentToolNames = agent.tools || [];
-            document.querySelectorAll('#toolSelector input[id^="tool_"]').forEach(cb => {
-                cb.checked = agentToolNames.includes(cb.value);
-            });
+            document.querySelectorAll('#toolSelector input[id^="tool_"]').forEach(cb => cb.checked = agentToolNames.includes(cb.value));
 
-            // Expand server groups that are checked or have checked tools
             toolCatalog.forEach(server => {
                 const serverCb = document.getElementById(`mcp_${server.server_id}`);
                 const isChecked = serverCb && serverCb.checked;
@@ -1495,29 +598,20 @@
                     if (icon) icon.classList.add('open');
                 }
             });
-
-            document.querySelectorAll('#skillsList input[type="checkbox"]').forEach(cb => {
-                cb.checked = (agent.skills || []).includes(cb.value);
-            });
-
+            document.querySelectorAll('#skillsList input[type="checkbox"]').forEach(cb => cb.checked = (agent.skills || []).includes(cb.value));
             document.getElementById('stepContent1').style.display = 'none';
             document.getElementById('stepContent2').style.display = 'block';
             updateFooterForStep2();
             updateToolsSectionVisibility();
-
-            document.getElementById('agentModal').classList.add('active');
+            SharedModal.open('agentModal');
         }
 
         async function saveAgent() {
             const name = document.getElementById('agentName')?.value?.trim();
-            if (!name) {
-                showError('请填写名称');
-                return;
-            }
+            if (!name) { showToast('请填写名称', 'error'); return; }
 
             const formData = {
-                name: name,
-                description: document.getElementById('agentDescription')?.value?.trim(),
+                name, description: document.getElementById('agentDescription')?.value?.trim(),
                 type: document.getElementById('agentType')?.value,
                 priority: parseInt(document.getElementById('agentPriority')?.value) || 0,
                 enable_long_term_memory: document.getElementById('enableLongTermMemory')?.checked || false,
@@ -1528,102 +622,44 @@
                 temperature: parseFloat(document.getElementById('agentTemperature')?.value) || null,
                 max_tokens: parseInt(document.getElementById('agentMaxTokens')?.value) || null,
                 system_prompt: document.getElementById('agentSystemPrompt')?.value?.trim() || '',
-                mcp_servers: [],
-                tools: [],
-                skills: []
+                mcp_servers: [], tools: [], skills: []
             };
 
             if (selectedMode !== 'direct') {
-                document.querySelectorAll('#skillsList input[type="checkbox"]:checked').forEach(cb => {
-                    formData.skills.push(cb.value);
-                });
-
-                document.querySelectorAll('#toolSelector input[id^="mcp_"]:checked').forEach(cb => {
-                    formData.mcp_servers.push(cb.value);
-                });
-
-                document.querySelectorAll('#toolSelector input[id^="tool_"]:checked').forEach(cb => {
-                    formData.tools.push(cb.value);
-                });
+                document.querySelectorAll('#skillsList input[type="checkbox"]:checked').forEach(cb => formData.skills.push(cb.value));
+                document.querySelectorAll('#toolSelector input[id^="mcp_"]:checked').forEach(cb => formData.mcp_servers.push(cb.value));
+                document.querySelectorAll('#toolSelector input[id^="tool_"]:checked').forEach(cb => formData.tools.push(cb.value));
             }
 
             try {
-                let response;
-                if (currentAgentId) {
-                    response = await fetch(`/api/agents/${currentAgentId}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(formData)
-                    });
-                } else {
-                    response = await fetch('/api/agents', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(formData)
-                    });
-                }
+                const response = currentAgentId
+                    ? await fetch(`/api/agents/${currentAgentId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(formData) })
+                    : await fetch('/api/agents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(formData) });
 
                 if (response.ok) {
-                    showSuccess(currentAgentId ? 'Agent更新成功' : 'Agent创建成功');
+                    showToast(currentAgentId ? 'Agent更新成功' : 'Agent创建成功');
                     await new Promise(r => setTimeout(r, 500));
                     closeModal();
                     await loadAgents();
                 } else {
                     const data = await response.json();
-                    showError(data.detail || '保存失败');
+                    showToast(data.detail || '保存失败', 'error');
                 }
             } catch (error) {
                 console.error('Error saving agent:', error);
-                showError('保存Agent时发生错误');
-            }
-        }
-
-        async function toggleAgent(agentId) {
-            const agent = agents.find(a => a.id === agentId);
-            if (!agent) return;
-
-            try {
-                const response = await fetch(`/api/agents/${agentId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ enabled: !agent.enabled })
-                });
-
-                if (response.ok) {
-                    showSuccess(!agent.enabled ? 'Agent已启用' : 'Agent已禁用');
-                    await loadAgents();
-                } else {
-                    showError('更新状态失败');
-                }
-            } catch (error) {
-                console.error('Error toggling agent:', error);
-                showError('操作失败');
+                showToast('保存Agent时发生错误', 'error');
             }
         }
 
         async function deleteAgent(agentId) {
             const agent = agents.find(a => a.id === agentId);
             if (!agent) return;
-
-            if (!confirm(`确定要删除Agent "${agent.name}" 吗？\n此操作不可恢复。`)) {
-                return;
-            }
-
+            if (!confirm(`确定要删除Agent "${agent.name}" 吗？\n此操作不可恢复。`)) return;
             try {
-                const response = await fetch(`/api/agents/${agentId}`, {
-                    method: 'DELETE'
-                });
-
-                if (response.ok) {
-                    showSuccess('Agent删除成功');
-                    await loadAgents();
-                } else {
-                    showError('删除失败');
-                }
-            } catch (error) {
-                console.error('Error deleting agent:', error);
-                showError('删除Agent时发生错误');
-            }
+                const response = await fetch(`/api/agents/${agentId}`, { method: 'DELETE' });
+                if (response.ok) { showToast('Agent删除成功'); await loadAgents(); }
+                else showToast('删除失败', 'error');
+            } catch (error) { console.error(error); showToast('删除Agent时发生错误', 'error'); }
         }
 
         function loadTemplate() {
@@ -1634,91 +670,23 @@
                 'researcher': '你是一个研究助手，擅长信息收集、分析和总结。你能够帮助用户查找资料、分析数据并提供建议。请确保你的回答准确、有据可查。',
                 'custom': '请根据你的角色定义来帮助用户完成任务。'
             };
-
             const textarea = document.getElementById('agentSystemPrompt');
-            if (textarea && !textarea.value) {
-                textarea.value = templates[type] || templates['custom'];
-            }
+            if (textarea && !textarea.value) textarea.value = templates[type] || templates['custom'];
         }
 
-        function resetSystemPrompt() {
-            loadTemplate();
-        }
+        function resetSystemPrompt() { loadTemplate(); }
 
         function closeModal() {
-            document.getElementById('agentModal').classList.remove('active');
-            currentAgentId = null;
-            currentStep = 1;
-            selectedMode = null;
-            isEditMode = false;
+            SharedModal.close('agentModal');
+            currentAgentId = null; currentStep = 1; selectedMode = null; isEditMode = false;
         }
 
-        function showError(message) {
-            const container = document.getElementById('messageContainer');
-            container.innerHTML = `<div class="error-message">❌ ${escapeHtml(message)}</div>`;
-        }
+        function getTypeIcon(type) { return { 'chat': '💬', 'coder': '💻', 'researcher': '📊', 'custom': '⚙️' }[type] || '⚙️'; }
+        function getTypeName(type) { return { 'chat': '聊天助手', 'coder': '代码助手', 'researcher': '研究助手', 'custom': '自定义' }[type] || '自定义'; }
+        function getModeIcon(mode) { return { 'plan': '📋', 'react': '🔄', 'direct': '⚡' }[mode] || '📋'; }
+        function getModeName(mode) { return { 'plan': 'Plan模式', 'react': 'ReAct模式', 'direct': 'Direct模式' }[mode] || 'Plan模式'; }
 
-        function showSuccess(message) {
-            const container = document.getElementById('messageContainer');
-            container.innerHTML = `<div class="success-message">✅ ${escapeHtml(message)}</div>`;
-
-            setTimeout(() => {
-                container.innerHTML = '';
-            }, 3000);
-        }
-
-        function escapeHtml(text) {
-            if (!text) return '';
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        function formatDate(dateString) {
-            if (!dateString) return '';
-            const date = new Date(dateString);
-            return date.toLocaleDateString('zh-CN') + ' ' + date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-        }
-
-        function getTypeIcon(type) {
-            const icons = { 'chat': '💬', 'coder': '💻', 'researcher': '📊', 'custom': '⚙️' };
-            return icons[type] || '⚙️';
-        }
-
-        function getTypeName(type) {
-            const names = { 'chat': '聊天助手', 'coder': '代码助手', 'researcher': '研究助手', 'custom': '自定义' };
-            return names[type] || '自定义';
-        }
-
-        function getModeIcon(mode) {
-            const icons = { 'plan': '📋', 'react': '🔄', 'direct': '⚡' };
-            return icons[mode] || '📋';
-        }
-
-        function getModeName(mode) {
-            const names = {
-                'plan': 'Plan模式',
-                'react': 'ReAct模式',
-                'direct': 'Direct模式'
-            };
-            return names[mode] || 'Plan模式';
-        }
-
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                closeModal();
-            }
-        });
-
-        document.getElementById('agentModal').addEventListener('click', (e) => {
-            if (e.target.id === 'agentModal') {
-                closeModal();
-            }
-        });
-
-        function startChat(agentId) {
-            window.location.href = `/static/index.html#chat?agent_id=${agentId}`;
-        }
+        function startChat(agentId) { window.location.href = `/static/index.html#chat?agent_id=${agentId}`; }
     </script>
 </body>
 </html>

@@ -248,26 +248,57 @@ class LLMService:
         if not self.volc_client:
             raise ValueError("Volcengine client not configured. Please set VOLCENGINE_API_KEY.")
 
+        # Create queues for streaming data
+        chunk_queue = Queue()
+        error_queue = Queue()
+
         def run_sync_stream():
-            completion = self.volc_client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                stream=True
-            )
-            chunks = []
-            with completion:
-                for chunk in completion:
-                    if chunk.choices and chunk.choices[0].delta.content:
-                        content = chunk.choices[0].delta.content
-                        chunks.append(content)
-            return chunks
+            try:
+                completion = self.volc_client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    stream=True
+                )
+                with completion:
+                    for chunk in completion:
+                        if chunk.choices and chunk.choices[0].delta.content:
+                            content = chunk.choices[0].delta.content
+                            if content:
+                                chunk_queue.put(content)
+                # Signal end of stream
+                chunk_queue.put(None)  # Sentinel
+            except Exception as e:
+                logger.error(f"Error in sync stream: {e}", exc_info=True)
+                error_queue.put(str(e))
 
-        # Run in thread pool
+        # Run streaming in background thread
+        thread = threading.Thread(target=run_sync_stream, daemon=True)
+        thread.start()
+
+        # Stream chunks as they arrive
         loop = asyncio.get_event_loop()
-        chunks = await loop.run_in_executor(None, run_sync_stream)
+        try:
+            while True:
+                try:
+                    content = await loop.run_in_executor(None, chunk_queue.get, True, 0.1)
+                except:
+                    # Timeout, check if thread is still alive
+                    if not thread.is_alive():
+                        if not error_queue.empty():
+                            error_msg = error_queue.get()
+                            raise Exception(f"Stream error: {error_msg}")
+                        try:
+                            content = chunk_queue.get_nowait()
+                        except:
+                            break
+                    continue
 
-        for chunk in chunks:
-            yield chunk
+                if content is None:  # Sentinel
+                    break
+                yield content
+        finally:
+            if thread.is_alive():
+                thread.join(timeout=1.0)
 
     async def _chat_completion_stream_with_thinking(
         self,

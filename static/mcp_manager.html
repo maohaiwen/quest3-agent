@@ -4,556 +4,90 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MCP 服务器管理 - Quest3 Agent</title>
+    <link rel="stylesheet" href="/static/styles/main.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 16px;
-            box: 0 20px 60px rgba(0, 0, 0, 0.3);
-            overflow: hidden;
-        }
-
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 24px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .header h1 {
-            font-size: 24px;
-        }
-
-        .header button {
-            background: rgba(255, 255, 255, 0.2);
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: background 0.3s;
-        }
-
-        .header button:hover {
-            background: rgba(255, 255, 255, 0.3);
-        }
-
-        .content {
-            padding: 24px;
-        }
-
-        .section-title {
-            font-size: 20px;
-            font-weight: 600;
-            color: #333;
-            margin: 24px 0 16px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .add-server-card {
-            background: #f8f9fa;
-            border: 2px dashed #d1d5db;
-            border-radius: 12px;
-            padding: 24px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .add-server-card:hover {
-            border-color: #667eea;
-            background: #f0f4ff;
-        }
-
-        .add-server-card .icon {
-            font-size: 48px;
-            margin-bottom: 12px;
-        }
-
-        .add-server-card h2 {
-            color: #333;
-            margin-bottom: 8px;
-        }
-
-        .add-server-card p {
-            color: #666;
-            font-size: 14px;
-        }
-
-        .servers-list {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-
-        .server-card {
-            background: white;
-            border: 1px solid #e0e0e0;
-            border-radius: 12px;
-            padding: 20px;
-            display: flex;
-            gap: 16px;
-            align-items: center;
-            transition: all 0.3s;
-        }
-
-        .server-card:hover {
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            transform: translateY(-2px);
-        }
-
-        .server-status {
-            width: 48px;
-            height: 48px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-        }
-
-        .server-status.connected {
-            background: #e8f5e9;
-            color: #4caf50;
-        }
-
-        .server-status.disconnected {
-            background: #f44336;
-            color: white;
-        }
-
-        .server-status.connecting {
-            background: #ff9800;
-            color: white;
-            animation: pulse 1s infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        .server-info {
-            flex: 1;
-        }
-
-        .server-info h3 {
-            color: #333;
-            margin-bottom: 4px;
-            font-size: 18px;
-        }
-
-        .server-info .url {
-            color: #666;
-            font-size: 13px;
-            margin-bottom: 8px;
-        }
-
-        .server-info .stats {
-            display: flex;
-            gap: 16px;
-            font-size: 13px;
-            color: #666;
-        }
-
-        .server-actions {
-            display: flex;
-            gap: 8px;
-        }
-
-        .btn {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 13px;
-            transition: all 0.3s;
-        }
-
-        .btn-primary {
-            background: #667eea;
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: #5568d3;
-        }
-
-        .btn-secondary {
-            background: #f0f2f5;
-            color: #333;
-            border: 1px solid #d1d5db;
-        }
-
-        .btn-secondary:hover {
-            background: #e9ecef;
-        }
-
-        .btn-danger {
-            background: #f44336;
-            color: white;
-        }
-
-        .btn-danger:hover {
-            background: #d32f2f;
-        }
-
-        /* Tools Section */
-        .tools-container {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 16px;
-        }
-
-        .tool-card {
-            background: white;
-            border: 1px solid #e0e0e0;
-            border-radius: 12px;
-            padding: 16px;
-            transition: all 0.3s;
-        }
-
-        .tool-card:hover {
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            transform: translateY(-2px);
-        }
-
-        .tool-card .tool-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 12px;
-        }
-
-        .tool-card .tool-name {
-            font-weight: 600;
-            color: #333;
-            font-size: 15px;
-        }
-
-        .tool-card .tool-source {
-            font-size: 11px;
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-weight: 500;
-        }
-
-        .tool-card .tool-source.mcp {
-            background: #e3f2fd;
-            color: #1976d2;
-        }
-
-        .tool-card .tool-source.local {
-            background: #e8f5e9;
-            color: #4caf50;
-        }
-
-        .tool-card .tool-description {
-            color: #666;
-            font-size: 13px;
-            margin-bottom: 12px;
-            line-height: 1.4;
-        }
-
-        .tool-card .tool-params {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 10px;
-            font-size: 12px;
-            color: #555;
-            margin-bottom: 12px;
-        }
-
-        .tool-card .tool-params .param-title {
-            font-weight: 600;
-            margin-bottom: 4px;
-            color: #333;
-        }
-
-        .tool-card .tool-params .param-list {
-            font-family: monospace;
-            line-height: 1.5;
-        }
-
-        .tool-card .tool-actions {
-            display: flex;
-            gap: 8px;
-        }
-
-        /* Modal */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal.active {
-            display: flex;
-        }
-
-        .modal-content {
-            background: white;
-            border-radius: 12px;
-            padding: 32px;
-            max-width: 600px;
-            width: 90%;
-            max-height: 90vh;
-            overflow-y: auto;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-        }
-
-        .modal-content h2 {
-            color: #333;
-            margin-bottom: 24px;
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            color: #333;
-            font-weight: 600;
-        }
-
-        .form-group input,
-        .form-group textarea,
-        .form-group select {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 14px;
-            transition: border-color 0.3s;
-        }
-
-        .form-group input:focus,
-        .form-group textarea:focus,
-        .form-group select:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .form-group textarea {
-            min-height: 100px;
-            resize: vertical;
-        }
-
-        .modal-actions {
-            display: flex;
-            justify-content: flex-end;
-            gap: 12px;
-            margin-top: 24px;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: #666;
-        }
-
-        .empty-state .icon {
-            font-size: 64px;
-            margin-bottom: 16px;
-        }
-
-        .empty-state h3 {
-            margin-bottom: 8px;
-            color: #333;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #666;
-        }
-
-        /* Test Result */
-        .test-result {
-            margin-top: 20px;
-            padding: 16px;
-            border-radius: 8px;
-            background: #fRE;
-        }
-
-        .test-result.success {
-            background: #e8f5e9;
-            border: 1px solid #4caf50;
-        }
-
-        .test-result.error {
-            background: #ffebee;
-            border: 1px solid #f44336;
-        }
-
-        .test-result .result-title {
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: #333;
-        }
-
-        .test-result pre, .test-result code {
-            font-family: monospace;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            font-size: 13px;
-        }
-
-        .tabs {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 20px;
-            border-bottom: 1px solid #e0e0e0;
-            padding-bottom: 12px;
-        }
-
-        .tab {
-            padding: 8px 16px;
-            border: none;
-            background: none;
-            cursor: pointer;
-            font-size: 14px;
-            color: #666;
-            border-radius: 8px;
-            transition: all 0.3s;
-        }
-
-        .tab.active {
-            background: #667eea;
-            color: white;
-        }
-
-        .tab:hover:not(.active) {
-            background: #f0f2f5;
-        }
-
-        .filter-controls {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 16px;
-            align-items: center;
-        }
-
-        .filter-controls input {
-            flex: 1;
-        }
+        body { padding: 20px; min-height: 100vh; }
+        @media (max-width: 768px) { body { padding: 0; } .page-container { border-radius: 0; } }
     </style>
 </head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>MCP 服务器管理</h1>
-            <button onclick="window.location.href='/static/agent_manager.html'">← 返回聊天</button>
-                <a href="/static/settings.html" style="color:white;text-decoration:none;">
-                    <button style="background:rgba(255,255,255,0.2);color:white;border:none;padding:10px 20px;border-radius:20px;cursor:pointer;font-size:14px;margin-left:10px;">⚙️ 设置</button>
-                </a>
-        </div>
+<body class="gradient-bg">
+    <div class="page-container">
+        <div id="pageNav"></div>
 
-        <div class="content">
+        <div class="page-body">
             <!-- Tabs -->
-            <div class="tabs">
-                <button class="tab active" onclick="switchTab('servers')">服务器</button>
-                <button class="tab" onclick="switchTab('tools')">工具</button>
+            <div class="tabs" data-tabs="mcpTabs">
+                <button class="tab active" data-tab="servers">服务器</button>
+                <button class="tab" data-tab="tools">工具</button>
             </div>
 
             <!-- Servers Tab -->
-            <div id="serversTab">
-                <div class="add-server-card" onclick="openAddModal()">
+            <div data-tab-panel="servers" class="tab-panel active" id="serversTab">
+                <div class="add-card" onclick="openAddModal()">
                     <div class="icon">+</div>
                     <h2>添加 MCP 服务器</h2>
                     <p>连接到新的 MCP 工具服务器</p>
                 </div>
 
                 <div class="section-title">MCP 服务器列表</div>
-                <div class="servers-list" id="serversList">
+                <div style="display: flex; flex-direction: column; gap: 16px;" id="serversList">
                     <div class="loading">加载中...</div>
                 </div>
             </div>
 
             <!-- Tools Tab -->
-            <div id="toolsTab" style="display: none;">
+            <div data-tab-panel="tools" class="tab-panel" id="toolsTab" style="display: none;">
                 <div class="filter-controls">
-                    <input type="text" id="toolSearch" placeholder="搜索工具..." oninput="filterTools()">
-                    <select id="toolFilter" onchange="filterTools()">
+                    <input type="text" id="toolSearch" class="form-control" placeholder="搜索工具..." oninput="filterTools()">
+                    <select id="toolFilter" class="form-control" onchange="filterTools()">
                         <option value="all">全部</option>
                         <option value="mcp">MCP 服务器工具</option>
                         <option value="local">本地工具</option>
                     </select>
                 </div>
-
-                <div class="tools-container" id="toolsList">
+                <div class="tools-grid" id="toolsList">
                     <div class="loading">加载中...</div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- 添加服务器模态框 -->
+    <!-- Add Server Modal -->
     <div class="modal" id="addModal">
         <div class="modal-content">
-            <h2>添加 MCP 服务器</h2>
-
-            <div class="form-group">
-                <label for="serverName">服务器名称 *</label>
-                <input type="text" id="serverName" placeholder="例如：阿里云 Code Interpreter">
+            <div class="modal-header">
+                <h2>添加 MCP 服务器</h2>
+                <button class="modal-close" onclick="SharedModal.close('addModal')">&times;</button>
             </div>
-
-            <div class="form-group">
-                <label for="serverUrl">服务器 URL *</label>
-                <input type="url" id="serverUrl" placeholder="https://dashscope.aliyuncs.com/api/v1/mcps/code_interpreter_mcp/mcp">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="serverName">服务器名称 *</label>
+                    <input type="text" id="serverName" class="form-control" placeholder="例如：阿里云 Code Interpreter">
+                </div>
+                <div class="form-group">
+                    <label for="serverUrl">服务器 URL *</label>
+                    <input type="url" id="serverUrl" class="form-control" placeholder="https://dashscope.aliyuncs.com/api/v1/mcps/code_interpreter_mcp/mcp">
+                </div>
+                <div class="form-group">
+                    <label for="serverType">服务器类型</label>
+                    <select id="serverType" class="form-control">
+                        <option value="standard">标准 MCP 服务器</option>
+                        <option value="streamable">流式 HTTP 端点 (如阿里云)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="serverDescription">描述</label>
+                    <textarea id="serverDescription" class="form-control" placeholder="描述此服务器提供的工具..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="authHeader">鉴权头 (可选)</label>
+                    <input type="text" id="authHeader" class="form-control" placeholder="Authorization: Bearer YOUR_API_KEY">
+                </div>
+                <div class="form-group">
+                    <label for="customHeaders">自定义 Headers (可选，每行一个，格式: key:value)</label>
+                    <textarea id="customHeaders" class="form-control" placeholder="Content-Type: application/json"></textarea>
+                </div>
             </div>
-
-            <div class="form-group">
-                <label for="serverType">服务器类型</label>
-                <select id="serverType">
-                    <option value="standard">标准 MCP 服务器</option>
-            <option value="streamable">流式 HTTP 端点 (如阿里云)</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label for="serverDescription">描述</label>
-                <textarea id="serverDescription" placeholder="描述此服务器提供的工具..."></textarea>
-            </div>
-
-            <div class="form-group">
-                <label for="authHeader">鉴权头 (可选)</label>
-                <input type="text" id="authHeader" placeholder="Authorization: Bearer YOUR_API_KEY">
-            </div>
-
-            <div class="form-group">
-                <label for="customHeaders">自定义 Headers (可选，每行一个，格式: key:value)</label>
-                <textarea id="customHeaders" placeholder="Content-Type: application/json"></textarea>
-            </div>
-
             <div class="modal-actions">
                 <button class="btn btn-secondary" onclick="closeAddModal()">取消</button>
                 <button class="btn btn-primary" onclick="addServer()">添加</button>
@@ -561,132 +95,108 @@
         </div>
     </div>
 
-    <!-- 工具测试模态框 -->
+    <!-- Tool Test Modal -->
     <div class="modal" id="testModal">
         <div class="modal-content">
-            <h2>测试工具: <span id="testToolName"></span></h2>
-
-            <div class="form-group">
-                <label for="testArguments">参数 (JSON格式)</label>
-                <textarea id="testArguments" placeholder='{"param1": "value1"}'></textarea>
+            <div class="modal-header">
+                <h2>测试工具: <span id="testToolName"></span></h2>
+                <button class="modal-close" onclick="SharedModal.close('testModal')">&times;</button>
             </div>
-
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="testArguments">参数 (JSON格式)</label>
+                    <textarea id="testArguments" class="form-control" placeholder='{"param1": "value1"}'></textarea>
+                </div>
+                <div id="testResult" class="test-result"></div>
+            </div>
             <div class="modal-actions">
                 <button class="btn btn-secondary" onclick="closeTestModal()">取消</button>
                 <button class="btn btn-primary" onclick="testTool()">测试</button>
             </div>
-
-            <div id="testResult" class="test-result" style="display: none;"></div>
         </div>
     </div>
 
+    <script src="/static/core/Auth.js"></script>
+    <script src="/static/shared/utils.js"></script>
+    <script src="/static/shared/toast.js"></script>
+    <script src="/static/shared/modal.js"></script>
+    <script src="/static/shared/nav.js"></script>
     <script>
+        if (!Auth.requireAuth()) { throw new Error('Not authenticated'); }
+        SharedNav.render(document.getElementById('pageNav'), { active: 'mcp' });
+
         const SERVERS_API = '/api/mcp/servers';
         const TOOLS_API = '/tools';
         let servers = [];
         let allTools = [];
         let currentTestTool = null;
 
-        // Load data on page load
         loadServers();
         loadAllTools();
 
         async function loadServers() {
             try {
-                const response = await fetch(`${SERVERS_API}`);
+                const response = await fetch(SERVERS_API);
                 const data = await response.json();
                 servers = data.servers || [];
                 renderServers();
             } catch (error) {
                 console.error('Error loading servers:', error);
-                document.getElementById('serversList').innerHTML =
-                    '<div class="empty-state">加载失败，请刷新页面</div>';
+                document.getElementById('serversList').innerHTML = '<div class="empty-state">加载失败，请刷新页面</div>';
             }
         }
 
         async function loadAllTools() {
             try {
-                // Load MCP tools from servers
                 const serverTools = [];
                 for (const server of servers) {
                     if (server.status === 'connected') {
                         const response = await fetch(`${SERVERS_API}/${server.id}/tools`);
                         const data = await response.json();
                         if (data.tools) {
-                            data.tools.forEach(tool => {
-                                serverTools.push({
-                                    ...tool,
-                                    source: 'mcp',
-                                    server_name: server.name,
-                                    server_id: server.id
-                                });
-                            });
+                            data.tools.forEach(tool => serverTools.push({ ...tool, source: 'mcp', server_name: server.name, server_id: server.id }));
                         }
                     }
                 }
-
-                // Load local tools
                 const localResponse = await fetch(TOOLS_API);
                 const localData = await localResponse.json();
-                const localTools = (localData.tools || []).map(tool => ({
-                    ...tool,
-                    source: 'local'
-                }));
-
+                const localTools = (localData.tools || []).map(tool => ({ ...tool, source: 'local' }));
                 allTools = [...serverTools, ...localTools];
                 renderTools();
             } catch (error) {
                 console.error('Error loading tools:', error);
-                document.getElementById('toolsList').innerHTML =
-                    '<div class="empty-state">加载失败，请刷新页面</div>';
+                document.getElementById('toolsList').innerHTML = '<div class="empty-state">加载失败，请刷新页面</div>';
             }
         }
 
         function renderServers() {
             const listEl = document.getElementById('serversList');
-
             if (servers.length === 0) {
-                listEl.innerHTML = `
-                    <div class="empty-state">
-                        <div class="icon">📡</div>
-                        <h3>暂无 MCP 服务器</h3>
-                        <p>点击上方卡片添加服务器</p>
-                    </div>
-                `;
+                listEl.innerHTML = `<div class="empty-state"><div class="icon">📡</div><h3>暂无 MCP 服务器</h3><p>点击上方卡片添加服务器</p></div>`;
                 return;
             }
-
             listEl.innerHTML = '';
-
             servers.forEach(server => {
                 const card = document.createElement('div');
                 card.className = 'server-card';
-
-                const statusIcon = server.status === 'connected' ? '✓' :
-                                   server.status === 'connecting' ? '⟳' : '✗';
-                const statusClass = server.status === 'connected' ? 'connected' :
-                                    server.status === 'connecting' ? 'connecting' : 'disconnected';
-
+                const statusIcon = server.status === 'connected' ? '✓' : server.status === 'connecting' ? '⟳' : '✗';
+                const statusClass = server.status === 'connected' ? 'connected' : server.status === 'connecting' ? 'connecting' : 'disconnected';
                 card.innerHTML = `
                     <div class="server-status ${statusClass}">${statusIcon}</div>
                     <div class="server-info">
-                        <h3>${server.name}</h3>
-                        <div class="url">${server.url}</div>
+                        <h3>${Utils.escapeHtml(server.name)}</h3>
+                        <div class="url">${Utils.escapeHtml(server.url)}</div>
                         <div class="stats">
                             <span>工具数: ${server.tool_count || 0}</span>
-                            ${server.last_connected ? `<span>最后连接: ${formatDate(server.last_connected)}</span>` : ''}
+                            ${server.last_connected ? `<span>最后连接: ${Utils.formatRelativeTime(server.last_connected)}</span>` : ''}
                         </div>
                     </div>
                     <div class="server-actions">
-                        ${server.status !== 'connected' ?
-                            `<button class="btn btn-primary" onclick="connectServer('${server.id}')">连接</button>` :
-                            `<button class="btn btn-secondary" onclick="disconnectServer('${server.id}')">断开</button>`
-                        }
-                        <button class="btn btn-secondary" onclick="testServer('${server.id}')">测试</button>
-                        <button class="btn btn-danger" onclick="deleteServer('${server.id}')">删除</button>
+                        ${server.status !== 'connected' ? `<button class="btn btn-primary btn-sm" onclick="connectServer('${server.id}')">连接</button>` : `<button class="btn btn-secondary btn-sm" onclick="disconnectServer('${server.id}')">断开</button>`}
+                        <button class="btn btn-secondary btn-sm" onclick="testServer('${server.id}')">测试</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteServer('${server.id}')">删除</button>
                     </div>
                 `;
-
                 listEl.appendChild(card);
             });
         }
@@ -695,128 +205,53 @@
             const listEl = document.getElementById('toolsList');
             const search = document.getElementById('toolSearch').value.toLowerCase();
             const filter = document.getElementById('toolFilter').value;
-
             let filteredTools = allTools;
-
-            // Apply search filter
-            if (search) {
-                filteredTools = filteredTools.filter(tool =>
-                    tool.name.toLowerCase().includes(search) ||
-                    (tool.description && tool.description.toLowerCase().includes(search))
-                );
-            }
-
-            // Apply source filter
-            if (filter !== 'all') {
-                filteredTools = filteredTools.filter(tool => tool.source === filter);
-            }
-
+            if (search) filteredTools = filteredTools.filter(tool => tool.name.toLowerCase().includes(search) || (tool.description && tool.description.toLowerCase().includes(search)));
+            if (filter !== 'all') filteredTools = filteredTools.filter(tool => tool.source === filter);
             if (filteredTools.length === 0) {
-                if (allTools.length === 0) {
-                    listEl.innerHTML = `
-                        <div class="empty-state">
-                            <div class="icon">🔧</div>
-                            <h3>暂无可用工具</h3>
-                            <p>添加并连接 MCP 服务器后可查看工具</p>
-                        </div>
-                    `;
-                } else {
-                    listEl.innerHTML = `
-                        <div class="empty-state">
-                            <div class="icon">🔍</div>
-                            <h3>未找到匹配的工具</h3>
-                            <p>尝试调整搜索条件</p>
-                        </div>
-                    `;
-                }
+                listEl.innerHTML = allTools.length === 0
+                    ? `<div class="empty-state"><div class="icon">🔧</div><h3>暂无可用工具</h3><p>添加并连接 MCP 服务器后可查看工具</p></div>`
+                    : `<div class="empty-state"><div class="icon">🔍</div><h3>未找到匹配的工具</h3><p>尝试调整搜索条件</p></div>`;
                 return;
             }
-
             listEl.innerHTML = '';
-
             filteredTools.forEach(tool => {
                 const card = document.createElement('div');
                 card.className = 'tool-card';
-
-                // Format parameters
                 let paramsHtml = '<div class="param-title">参数:</div><div class="param-list">无参数</div>';
                 if (tool.input_schema && tool.input_schema.properties) {
                     const params = Object.keys(tool.input_schema.properties);
-                    paramsHtml = `
-                        <div class="param-title">参数:</div>
-                        <div class="param-list">${params.join(', ')}</div>
-                    `;
+                    paramsHtml = `<div class="param-title">参数:</div><div class="param-list">${params.join(', ')}</div>`;
                 }
-
                 card.innerHTML = `
                     <div class="tool-header">
-                        <span class="tool-name">${tool.name}</span>
-                        <span class="tool-source ${tool.source}">
-                            ${tool.source === 'mcp' ? 'MCP' : '本地'}
-                            ${tool.source === 'mcp' && tool.server_name ? `(${tool.server_name})` : ''}
-                        </span>
+                        <span class="tool-name">${Utils.escapeHtml(tool.name)}</span>
+                        <span class="source-badge ${tool.source}">${tool.source === 'mcp' ? 'MCP' : '本地'}${tool.source === 'mcp' && tool.server_name ? ` (${Utils.escapeHtml(tool.server_name)})` : ''}</span>
                     </div>
                     <div class="tool-description">${tool.description || '暂无描述'}</div>
-                    <div class="tool-params">
-                        ${paramsHtml}
-                    </div>
+                    <div class="tool-params">${paramsHtml}</div>
                     <div class="tool-actions">
-                        <button class="btn btn-primary" onclick="openTestModal('${tool.name}', '${tool.source}', '${tool.server_id || ''}')">
-                            测试
-                        </button>
+                        <button class="btn btn-primary btn-sm" onclick="openTestModal('${Utils.escapeHtml(tool.name)}', '${tool.source}', '${tool.server_id || ''}')">测试</button>
                     </div>
                 `;
-
                 listEl.appendChild(card);
             });
         }
 
-        function filterTools() {
-            renderTools();
-        }
-
-        function formatDate(dateString) {
-            const date = new Date(dateString);
-            const now = new Date();
-            const diff = now - date;
-
-            if (diff < 60000) return '刚刚';
-            if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
-            if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
-            return date.toLocaleDateString();
-        }
-
-        function switchTab(tab) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab').forEach(t => {
-                if (t.textContent.includes(tab === 'servers' ? '服务器' : '工具')) {
-                    t.classList.add('active');
-                }
-            });
-
-            document.getElementById('serversTab').style.display = tab === 'servers' ? 'block' : 'none';
-            document.getElementById('toolsTab').style.display = tab === 'tools' ? 'block' : 'none';
-
-            if (tab === 'tools') {
-                loadAllTools();
-            }
-        }
+        function filterTools() { renderTools(); }
 
         function openAddModal() {
-            document.getElementById('addModal').classList.add('active');
-            document.getElementById('serverName').focus();
-        }
-
-        function closeAddModal() {
-            document.getElementById('addModal').classList.remove('active');
-            // Clear form
             document.getElementById('serverName').value = '';
             document.getElementById('serverUrl').value = '';
             document.getElementById('serverDescription').value = '';
             document.getElementById('authHeader').value = '';
             document.getElementById('customHeaders').value = '';
             document.getElementById('serverType').value = 'standard';
+            SharedModal.open('addModal');
+            document.getElementById('serverName').focus();
         }
+
+        function closeAddModal() { SharedModal.close('addModal'); }
 
         async function addServer() {
             const name = document.getElementById('serverName').value.trim();
@@ -825,114 +260,51 @@
             const serverType = document.getElementById('serverType').value;
             const authHeader = document.getElementById('authHeader').value.trim();
             const headers = document.getElementById('customHeaders').value.trim();
-
-            if (!name || !url) {
-                alert('请填写服务器名称和 URL');
-                return;
-            }
-
+            if (!name || !url) { showToast('请填写服务器名称和 URL', 'error'); return; }
             try {
-                const response = await fetch(`${SERVERS_API}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, url, description, server_type: serverType, auth_header: authHeader, headers })
-                });
-
+                const response = await fetch(SERVERS_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, url, description, server_type: serverType, auth_header: authHeader, headers }) });
                 const data = await response.json();
-
-                if (data.success) {
-                    closeAddModal();
-                    await loadServers();
-                    alert('服务器添加成功！');
-                } else {
-                    alert('添加失败: ' + (data.message || '未知错误'));
-                }
-            } catch (error) {
-                console.error('Error adding server:', error);
-                alert('添加失败，请检查网络连接');
-            }
+                if (data.success) { closeAddModal(); await loadServers(); showToast('服务器添加成功！'); }
+                else showToast('添加失败: ' + (data.message || '未知错误'), 'error');
+            } catch (error) { console.error(error); showToast('添加失败，请检查网络连接', 'error'); }
         }
 
         async function connectServer(serverId) {
             try {
-                const response = await fetch(`${SERVERS_API}/${serverId}/connect`, {
-                    method: 'POST'
-                });
-
+                const response = await fetch(`${SERVERS_API}/${serverId}/connect`, { method: 'POST' });
                 const data = await response.json();
-
-                if (data.success) {
-                    await loadServers();
-                    alert('连接成功！');
-                } else {
-                    alert('连接失败: ' + (data.message || '未知错误'));
-                }
-            } catch (error) {
-                console.error('Error connecting server:', error);
-                alert('连接失败，请检查网络连接');
-            }
+                if (data.success) { await loadServers(); showToast('连接成功！'); }
+                else showToast('连接失败: ' + (data.message || '未知错误'), 'error');
+            } catch (error) { console.error(error); showToast('连接失败', 'error'); }
         }
 
         async function disconnectServer(serverId) {
-            if (!confirm('确定要断开此服务器的连接吗？')) {
-                return;
-            }
-
+            if (!confirm('确定要断开此服务器的连接吗？')) return;
             try {
-                const response = await fetch(`${SERVERS_API}/${serverId}/disconnect`, {
-                    method: 'POST'
-                });
-
+                const response = await fetch(`${SERVERS_API}/${serverId}/disconnect`, { method: 'POST' });
                 const data = await response.json();
-
-                if (data.success) {
-                    await loadServers();
-                }
-            } catch (error) {
-                console.error('Error disconnecting server:', error);
-                alert('操作失败');
-            }
+                if (data.success) await loadServers();
+            } catch (error) { console.error(error); showToast('操作失败', 'error'); }
         }
 
         async function testServer(serverId) {
             try {
                 const response = await fetch(`${SERVERS_API}/${serverId}/test`);
                 const data = await response.json();
-
-                if (data.connected) {
-                    alert(`连接成功！延迟: ${data.latency_ms}ms, 工具数: ${data.tool_count}`);
-                } else {
-                    alert('连接失败: ' + (data.error || '未知错误'));
-                }
-            } catch (error) {
-                console.error('Error testing server:', error);
-                alert('测试失败，请检查网络连接');
-            }
+                if (data.connected) showToast(`连接成功！延迟: ${data.latency_ms}ms, 工具数: ${data.tool_count}`);
+                else showToast('连接失败: ' + (data.error || '未知错误'), 'error');
+            } catch (error) { console.error(error); showToast('测试失败', 'error'); }
         }
 
         async function deleteServer(serverId) {
             const server = servers.find(s => s.id === serverId);
             if (!server) return;
-
-            if (!confirm(`确定要删除服务器 "${server.name}" 吗？此操作不可恢复。`)) {
-                return;
-            }
-
+            if (!confirm(`确定要删除服务器 "${server.name}" 吗？此操作不可恢复。`)) return;
             try {
-                const response = await fetch(`${SERVERS_API}/${serverId}`, {
-                    method: 'DELETE'
-                });
-
+                const response = await fetch(`${SERVERS_API}/${serverId}`, { method: 'DELETE' });
                 const data = await response.json();
-
-                if (data.success) {
-                    await loadServers();
-                    alert('服务器已删除');
-                }
-            } catch (error) {
-                console.error('Error deleting server:', error);
-                alert('删除失败');
-            }
+                if (data.success) { await loadServers(); showToast('服务器已删除'); }
+            } catch (error) { console.error(error); showToast('删除失败', 'error'); }
         }
 
         function openTestModal(toolName, source, serverId) {
@@ -940,62 +312,30 @@
             document.getElementById('testToolName').textContent = toolName;
             document.getElementById('testArguments').value = '';
             document.getElementById('testResult').style.display = 'none';
-            document.getElementById('testModal').classList.add('active');
+            SharedModal.open('testModal');
         }
 
-        function closeTestModal() {
-            document.getElementById('testModal').classList.remove('active');
-            currentTestTool = null;
-        }
+        function closeTestModal() { SharedModal.close('testModal'); currentTestTool = null; }
 
         async function testTool() {
             if (!currentTestTool) return;
-
             const argumentsText = document.getElementById('testArguments').value.trim();
             const resultDiv = document.getElementById('testResult');
-
             try {
-                let arguments = {};
-                if (argumentsText) {
-                    arguments = JSON.parse(argumentsText);
-                }
-
-                let url, body;
-                if (currentTestTool.source === 'local') {
-                    url = '/api/mcp/call';
-                    body = { tool_name: currentTestTool.name, arguments };
-                } else {
-                    // Call MCP server tool
-                    url = `${SERVERS_API}/${currentTestTool.serverId}/tools/call`;
-                    body = { tool_name: currentTestTool.name, arguments };
-                }
-
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-
+                let arguments = argumentsText ? JSON.parse(argumentsText) : {};
+                const url = currentTestTool.source === 'local' ? '/api/mcp/call' : `${SERVERS_API}/${currentTestTool.serverId}/tools/call`;
+                const body = { tool_name: currentTestTool.name, arguments };
+                const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 const data = await response.json();
-
                 resultDiv.style.display = 'block';
                 resultDiv.className = 'test-result success';
-                resultDiv.innerHTML = `
-                    <div class="result-title">测试成功!</div>
-                    <pre>${JSON.stringify(data.result || data, null, 2)}</pre>
-                `;
+                resultDiv.innerHTML = `<div class="result-title">测试成功!</div><pre>${JSON.stringify(data.result || data, null, 2)}</pre>`;
             } catch (error) {
-                console.error('Error testing tool:', error);
+                console.error(error);
                 resultDiv.style.display = 'block';
                 resultDiv.className = 'test-result error';
-                resultDiv.innerHTML = `
-                    <div class="result-title">测试失败</div>
-                    <pre>${error.message}</pre>
-                `;
+                resultDiv.innerHTML = `<div class="result-title">测试失败</div><pre>${error.message}</pre>`;
             }
         }
     </script>

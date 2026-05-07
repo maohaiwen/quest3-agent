@@ -8,6 +8,7 @@ import logging
 import re
 import uuid
 from datetime import datetime
+from app.utils.timezone import beijing_now
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -60,7 +61,7 @@ class SkillTrigger(BaseModel):
     config: Dict[str, Any] = Field(default_factory=dict, description="触发配置")
     priority: int = Field(default=0, description="优先级（数字越大越优先）")
     enabled: bool = Field(default=True, description="是否启用")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=beijing_now)
 
 
 # ============================================

@@ -3,6 +3,7 @@ import hashlib
 import logging
 import uuid
 from datetime import datetime
+from app.utils.timezone import beijing_now
 from typing import Optional, Dict, Any, List
 
 from app.database.connection import DatabaseConnection
@@ -46,7 +47,7 @@ class UserService:
         if row and row["cnt"] > 0:
             return
 
-        now = datetime.utcnow().isoformat()
+        now = beijing_now().isoformat()
         user_id = str(uuid.uuid4())
         password_hash = _hash_password("admin123")
 
@@ -113,7 +114,7 @@ class UserService:
         if len(password) < 4:
             return {"success": False, "error": "Password must be at least 4 characters"}
 
-        now = datetime.utcnow().isoformat()
+        now = beijing_now().isoformat()
         user_id = str(uuid.uuid4())
         password_hash = _hash_password(password)
 
@@ -181,7 +182,7 @@ class UserService:
         if not updates:
             return {"success": False, "error": "No fields to update"}
 
-        now = datetime.utcnow().isoformat()
+        now = beijing_now().isoformat()
         updates.append("updated_at = ?")
         params.append(now)
         params.append(user_id)

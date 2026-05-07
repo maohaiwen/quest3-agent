@@ -2,6 +2,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+from app.utils.timezone import beijing_now
 from enum import Enum
 
 
@@ -148,8 +149,8 @@ class CollaborationResponse(BaseModel):
     config_json: Dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
     agents: List[CollaborationAgentConfig] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=beijing_now)
+    updated_at: datetime = Field(default_factory=beijing_now)
     usage_count: int = 0
 
 

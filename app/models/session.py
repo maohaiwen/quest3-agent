@@ -1,6 +1,7 @@
 """Session models"""
 from pydantic import BaseModel, Field
 from datetime import datetime
+from app.utils.timezone import beijing_now
 from typing import Optional
 from enum import Enum
 
@@ -32,12 +33,12 @@ class SessionResponse(BaseModel):
     title: Optional[str] = Field(default=None, description="Session title")
     agent_id: Optional[str] = Field(default=None, description="Agent ID")
     status: SessionStatus = Field(default=SessionStatus.ACTIVE, description="Session status")
-    created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
-    updated_at: datetime = Field(default_factory=datetime.utcnow, description="Update timestamp")
+    created_at: datetime = Field(default_factory=beijing_now, description="Creation timestamp")
+    updated_at: datetime = Field(default_factory=beijing_now, description="Update timestamp")
     message_count: int = Field(default=0, description="Message count")
 
 
 class SessionCreateResponse(BaseModel):
     """Session creation response model"""
     session_id: str = Field(..., description="Session ID")
-    created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
+    created_at: datetime = Field(default_factory=beijing_now, description="Creation timestamp")

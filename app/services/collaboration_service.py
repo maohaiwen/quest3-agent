@@ -3,6 +3,7 @@ import uuid
 import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+from app.utils.timezone import beijing_now
 
 from app.models.collaboration import (
     CollaborationCreate, CollaborationUpdate, CollaborationResponse,
@@ -25,7 +26,7 @@ class CollaborationService:
 
         try:
             collab_id = str(uuid.uuid4())
-            now = datetime.utcnow().isoformat()
+            now = beijing_now().isoformat()
 
             # Insert collaboration
             await db.execute("""
@@ -97,8 +98,8 @@ class CollaborationService:
                 config_json=self._deserialize_config(row.get("config_json")),
                 enabled=bool(row.get("enabled", 1)),
                 agents=agents,
-                created_at=datetime.fromisoformat(row["created_at"]) if row.get("created_at") else datetime.utcnow(),
-                updated_at=datetime.fromisoformat(row["updated_at"]) if row.get("updated_at") else datetime.utcnow(),
+                created_at=datetime.fromisoformat(row["created_at"]) if row.get("created_at") else beijing_now(),
+                updated_at=datetime.fromisoformat(row["updated_at"]) if row.get("updated_at") else beijing_now(),
                 usage_count=row.get("usage_count", 0)
             )
 
@@ -163,7 +164,7 @@ class CollaborationService:
 
             if updates:
                 updates.append("updated_at = ?")
-                params.append(datetime.utcnow().isoformat())
+                params.append(beijing_now().isoformat())
                 params.append(collab_id)
 
                 query = f"UPDATE collaborations SET {', '.join(updates)} WHERE id = ?"

@@ -11,6 +11,7 @@ import math
 import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+from app.utils.timezone import beijing_now
 
 from app.config import settings
 from app.database.connection import DatabaseConnection
@@ -227,7 +228,7 @@ class AgentMemoryService:
         cached = self._profile_cache.get(agent_id)
         if cached:
             profile, ts = cached
-            if (datetime.utcnow() - ts).total_seconds() < self.PROFILE_CACHE_TTL:
+            if (beijing_now() - ts).total_seconds() < self.PROFILE_CACHE_TTL:
                 return profile
 
         repo = self._get_repo()
@@ -255,7 +256,7 @@ class AgentMemoryService:
             await repo.db.disconnect()
             # Update cache on success
             if profile:
-                self._profile_cache[agent_id] = (profile, datetime.utcnow())
+                self._profile_cache[agent_id] = (profile, beijing_now())
             await repo.db.disconnect()
 
     async def store_manual(
@@ -415,10 +416,10 @@ class AgentMemoryService:
         days = 0
         if last_accessed:
             if isinstance(last_accessed, datetime):
-                days = (datetime.utcnow() - last_accessed).days
+                days = (beijing_now() - last_accessed).days
             else:
                 try:
-                    days = (datetime.utcnow() - datetime.fromisoformat(str(last_accessed))).days
+                    days = (beijing_now() - datetime.fromisoformat(str(last_accessed))).days
                 except Exception:
                     days = 0
         days = max(days, 0)
@@ -513,7 +514,7 @@ class AgentMemoryService:
 
             # 3. 批量更新访问计数
             if accessed_ids:
-                now = datetime.utcnow().isoformat()
+                now = beijing_now().isoformat()
                 placeholders = ",".join("?" * len(accessed_ids))
                 try:
                     await repo.db.execute(

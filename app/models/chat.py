@@ -1,6 +1,7 @@
 """Chat message models"""
 from pydantic import BaseModel, Field
 from datetime import datetime
+from app.utils.timezone import beijing_now
 from typing import Optional
 from enum import Enum
 
@@ -25,7 +26,7 @@ class MessageResponse(BaseModel):
     session_id: str = Field(..., description="Session ID")
     content: str = Field(..., description="Message content")
     role: MessageRole = Field(..., description="Message role")
-    created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
+    created_at: datetime = Field(default_factory=beijing_now, description="Creation timestamp")
 
 
 class ChatRequest(BaseModel):
@@ -38,7 +39,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     """Chat response model"""
     response: str = Field(..., description="AI response")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Response timestamp")
+    timestamp: datetime = Field(default_factory=beijing_now, description="Response timestamp")
     message_id: str = Field(..., description="Message ID")
     session_id: str = Field(..., description="Session ID")
 

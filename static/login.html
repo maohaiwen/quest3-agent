@@ -4,139 +4,43 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>登录 - Quest3 Agent</title>
+    <link rel="stylesheet" href="/static/styles/main.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-
-        .login-card {
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            padding: 48px 40px;
-            width: 400px;
-            max-width: 90vw;
-        }
-
-        .login-card h1 {
-            text-align: center;
-            font-size: 28px;
-            color: #333;
-            margin-bottom: 8px;
-        }
-
-        .login-card .subtitle {
-            text-align: center;
-            color: #666;
-            font-size: 14px;
-            margin-bottom: 32px;
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            color: #333;
-            font-weight: 600;
-            font-size: 14px;
-        }
-
-        .form-group input {
-            width: 100%;
-            padding: 12px 16px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 14px;
-            transition: border-color 0.3s;
-        }
-
-        .form-group input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .login-btn {
-            width: 100%;
-            padding: 14px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: opacity 0.3s;
-        }
-
-        .login-btn:hover {
-            opacity: 0.9;
-        }
-
-        .login-btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-
-        .error-msg {
-            color: #dc3545;
-            font-size: 13px;
-            text-align: center;
-            margin-top: 12px;
-            display: none;
-        }
-
-        .hint {
-            text-align: center;
-            color: #999;
-            font-size: 12px;
-            margin-top: 24px;
-        }
+        body { display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+        .login-logo { width: 56px; height: 56px; border-radius: var(--radius-md); background: var(--gradient); display: flex; align-items: center; justify-content: center; margin: 0 auto var(--space-5); color: white; }
+        .login-logo svg { width: 28px; height: 28px; }
     </style>
 </head>
-<body>
+<body class="gradient-bg">
     <div class="login-card">
+        <div class="login-logo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M16 14h.01"/><path d="M8 14h.01"/><path d="M12 18v4"/><path d="M8 22h8"/><path d="M5 12a7 7 0 0 0 14 0"/></svg>
+        </div>
         <h1>Quest3 Agent</h1>
         <p class="subtitle">请登录以继续</p>
 
         <div class="form-group">
             <label for="username">用户名</label>
-            <input type="text" id="username" placeholder="请输入用户名" autofocus>
+            <input type="text" id="username" class="form-control" placeholder="请输入用户名" autofocus>
         </div>
 
         <div class="form-group">
             <label for="password">密码</label>
-            <input type="password" id="password" placeholder="请输入密码">
+            <input type="password" id="password" class="form-control" placeholder="请输入密码">
         </div>
 
         <button class="login-btn" id="loginBtn" onclick="handleLogin()">登录</button>
-
-        <div class="error-msg" id="errorMsg"></div>
 
         <p class="hint">首次使用？默认账号: admin / admin123</p>
     </div>
 
     <script src="/static/core/Auth.js"></script>
+    <script src="/static/shared/toast.js"></script>
     <script>
-        // If already logged in, redirect to main page
         if (Auth.isLoggedIn()) {
             window.location.href = '/static/agent_manager.html';
         }
 
-        // Enter key to login
         document.getElementById('password').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') handleLogin();
         });
@@ -148,22 +52,17 @@
             const username = document.getElementById('username').value.trim();
             const password = document.getElementById('password').value;
             const btn = document.getElementById('loginBtn');
-            const errorMsg = document.getElementById('errorMsg');
 
             if (!username || !password) {
-                errorMsg.textContent = '请输入用户名和密码';
-                errorMsg.style.display = 'block';
+                showToast('请输入用户名和密码', 'error');
                 return;
             }
 
             btn.disabled = true;
             btn.textContent = '登录中...';
-            errorMsg.style.display = 'none';
 
             try {
-                const user = await Auth.login(username, password);
-
-                // Check if settings are initialized
+                await Auth.login(username, password);
                 const res = await fetch('/api/settings/init-status');
                 const data = await res.json();
 
@@ -173,8 +72,7 @@
                     window.location.href = '/static/agent_manager.html';
                 }
             } catch (e) {
-                errorMsg.textContent = e.message || '登录失败';
-                errorMsg.style.display = 'block';
+                showToast(e.message || '登录失败', 'error');
                 btn.disabled = false;
                 btn.textContent = '登录';
             }

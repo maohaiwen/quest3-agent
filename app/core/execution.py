@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import uuid
 from datetime import datetime
+from app.utils.timezone import beijing_now
 
 from app.services.mcp_pool import mcp_client_pool
 
@@ -55,7 +56,7 @@ class ExecutionPlan:
     strategy: ExecutionStrategy
     description: str
     steps: List[ExecutionStep]
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=beijing_now)
 
     @property
     def total_steps(self) -> int:
@@ -245,7 +246,7 @@ class ToolExecutionEngine:
             # Update all steps as completed (virtual)
             for step in plan.steps:
                 step.status = "completed"
-                step.end_time = datetime.utcnow()
+                step.end_time = beijing_now()
                 self.current_execution.completed_steps += 1
                 results[step.step_id] = {
                     "type": "thinking_step",
@@ -399,7 +400,7 @@ class ToolExecutionEngine:
             Execution result
         """
         step.status = "running"
-        step.start_time = datetime.utcnow()
+        step.start_time = beijing_now()
 
         # Handle case when called directly without execute_plan (current_execution is None)
         if self.current_execution is not None:
@@ -436,7 +437,7 @@ class ToolExecutionEngine:
 
                 step.status = "completed"
                 step.result = result
-                step.end_time = datetime.utcnow()
+                step.end_time = beijing_now()
                 if self.current_execution is not None:
                     self.current_execution.completed_steps += 1
 
@@ -481,7 +482,7 @@ class ToolExecutionEngine:
                 else:
                     # Max retries reached
                     step.status = "failed"
-                    step.end_time = datetime.utcnow()
+                    step.end_time = beijing_now()
                     if self.current_execution is not None:
                         self.current_execution.failed_steps += 1
                     break
