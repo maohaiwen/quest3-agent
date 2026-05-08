@@ -71,11 +71,11 @@ class ReActCotExecutor:
         self.agent_config = agent_config or {}
 
         # 配置
-        self.model = self.agent_config.get("model", settings.VOLCENGINE_MODEL)
+        self.model = self.agent_config.get("model") or llm_service.model
         self.temperature = self.agent_config.get("temperature", 0.7) or 0.7
         self.max_tokens = self.agent_config.get("max_tokens", 8192) or 8192
         self.max_steps = self.agent_config.get("max_react_steps", 15)
-        self.thinking_effort = self.agent_config.get("thinking_effort", "medium")
+        self.thinking_effort = self.agent_config.get("thinking_effort", settings.effective_llm_reasoning_effort())
         self.system_prompt = self.agent_config.get("system_prompt", "")
 
         # 状态
@@ -244,6 +244,11 @@ class ReActCotExecutor:
                 assistant_msg = {"role": "assistant", "content": final_content}
                 if tool_calls_to_execute:
                     assistant_msg["tool_calls"] = tool_calls_to_execute
+                # DeepSeek requires reasoning_content in subsequent requests
+                # when tool_calls are present; include it for all providers
+                # (others simply ignore the extra field)
+                if thinking_content:
+                    assistant_msg["reasoning_content"] = thinking_content
                 messages.append(assistant_msg)
 
                 # 2. 判断是否有工具调用

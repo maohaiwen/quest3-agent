@@ -8,7 +8,7 @@ import logging
 from app.config import settings
 from app.database.connection import DatabaseConnection
 from app.database.repositories import SessionRepository, MessageRepository, MemoryRepository
-from app.services.llm_service import LLMService
+from app.services.llm_service import llm_service
 from app.services.session_working_memory import SessionWorkingMemory
 from app.services.vector_service import VectorService
 from app.services.agent_memory_service import agent_memory_service
@@ -34,7 +34,7 @@ db = DatabaseConnection(settings.DATABASE_URL)
 session_repo = SessionRepository(db)
 message_repo = MessageRepository(db)
 memory_repo = MemoryRepository(db)
-llm_service = LLMService()
+# llm_service is the global singleton from app.services.llm.service
 memory_service = SessionWorkingMemory()
 vector_service = VectorService()
 
@@ -123,9 +123,14 @@ async def lifespan(app: FastAPI):
         await settings.reload_from_db(db)
         logger.info("Settings loaded from database")
 
+        # Reconfigure LLM service with DB-loaded settings
+        llm_service.reconfigure()
+        logger.info("LLM service reconfigured with database settings")
+
+
         # Check LLM configuration
         if not llm_service.is_configured():
-            logger.warning("LLM service not configured. Please set VOLCENGINE_API_KEY in .env file")
+            logger.warning("LLM service not configured. Please set the appropriate API key in .env file")
 
         # Check vector service
         if not vector_service.is_available():

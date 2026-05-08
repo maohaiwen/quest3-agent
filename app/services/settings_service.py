@@ -9,15 +9,22 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Keys that exist in the DB from older versions but should no longer appear in the UI
+LEGACY_HIDDEN_KEYS = {
+    "VOLCENGINE_API_KEY", "VOLCENGINE_BASE_URL", "VOLCENGINE_MODEL",
+    "DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL", "DEEPSEEK_MODEL",
+}
+
 # Default settings definition: (key, default_value, description, group_name, value_type, editable)
 DEFAULT_SETTINGS = [
     # LLM Configuration
-    ("VOLCENGINE_API_KEY", "", "Volcengine API Key", "llm", "secret", 1),
-    ("VOLCENGINE_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3", "Volcengine API 地址", "llm", "string", 1),
-    ("VOLCENGINE_MODEL", "doubao-seed-2.0-lite-260215", "模型名称", "llm", "string", 1),
-    ("VOLCENGINE_DEFAULT_REASONING_EFFORT", "medium", "推理努力程度 (minimal/low/medium/high)", "llm", "string", 1),
-    ("LLM_TEMPERATURE", "0.7", "LLM 温度参数（Agent 未单独配置时生效）", "llm", "number", 1),
-    ("LLM_MAX_TOKENS", "8192", "LLM 最大输出 Token 数（Agent 未单独配置时生效）", "llm", "number", 1),
+    ("LLM_PROVIDER", "volcengine", "LLM 提供商", "llm", "provider", 1),
+    ("LLM_API_KEY", "", "API Key", "llm", "secret", 1),
+    ("LLM_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3", "API 地址", "llm", "string", 1),
+    ("LLM_MODEL", "doubao-seed-2.0-lite-260215", "模型名称", "llm", "string", 1),
+    ("LLM_TEMPERATURE", "0.7", "温度参数", "llm", "number", 1),
+    ("LLM_MAX_TOKENS", "8192", "最大输出 Token 数", "llm", "number", 1),
+    ("LLM_REASONING_EFFORT", "medium", "推理努力程度 (minimal/low/medium/high)", "llm", "string", 1),
 
     # Memory Configuration
     ("MEMORY_MAX_TOKENS", "1000", "记忆最大 Token 数", "memory", "number", 1),
@@ -32,8 +39,8 @@ DEFAULT_SETTINGS = [
 ]
 
 # Keys that require service reconfiguration when changed
-HOT_RELOAD_KEYS = {"VOLCENGINE_API_KEY", "VOLCENGINE_BASE_URL", "VOLCENGINE_MODEL",
-                   "LLM_TEMPERATURE", "LLM_MAX_TOKENS",
+HOT_RELOAD_KEYS = {"LLM_PROVIDER", "LLM_API_KEY", "LLM_BASE_URL", "LLM_MODEL",
+                   "LLM_TEMPERATURE", "LLM_MAX_TOKENS", "LLM_REASONING_EFFORT",
                    "WEB_SEARCH_API_KEY", "WEB_SEARCH_API_URL"}
 
 
@@ -78,6 +85,9 @@ class SettingsService:
     async def get_all_settings(self, group: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get all settings, with secret values masked.
 
+        Legacy keys (from older DB schemas) are filtered out so they
+        don't clutter the UI.
+
         Args:
             group: Optional filter by group name
 
@@ -98,6 +108,10 @@ class SettingsService:
 
         result = []
         for row in rows:
+            # Hide legacy per-provider keys from the UI
+            if row["key"] in LEGACY_HIDDEN_KEYS:
+                continue
+
             setting = dict(row)
             # Resolve effective value: DB value > .env value > default
             setting["effective_value"] = await self._resolve_value(row)
@@ -183,9 +197,9 @@ class SettingsService:
     async def is_initialized(self) -> bool:
         """Check if critical settings have been configured.
 
-        Returns False if VOLCENGINE_API_KEY is empty (first-time setup needed).
+        Returns False if the API key is empty (first-time setup needed).
         """
-        api_key = await self.get_setting("VOLCENGINE_API_KEY")
+        api_key = await self.get_setting("LLM_API_KEY")
         return bool(api_key)
 
     async def _resolve_value(self, row: dict) -> str:
@@ -233,7 +247,8 @@ class SettingsService:
                         setattr(settings, key, value)
 
         # Reconfigure LLM service if LLM-related keys changed
-        llm_keys = {"VOLCENGINE_API_KEY", "VOLCENGINE_BASE_URL", "VOLCENGINE_MODEL"}
+        llm_keys = {"LLM_PROVIDER", "LLM_API_KEY", "LLM_BASE_URL", "LLM_MODEL",
+                    "LLM_TEMPERATURE", "LLM_MAX_TOKENS", "LLM_REASONING_EFFORT"}
         if any(k in llm_keys for k in changed_keys):
             try:
                 from app.services.llm_service import llm_service

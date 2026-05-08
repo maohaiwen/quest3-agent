@@ -250,27 +250,21 @@ class SessionWorkingMemory:
         try:
             from app.services.llm_service import llm_service
 
-            if not llm_service.volc_client:
+            if not llm_service.is_configured():
                 return None
 
             prompt = SUMMARY_PROMPT.format(conversation=conversation_text)
             messages = [{"role": "user", "content": prompt}]
 
-            import asyncio
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: llm_service.volc_client.chat.completions.create(
-                    model=model or llm_service.model,
-                    messages=messages,
-                    temperature=0.3,
-                    max_tokens=500,
-                    stream=False
-                )
+            result = await llm_service.simple_completion(
+                messages=messages,
+                model=model,
+                temperature=0.3,
+                max_tokens=500,
             )
 
-            if response.choices and response.choices[0].message.content:
-                return response.choices[0].message.content.strip()
+            if result:
+                return result.strip()
 
         except Exception as e:
             logger.error(f"Error calling LLM for summary: {e}", exc_info=True)

@@ -104,7 +104,8 @@ class PlanningChatService:
 
     def __init__(self):
         """Initialize service"""
-        self.model = settings.VOLCENGINE_MODEL
+        from app.services.llm_service import llm_service
+        self.model = llm_service.model
         self.temperature = settings.LLM_TEMPERATURE
         self.max_tokens = settings.LLM_MAX_TOKENS
         self._llm_service = None
@@ -148,7 +149,7 @@ class PlanningChatService:
             Chat events
         """
         if not self.llm.is_configured():
-            yield ChatEvent.message("LLM not configured. Please set VOLCENGINE_API_KEY.")
+            yield ChatEvent.message("LLM not configured. Please set the appropriate API key.")
             yield ChatEvent.done()
             return
 

@@ -1,4 +1,5 @@
 """Application configuration management"""
+from typing import ClassVar, Dict
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
@@ -44,15 +45,23 @@ class Settings(BaseSettings):
     # Log Configuration
     LOG_LEVEL: str = Field(default="INFO", description="Log level")
 
-    # LLM Configuration (Volcengine)
+    # LLM Configuration (generic — shared across providers)
+    LLM_PROVIDER: str = Field(default="volcengine", description="LLM provider: volcengine, deepseek, openai_compatible")
+    LLM_API_KEY: str = Field(default="", description="LLM API Key")
+    LLM_BASE_URL: str = Field(default="https://ark.cn-beijing.volces.com/api/v3", description="LLM API 地址")
+    LLM_MODEL: str = Field(default="doubao-seed-2.0-lite-260215", description="模型名称")
     LLM_TEMPERATURE: float = Field(default=0.7, description="LLM temperature")
     LLM_MAX_TOKENS: int = Field(default=8192, description="Maximum tokens for LLM response")
+    LLM_REASONING_EFFORT: str = Field(default="medium", description="Reasoning effort: minimal/low/medium/high")
 
-    # Volcengine Configuration
-    VOLCENGINE_API_KEY: str = Field(default="", description="Volcengine API key")
-    VOLCENGINE_BASE_URL: str = Field(default="https://ark.cn-beijing.volces.com/api/v3", description="Volcengine API base URL")
-    VOLCENGINE_MODEL: str = Field(default="doubao-seed-2.0-lite-260215", description="Volcengine model name")
-    VOLCENGINE_DEFAULT_REASONING_EFFORT: str = Field(default="medium", description="Default reasoning effort: minimal/low/medium/high")
+    # Legacy fields — kept for .env backward compat, merged into LLM_* at runtime
+    VOLCENGINE_API_KEY: str = Field(default="", description="Legacy: use LLM_API_KEY")
+    VOLCENGINE_BASE_URL: str = Field(default="", description="Legacy: use LLM_BASE_URL")
+    VOLCENGINE_MODEL: str = Field(default="", description="Legacy: use LLM_MODEL")
+    VOLCENGINE_DEFAULT_REASONING_EFFORT: str = Field(default="medium", description="Legacy: use LLM_REASONING_EFFORT")
+    DEEPSEEK_API_KEY: str = Field(default="", description="Legacy: use LLM_API_KEY")
+    DEEPSEEK_BASE_URL: str = Field(default="", description="Legacy: use LLM_BASE_URL")
+    DEEPSEEK_MODEL: str = Field(default="", description="Legacy: use LLM_MODEL")
 
     # Web Search Configuration (Volcano Engine Web Search API)
     WEB_SEARCH_API_KEY: str = Field(default="", description="Volcano Engine Web Search API key")
@@ -66,6 +75,64 @@ class Settings(BaseSettings):
     SKILLS_BUILTIN_DIR: str = Field(default="./skills/builtin", description="Built-in skills directory")
     SKILLS_USER_DIR: str = Field(default="./skills/user", description="User-defined skills directory")
     SKILLS_CACHED_DIR: str = Field(default="./skills/cached", description="Cached skills directory")
+
+    # Provider default presets (not a settings field — class constant)
+    PROVIDER_PRESETS: ClassVar[Dict[str, Dict[str, str]]] = {
+        "volcengine": {
+            "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+        },
+        "deepseek": {
+            "base_url": "https://api.deepseek.com/v1",
+        },
+        "openai_compatible": {
+            "base_url": "",
+        },
+    }
+
+    def effective_llm_api_key(self) -> str:
+        """Resolve API key: LLM_API_KEY > matching provider's legacy key."""
+        if self.LLM_API_KEY:
+            return self.LLM_API_KEY
+        # Only fall back to the legacy key of the CURRENT provider
+        provider = self.LLM_PROVIDER
+        if provider == "deepseek" and self.DEEPSEEK_API_KEY:
+            return self.DEEPSEEK_API_KEY
+        if provider == "volcengine" and self.VOLCENGINE_API_KEY:
+            return self.VOLCENGINE_API_KEY
+        return ""
+
+    def effective_llm_base_url(self) -> str:
+        """Resolve base URL: LLM_BASE_URL > legacy > provider preset."""
+        if self.LLM_BASE_URL:
+            return self.LLM_BASE_URL
+        provider = self.LLM_PROVIDER
+        if provider == "deepseek" and self.DEEPSEEK_BASE_URL:
+            return self.DEEPSEEK_BASE_URL
+        if provider == "volcengine" and self.VOLCENGINE_BASE_URL:
+            return self.VOLCENGINE_BASE_URL
+        preset = self.PROVIDER_PRESETS.get(provider, {})
+        return preset.get("base_url", "")
+
+    def effective_llm_model(self) -> str:
+        """Resolve model: LLM_MODEL > legacy (current provider only) > provider preset."""
+        if self.LLM_MODEL:
+            return self.LLM_MODEL
+        # Only fall back to the legacy model of the CURRENT provider
+        provider = self.LLM_PROVIDER
+        if provider == "deepseek" and self.DEEPSEEK_MODEL:
+            return self.DEEPSEEK_MODEL
+        if provider == "volcengine" and self.VOLCENGINE_MODEL:
+            return self.VOLCENGINE_MODEL
+        preset = self.PROVIDER_PRESETS.get(provider, {})
+        return preset.get("model", "")
+
+    def effective_llm_reasoning_effort(self) -> str:
+        """Resolve reasoning effort: LLM_REASONING_EFFORT > legacy VOLCENGINE_DEFAULT_REASONING_EFFORT."""
+        if self.LLM_REASONING_EFFORT:
+            return self.LLM_REASONING_EFFORT
+        if self.VOLCENGINE_DEFAULT_REASONING_EFFORT:
+            return self.VOLCENGINE_DEFAULT_REASONING_EFFORT
+        return "medium"
 
     async def reload_from_db(self, db):
         """Reload settings from database.

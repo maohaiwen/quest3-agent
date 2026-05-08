@@ -52,7 +52,7 @@ class ExecutionStrategyRouter:
         system_prompt = None
 
         if agent_config:
-            model = agent_config.get("model")
+            model = agent_config.get("model") or None
             temperature = agent_config.get("temperature")
             max_tokens = agent_config.get("max_tokens")
             system_prompt = agent_config.get("system_prompt")

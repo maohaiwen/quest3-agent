@@ -70,6 +70,17 @@ async def get_init_status():
         return {"initialized": False}
 
 
+@router.get("/llm-presets")
+async def get_llm_presets():
+    """Get LLM provider presets for auto-filling settings in the UI.
+
+    Returns the default base_url and model for each provider,
+    so the frontend can auto-fill when the user switches provider.
+    """
+    from app.config import settings as cfg
+    return {"presets": cfg.PROVIDER_PRESETS}
+
+
 @router.post("/test-llm")
 async def test_llm_connection():
     """Test LLM connection with current settings.
@@ -78,7 +89,7 @@ async def test_llm_connection():
     """
     try:
         if not llm_service.is_configured():
-            return {"success": False, "error": "LLM service not configured. Please set API Key."}
+            return {"success": False, "error": "LLM service not configured. Please set LLM_API_KEY and LLM_BASE_URL."}
 
         # Try a simple completion
         try:

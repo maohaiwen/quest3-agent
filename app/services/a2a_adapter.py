@@ -108,7 +108,7 @@ class A2AAdapter:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": task_input})
 
-        model = agent_config.get("model") or settings.VOLCENGINE_MODEL
+        model = agent_config.get("model") or self._llm_service.model
         temperature = agent_config.get("temperature") if agent_config.get("temperature") is not None else settings.LLM_TEMPERATURE
         max_tokens = agent_config.get("max_tokens") or settings.LLM_MAX_TOKENS
 

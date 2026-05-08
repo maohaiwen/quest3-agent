@@ -399,7 +399,7 @@ async def recommend_tools(request: Dict[str, Any]):
         from app.services.llm_service import llm_service
 
         if not llm_service.is_configured():
-            raise HTTPException(status_code=500, detail="LLM service not configured. Please set VOLCENGINE_API_KEY.")
+            raise HTTPException(status_code=500, detail="LLM service not configured. Please set the appropriate API key.")
 
         messages = [{"role": "user", "content": prompt}]
         response_text = await llm_service._chat_completion(

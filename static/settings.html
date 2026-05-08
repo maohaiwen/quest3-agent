@@ -109,26 +109,36 @@
 
         SharedNav.render(document.getElementById('pageNav'), { active: 'settings' });
 
-        // Show user management tab for admin
         if (currentUser.role === 'admin') {
             document.getElementById('userTab').style.display = '';
         }
 
-        // Check if this is a first-time setup
         const params = new URLSearchParams(window.location.search);
         if (params.get('setup') === '1') {
             document.getElementById('setupBanner').style.display = 'flex';
         }
 
-        // Listen for tab changes to load users
         document.addEventListener('tab-change', (e) => {
             if (e.detail.tab === 'users') loadUsers();
         });
 
+        // Provider presets (fetched from API)
+        let providerPresets = {};
         let allSettings = {};
+
+        const PROVIDER_LABELS = {
+            volcengine: '火山引擎',
+            deepseek: 'DeepSeek',
+            openai_compatible: 'OpenAI 兼容',
+        };
 
         async function loadSettings() {
             try {
+                // Fetch presets for auto-fill
+                const presetsRes = await fetch('/api/settings/llm-presets');
+                const presetsData = await presetsRes.json();
+                providerPresets = presetsData.presets || {};
+
                 const res = await fetch('/api/settings');
                 const data = await res.json();
                 allSettings = {};
@@ -143,6 +153,16 @@
             } catch (e) { console.error('Failed to load settings:', e); }
         }
 
+        function getSettingValue(key) {
+            const s = allSettings[key];
+            return s ? (s.effective_value || s.default_value || '') : '';
+        }
+
+        function getSettingDisplay(key) {
+            const s = allSettings[key];
+            return s ? (s.display_value || '') : '';
+        }
+
         function renderSettings(group, containerId) {
             const container = document.getElementById(containerId);
             const groupSettings = Object.values(allSettings).filter(s => s.group_name === group);
@@ -150,28 +170,141 @@
                 container.innerHTML = '<div class="loading">暂无配置项</div>';
                 return;
             }
+
+            // Custom rendering for LLM group
+            if (group === 'llm') {
+                renderLLMSettings(container, groupSettings);
+                return;
+            }
+
+            // Generic rendering for other groups
             let html = '';
-            groupSettings.forEach(s => {
-                const isSecret = s.value_type === 'secret';
-                const isEditable = s.editable === 1;
-                const currentValue = s.display_value || '';
-                html += `<div class="setting-item">`;
-                html += `  <div class="setting-label">${s.description || s.key}<div class="desc">${s.key}</div></div>`;
-                html += `  <div class="setting-input">`;
-                if (isSecret) {
-                    html += `    <div class="secret-field">`;
-                    html += `      <input type="password" class="form-control" id="setting_${s.key}" value="${currentValue}" placeholder="点击编辑按钮修改" ${!isEditable ? 'disabled' : ''}>`;
-                    html += `      <button class="toggle-btn" onclick="toggleSecret('${s.key}')">显示</button>`;
-                    html += `    </div>`;
-                } else if (s.value_type === 'boolean') {
-                    const checked = currentValue === 'true' ? 'checked' : '';
-                    html += `    <input type="checkbox" id="setting_${s.key}" ${checked} ${!isEditable ? 'disabled' : ''} style="width:auto; transform:scale(1.3);">`;
-                } else {
-                    html += `    <input type="text" class="form-control" id="setting_${s.key}" value="${currentValue}" ${!isEditable ? 'disabled' : ''}>`;
-                }
-                html += `  </div></div>`;
-            });
+            groupSettings.forEach(s => { html += renderGenericSettingItem(s); });
             container.innerHTML = html;
+        }
+
+        function renderLLMSettings(container) {
+            const providerVal = getSettingValue('LLM_PROVIDER');
+            const apiKeyVal = getSettingDisplay('LLM_API_KEY');
+            const baseUrlVal = getSettingValue('LLM_BASE_URL');
+            const modelVal = getSettingValue('LLM_MODEL');
+            const tempVal = getSettingValue('LLM_TEMPERATURE');
+            const maxTokensVal = getSettingValue('LLM_MAX_TOKENS');
+            const effortVal = getSettingValue('LLM_REASONING_EFFORT');
+
+            let html = '';
+
+            // Provider selector
+            html += `<div class="setting-item">
+                <div class="setting-label">LLM 提供商<div class="desc">LLM_PROVIDER</div></div>
+                <div class="setting-input">
+                    <select class="form-control" id="setting_LLM_PROVIDER" onchange="onProviderChange(this.value)">
+                        ${Object.entries(PROVIDER_LABELS).map(([k, v]) =>
+                            `<option value="${k}" ${providerVal === k ? 'selected' : ''}>${v}</option>`
+                        ).join('')}
+                    </select>
+                </div>
+            </div>`;
+
+            // API Key
+            html += `<div class="setting-item">
+                <div class="setting-label">API Key<div class="desc">LLM_API_KEY</div></div>
+                <div class="setting-input">
+                    <div class="secret-field">
+                        <input type="password" class="form-control" id="setting_LLM_API_KEY" value="${apiKeyVal}" placeholder="输入 API Key">
+                        <button class="toggle-btn" onclick="toggleSecret('LLM_API_KEY')">显示</button>
+                    </div>
+                </div>
+            </div>`;
+
+            // Base URL
+            html += `<div class="setting-item">
+                <div class="setting-label">API 地址<div class="desc">LLM_BASE_URL</div></div>
+                <div class="setting-input">
+                    <input type="text" class="form-control" id="setting_LLM_BASE_URL" value="${baseUrlVal}">
+                </div>
+            </div>`;
+
+            // Model (text input, placeholder hints common models)
+            const modelHints = { volcengine: '如 doubao-seed-2.0-lite-260215', deepseek: '如 deepseek-chat, deepseek-reasoner', openai_compatible: '如 gpt-4o' };
+            html += `<div class="setting-item">
+                <div class="setting-label">模型名称<div class="desc">LLM_MODEL</div></div>
+                <div class="setting-input">
+                    <input type="text" class="form-control" id="setting_LLM_MODEL" value="${modelVal}" placeholder="${modelHints[providerVal] || '输入模型名称'}">
+                </div>
+            </div>`;
+
+            // Temperature
+            html += `<div class="setting-item">
+                <div class="setting-label">温度参数<div class="desc">LLM_TEMPERATURE</div></div>
+                <div class="setting-input">
+                    <input type="text" class="form-control" id="setting_LLM_TEMPERATURE" value="${tempVal}">
+                </div>
+            </div>`;
+
+            // Max Tokens
+            html += `<div class="setting-item">
+                <div class="setting-label">最大输出 Token 数<div class="desc">LLM_MAX_TOKENS</div></div>
+                <div class="setting-input">
+                    <input type="text" class="form-control" id="setting_LLM_MAX_TOKENS" value="${maxTokensVal}">
+                </div>
+            </div>`;
+
+            // Reasoning Effort
+            html += `<div class="setting-item">
+                <div class="setting-label">推理努力程度<div class="desc">LLM_REASONING_EFFORT</div></div>
+                <div class="setting-input">
+                    <select class="form-control" id="setting_LLM_REASONING_EFFORT">
+                        <option value="minimal" ${effortVal === 'minimal' ? 'selected' : ''}>minimal</option>
+                        <option value="low" ${effortVal === 'low' ? 'selected' : ''}>low</option>
+                        <option value="medium" ${effortVal === 'medium' ? 'selected' : ''}>medium</option>
+                        <option value="high" ${effortVal === 'high' ? 'selected' : ''}>high</option>
+                    </select>
+                </div>
+            </div>`;
+
+            container.innerHTML = html;
+        }
+
+        function renderGenericSettingItem(s) {
+            const isSecret = s.value_type === 'secret';
+            const currentValue = s.display_value || '';
+            let html = `<div class="setting-item">`;
+            html += `  <div class="setting-label">${s.description || s.key}<div class="desc">${s.key}</div></div>`;
+            html += `  <div class="setting-input">`;
+            if (isSecret) {
+                html += `    <div class="secret-field">`;
+                html += `      <input type="password" class="form-control" id="setting_${s.key}" value="${currentValue}" placeholder="点击编辑按钮修改">`;
+                html += `      <button class="toggle-btn" onclick="toggleSecret('${s.key}')">显示</button>`;
+                html += `    </div>`;
+            } else if (s.value_type === 'boolean') {
+                const checked = currentValue === 'true' ? 'checked' : '';
+                html += `    <input type="checkbox" id="setting_${s.key}" ${checked} style="width:auto; transform:scale(1.3);">`;
+            } else {
+                html += `    <input type="text" class="form-control" id="setting_${s.key}" value="${currentValue}">`;
+            }
+            html += `  </div></div>`;
+            return html;
+        }
+
+        function onProviderChange(provider) {
+            const preset = providerPresets[provider] || {};
+            // Write new values into allSettings so renderLLMSettings picks them up
+            if (allSettings['LLM_PROVIDER']) {
+                allSettings['LLM_PROVIDER'].effective_value = provider;
+                allSettings['LLM_PROVIDER'].display_value = provider;
+            }
+            if (allSettings['LLM_BASE_URL']) {
+                allSettings['LLM_BASE_URL'].effective_value = preset.base_url || '';
+                allSettings['LLM_BASE_URL'].display_value = preset.base_url || '';
+            }
+            // Clear model when switching providers — old model name is invalid for new provider
+            if (allSettings['LLM_MODEL']) {
+                allSettings['LLM_MODEL'].effective_value = '';
+                allSettings['LLM_MODEL'].display_value = '';
+            }
+            // Re-render LLM settings (updates URL, clears model, updates placeholder)
+            renderLLMSettings(document.getElementById('llmSettings'));
         }
 
         function toggleSecret(key) {
@@ -182,19 +315,46 @@
         }
 
         async function saveSettings(group) {
-            const groupSettings = Object.values(allSettings).filter(s => s.group_name === group);
             const updates = {};
-            groupSettings.forEach(s => {
-                const el = document.getElementById(`setting_${s.key}`);
-                if (!el || !s.editable) return;
-                let value;
-                if (s.value_type === 'boolean') { value = el.checked ? 'true' : 'false'; }
-                else {
-                    value = el.value.trim();
-                    if (s.value_type === 'secret' && value.startsWith('****')) return;
+
+            if (group === 'llm') {
+                // Collect LLM fields manually (custom rendering)
+                const providerEl = document.getElementById('setting_LLM_PROVIDER');
+                const apiKeyEl = document.getElementById('setting_LLM_API_KEY');
+                const baseUrlEl = document.getElementById('setting_LLM_BASE_URL');
+                const tempEl = document.getElementById('setting_LLM_TEMPERATURE');
+                const maxTokensEl = document.getElementById('setting_LLM_MAX_TOKENS');
+                const effortEl = document.getElementById('setting_LLM_REASONING_EFFORT');
+
+                if (providerEl) updates['LLM_PROVIDER'] = providerEl.value;
+                if (apiKeyEl) {
+                    const v = apiKeyEl.value.trim();
+                    if (v && !v.startsWith('****')) updates['LLM_API_KEY'] = v;
                 }
-                updates[s.key] = value;
-            });
+                if (baseUrlEl) updates['LLM_BASE_URL'] = baseUrlEl.value.trim();
+                if (tempEl) updates['LLM_TEMPERATURE'] = tempEl.value.trim();
+                if (maxTokensEl) updates['LLM_MAX_TOKENS'] = maxTokensEl.value.trim();
+                if (effortEl) updates['LLM_REASONING_EFFORT'] = effortEl.value;
+
+                // Model
+                const modelEl = document.getElementById('setting_LLM_MODEL');
+                if (modelEl) updates['LLM_MODEL'] = modelEl.value.trim();
+            } else {
+                // Generic save for other groups
+                const groupSettings = Object.values(allSettings).filter(s => s.group_name === group);
+                groupSettings.forEach(s => {
+                    const el = document.getElementById(`setting_${s.key}`);
+                    if (!el || !s.editable) return;
+                    let value;
+                    if (s.value_type === 'boolean') { value = el.checked ? 'true' : 'false'; }
+                    else {
+                        value = el.value.trim();
+                        if (s.value_type === 'secret' && value.startsWith('****')) return;
+                    }
+                    updates[s.key] = value;
+                });
+            }
+
             if (Object.keys(updates).length === 0) { showToast('没有需要保存的更改', 'warning'); return; }
             try {
                 const res = await fetch('/api/settings', {

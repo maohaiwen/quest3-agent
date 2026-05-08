@@ -567,28 +567,22 @@ class AgentMemoryService:
         try:
             from app.services.llm_service import llm_service
 
-            if not llm_service.volc_client:
+            if not llm_service.is_configured():
                 logger.warning("LLM not configured, skipping memory extraction")
                 return []
 
             messages = [{"role": "user", "content": prompt}]
 
-            loop = __import__("asyncio").get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: llm_service.volc_client.chat.completions.create(
-                    model=llm_service.model,
-                    messages=messages,
-                    temperature=0.3,
-                    max_tokens=2000,
-                    stream=False
-                )
+            text = await llm_service.simple_completion(
+                messages=messages,
+                temperature=0.3,
+                max_tokens=2000,
             )
 
-            if not response.choices or not response.choices[0].message.content:
+            if not text:
                 return []
 
-            text = response.choices[0].message.content.strip()
+            text = text.strip()
 
             # 尝试解析 JSON
             # 处理可能的 markdown 代码块包裹
