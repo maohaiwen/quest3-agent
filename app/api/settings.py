@@ -76,9 +76,14 @@ async def get_llm_presets():
 
     Returns the default base_url and model for each provider,
     so the frontend can auto-fill when the user switches provider.
+    Also returns the current effective model for defaulting new agents.
     """
     from app.config import settings as cfg
-    return {"presets": cfg.PROVIDER_PRESETS}
+    from app.services.llm_service import llm_service
+    return {
+        "presets": cfg.PROVIDER_PRESETS,
+        "current_model": llm_service.model,
+    }
 
 
 @router.post("/test-llm")

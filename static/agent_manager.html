@@ -170,6 +170,7 @@
                                 <div class="form-field">
                                     <label>模型</label>
                                     <input type="text" id="agentModel" class="form-control" placeholder="留空则使用全局 LLM 设置中的模型">
+                                    <div class="hint" id="agentModelHint" style="font-size:12px;color:#888;margin-top:4px;"></div>
                                 </div>
                                 <div class="form-field">
                                     <label>温度</label>
@@ -549,6 +550,17 @@
             document.getElementById('stepContent1').style.display = 'block';
             document.getElementById('stepContent2').style.display = 'none';
             updateFooterForStep1();
+            // Load current global LLM model as default
+            fetch('/api/settings/llm-presets')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.current_model) {
+                        document.getElementById('agentModel').value = data.current_model;
+                        const hint = document.getElementById('agentModelHint');
+                        if (hint) hint.textContent = '当前全局模型: ' + data.current_model;
+                    }
+                })
+                .catch(() => {});
             SharedModal.open('agentModal');
         }
 
@@ -576,6 +588,14 @@
             document.getElementById('agentPriority').value = agent.priority || 0;
             document.getElementById('enableLongTermMemory').checked = agent.enable_long_term_memory || false;
             document.getElementById('agentModel').value = agent.model || '';
+            // Show current global model as hint when editing
+            fetch('/api/settings/llm-presets')
+                .then(r => r.json())
+                .then(data => {
+                    const hint = document.getElementById('agentModelHint');
+                    if (hint && data.current_model) hint.textContent = '当前全局模型: ' + data.current_model;
+                })
+                .catch(() => {});
             document.getElementById('agentTemperature').value = agent.temperature || '';
             document.getElementById('agentMaxTokens').value = agent.max_tokens || '';
             document.getElementById('thinkingEffort').value = agent.thinking_effort || 'medium';
