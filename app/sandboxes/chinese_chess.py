@@ -635,16 +635,19 @@ class ChineseChessSandbox(BaseSandbox):
 
         my_pieces = self._list_pieces(color)
         opp_pieces = self._list_pieces(BLACK if color == RED else RED)
+        captures = self._list_captures(color)
         history_str = self._format_history()
-        board_str = self._render_board_text(color)
 
-        return (
-            f"你是{color_name}。当前轮次：{turn_name}走棋（是否轮到你：{is_my_turn}）。已走{self._move_count}步。\n\n"
-            f"你的棋子（路数即走法中的路数）：{my_pieces}\n"
-            f"对方棋子：{opp_pieces}\n\n"
-            f"走法记录：{history_str}\n\n"
-            f'棋盘（列头数字=路数，直接用于走法如「炮二平五」）：\n{board_str}'
-        )
+        parts = [
+            f"你是{color_name}。当前轮次：{turn_name}走棋（是否轮到你：{is_my_turn}）。已走{self._move_count}步。",
+            f"你的棋子：{my_pieces}",
+            f"对方棋子：{opp_pieces}",
+        ]
+        if is_my_turn == "是":
+            parts.append(f"可吃的棋子：{captures}")
+        parts.append(f"走法记录：{history_str}")
+
+        return "\n".join(parts)
 
     async def handle_action(self, agent_id: str, role: str,
                             action: str, **kwargs) -> Dict[str, Any]:
@@ -931,8 +934,8 @@ class ChineseChessSandbox(BaseSandbox):
     def _list_pieces(self, color: str) -> str:
         """List all pieces for a color using Chinese notation format.
 
-        Shows each piece as "<前/后><棋子名><路数>" — the same format used
-        in move notation, so the model can directly reference pieces.
+        Shows each piece as "<前/后><棋子名><路数>(N行)" — the same format
+        used in move notation, with row number for spatial awareness.
         """
         from collections import defaultdict
 
@@ -972,9 +975,44 @@ class ChineseChessSandbox(BaseSandbox):
                         prefix = "前" if r == sorted_rows[-1] else "后"
                 else:
                     prefix = ""
-                parts.append(f"{prefix}{char}{cn_road}")
+                parts.append(f"{prefix}{char}{cn_road}({r}行)")
 
         return " ".join(parts)
+
+    def _list_captures(self, color: str) -> str:
+        """List capture opportunities for the given color.
+
+        Returns a human-readable string like:
+        "炮五吃卒五, 車二吃炮(2行7路)"
+        Target pieces are shown with their character and position (row + road
+        from attacker's perspective) for clarity.
+        """
+        opponent = BLACK if color == RED else RED
+        captures = []
+
+        for fr in range(10):
+            for fc in range(9):
+                p = self.board[fr][fc]
+                if not p or p[0] != color:
+                    continue
+                piece_type = p[1]
+                piece_road = (9 - fc) if color == RED else (fc + 1)
+                piece_char = _PIECE_CHAR.get(p, "?")
+                cn_road = _NUM_TO_CN.get(piece_road, str(piece_road))
+
+                for tr in range(10):
+                    for tc in range(9):
+                        target = self.board[tr][tc]
+                        if not target or target[0] != opponent:
+                            continue
+                        err = _validate_move(self.board, fr, fc, tr, tc, color, piece_type)
+                        if err is None:
+                            target_char = _PIECE_CHAR.get(target, "?")
+                            target_road = (9 - tc) if color == RED else (tc + 1)
+                            target_cn_road = _NUM_TO_CN.get(target_road, str(target_road))
+                            captures.append(f"{piece_char}{cn_road}吃{target_char}{target_cn_road}")
+
+        return ", ".join(captures) if captures else "无"
 
     def _check_game_over(self) -> None:
         """Check for checkmate / stalemate / king capture."""
