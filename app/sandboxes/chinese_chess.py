@@ -931,11 +931,34 @@ class ChineseChessSandbox(BaseSandbox):
     # Internal helpers
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _row_label(row: int, color: str) -> str:
+        """Convert a row number to a human-readable rank label.
+
+        Uses Chinese chess spatial terminology that the model already
+        understands, avoiding meaningless numeric row indices.
+        """
+        if color == RED:
+            # Red starts at bottom (row 9), moves toward row 0
+            labels = {
+                9: "底线", 8: "底线前", 7: "炮位", 6: "兵线",
+                5: "河沿", 4: "过河", 3: "过河深", 2: "深入",
+                1: "深入", 0: "对方底线",
+            }
+        else:
+            # Black starts at top (row 0), moves toward row 9
+            labels = {
+                0: "底线", 1: "底线前", 2: "炮位", 3: "兵线",
+                4: "河沿", 5: "过河", 6: "过河深", 7: "深入",
+                8: "深入", 9: "对方底线",
+            }
+        return labels.get(row, f"{row}行")
+
     def _list_pieces(self, color: str) -> str:
         """List all pieces for a color using Chinese notation format.
 
-        Shows each piece as "<前/后><棋子名><路数>(N行)" — the same format
-        used in move notation, with row number for spatial awareness.
+        Shows each piece as "<前/后><棋子名><路数>(位置)" — the same format
+        used in move notation, with spatial rank label.
         """
         from collections import defaultdict
 
@@ -975,7 +998,8 @@ class ChineseChessSandbox(BaseSandbox):
                         prefix = "前" if r == sorted_rows[-1] else "后"
                 else:
                     prefix = ""
-                parts.append(f"{prefix}{char}{cn_road}({r}行)")
+                pos = self._row_label(r, color)
+                parts.append(f"{prefix}{char}{cn_road}({pos})")
 
         return " ".join(parts)
 
