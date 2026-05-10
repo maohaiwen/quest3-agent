@@ -1,6 +1,6 @@
 """A2A (Agent-to-Agent) Protocol Models compatible with Google A2A specification"""
 from pydantic import BaseModel, Field
-from typing import List, Optional, Literal
+from typing import Any, Callable, Dict, List, Optional, Literal
 from datetime import datetime
 from app.utils.timezone import beijing_now
 from enum import Enum
@@ -60,6 +60,13 @@ class A2ATask(BaseModel):
     messages: List[A2AMessage] = Field(default_factory=list, description="Message history for this task")
     created_at: str = Field(default_factory=lambda: beijing_now().isoformat())
     updated_at: str = Field(default_factory=lambda: beijing_now().isoformat())
+    # Sandbox extension fields (not part of A2A spec)
+    sandbox_tools: Optional[List[Dict[str, Any]]] = Field(
+        default=None, description="Additional tools from sandbox in LLM format"
+    )
+    sandbox_handler: Optional[Any] = Field(
+        default=None, description="Callback for sandbox tool calls", exclude=True
+    )
 
     def add_message(self, role: A2AMessageRole, text: str):
         """Add a message to the task"""

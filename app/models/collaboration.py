@@ -6,6 +6,61 @@ from app.utils.timezone import beijing_now
 from enum import Enum
 
 
+class ArtifactType(str, Enum):
+    """Collaboration artifact type"""
+    TEXT = "text"
+    CODE = "code"
+    DATA = "data"
+    CHART = "chart"
+    FILE = "file"
+
+
+class Artifact(BaseModel):
+    """Collaboration artifact - structured output produced by agents"""
+    id: str = Field(..., description="Artifact ID")
+    collaboration_id: str = Field(..., description="Collaboration ID")
+    task_id: str = Field(default="", description="Task ID")
+    round: int = Field(default=1, description="Iteration round number")
+    producer_agent_id: str = Field(default="", description="Agent that produced this artifact")
+    producer_role: str = Field(default="", description="Role of the producing agent")
+    name: str = Field(..., description="Artifact name (e.g. '策略思路', '回测代码')")
+    artifact_type: ArtifactType = Field(default=ArtifactType.TEXT, description="Artifact type")
+    content: str = Field(..., description="Artifact content")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Extra metadata")
+    created_at: datetime = Field(default_factory=beijing_now, description="Creation timestamp")
+
+
+class ArtifactResponse(BaseModel):
+    """API response for artifact"""
+    id: str
+    collaboration_id: str
+    task_id: Optional[str] = None
+    round: int = 1
+    producer_agent_id: str
+    producer_role: str
+    name: str
+    artifact_type: ArtifactType
+    content: str
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class IterationConfig(BaseModel):
+    """Iteration capability configuration - can be overlaid on any collaboration mode"""
+    enabled: bool = Field(default=False, description="Whether iteration is enabled")
+    max_iterations: int = Field(default=3, description="Maximum iteration rounds")
+    evaluator: Optional["CollaborationAgentConfig"] = Field(
+        default=None, description="Evaluator agent config (uses LLM direct if not provided)"
+    )
+    evaluator_prompt: Optional[str] = Field(
+        default=None, description="Evaluation prompt template (used when no evaluator agent)"
+    )
+    feedback_strategy: str = Field(
+        default="full",
+        description="Feedback strategy: 'full' = re-run entire round with feedback"
+    )
+
+
 class CollaborationMode(str, Enum):
     """Collaboration mode"""
     SUPERVISOR = "supervisor"
@@ -87,6 +142,14 @@ class AdversarialGameConfig(BaseModel):
     round_input_template: Optional[str] = Field(
         default=None,
         description="Custom instruction for each participant (used as prefix, system appends context automatically)"
+    )
+    sandbox: Optional[str] = Field(
+        default=None,
+        description="Sandbox type name. When set, provides structured environment with tools"
+    )
+    sandbox_config: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Sandbox initialization parameters"
     )
 
 
@@ -213,7 +276,7 @@ TEMPLATES = {
         }
     ),
     "sequential_game": CollaborationTemplate(
-        name="顺序行动博弈（如下棋）",
+        name="顺序行动博弈",
         description="参与者按顺序行动，裁判每轮裁决，适用于棋类、扑克等场景",
         mode=CollaborationMode.ADVERSARIAL_GAME,
         default_agents=[
@@ -277,6 +340,47 @@ TEMPLATES = {
         ],
         default_config={
             "strategy": "majority",
+        }
+    ),
+    "quant_research_loop": CollaborationTemplate(
+        name="量化研究迭代模式",
+        description="研究员探索思路→代码专家编码→验证器评估，不通过则整轮迭代优化，支持产物管理",
+        mode=CollaborationMode.PIPELINE,
+        default_agents=[
+            {"role": "worker", "description": "量化研究员：探索策略思路和因子选择"},
+            {"role": "worker", "description": "代码专家：将策略思路转化为可执行的Python代码"},
+            {"role": "worker", "description": "验证器：运行回测并评估策略绩效指标"},
+        ],
+        default_config={
+            "pass_context": True,
+            "iteration": {
+                "enabled": True,
+                "max_iterations": 3,
+                "evaluator_prompt": "你是一个量化策略评估专家。请评估以下策略的回测结果是否达标。\n\n评估标准：\n1. 年化收益率是否为正且合理（>5%）\n2. 最大回撤是否在可接受范围内（<30%）\n3. 夏普比率是否达标（>1.0）\n4. 策略逻辑是否完整，代码是否有明显bug\n\n如果达标，回复：通过\n如果不达标，回复：未通过，并说明具体哪些指标不达标以及改进建议。",
+                "feedback_strategy": "full",
+            },
+        }
+    ),
+    "chinese_chess": CollaborationTemplate(
+        name="中国象棋对弈",
+        description="两个智能体在中国象棋沙箱中对弈，沙箱提供棋盘、走棋工具和规则校验",
+        mode=CollaborationMode.ADVERSARIAL_GAME,
+        default_agents=[
+            {"role": "participant", "description": "红方棋手"},
+            {"role": "participant", "description": "黑方棋手"},
+            {"role": "referee", "description": "裁判，辅助判定和播报"},
+        ],
+        default_config={
+            "turn_strategy": "sequential",
+            "referee_timing": "per_round",
+            "participant_order": ["participant_0", "participant_1"],
+            "max_rounds": 100,
+            "game_rules": "中国象棋规则",
+            "referee_enabled": True,
+            "referee_prompt": None,
+            "shared_state": {},
+            "sandbox": "chinese_chess",
+            "sandbox_config": {},
         }
     ),
 }

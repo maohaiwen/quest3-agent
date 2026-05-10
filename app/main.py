@@ -15,6 +15,7 @@ from app.services.agent_memory_service import agent_memory_service
 from app.services.mcp_service import mcp_tool_manager
 from app.tools.filesystem import FileSystemToolService
 from app.tools.web_search import WebSearchToolService
+from app.tools.stock_backtest import StockBacktestToolService
 from app.services.mcp_pool import mcp_client_pool
 from app.services.planning_chat_service import planning_chat_service
 from app.core.decision import decision_engine
@@ -48,6 +49,12 @@ from app.services.agent_registry import agent_registry
 fs_tool_service = FileSystemToolService()
 mcp_tool_manager.register_local_service("FileSystem", fs_tool_service)
 
+# Initialize sandbox types
+from app.sandboxes.registry import SandboxRegistry
+from app.sandboxes.chinese_chess import ChineseChessSandbox
+SandboxRegistry.register("chinese_chess", ChineseChessSandbox)
+logger.info("Sandbox types registered")
+
 # Initialize web search service (uses Volcano Engine Web Search API)
 web_search_service = WebSearchToolService(
     api_key=settings.WEB_SEARCH_API_KEY,
@@ -55,31 +62,20 @@ web_search_service = WebSearchToolService(
 )
 mcp_tool_manager.register_local_service("WebSearch", web_search_service)
 
-# 使用统一工具管理器注册所有工具
+# Initialize factor testing service (sandbox with akshare)
+# Note: deps may not be installed — plugin_registry handles this
+stock_backtest_service = StockBacktestToolService()
+mcp_tool_manager.register_local_service("FactorTest", stock_backtest_service)
+
+# 使用统一工具管理器 + 插件注册系统注册所有工具
 from app.core.tool_manager import get_tool_manager
+from app.tools.plugin_registry import register_all_services
 tool_manager = get_tool_manager()
 
-# 注册文件系统工具
-for tool_name, tool in fs_tool_service.get_tools().items():
-    tool_manager.register_local_tool(
-        name=tool_name,
-        description=tool.description,
-        input_schema=tool.input_schema,
-        handler=tool.handler,
-        source="local"
-    )
+# Plugin-based registration: checks deps, registers with installed=True/False
+register_all_services(tool_manager)
 
-# 注册网络搜索工具
-for tool_name, tool in web_search_service.get_tools().items():
-    tool_manager.register_local_tool(
-        name=tool_name,
-        description=tool.description,
-        input_schema=tool.input_schema,
-        handler=tool.handler,
-        source="local"
-    )
-
-logger.info("All tools registered with UnifiedToolManager")
+logger.info("All tools registered with UnifiedToolManager (plugin system)")
 
 # Set LLM service for decision engine
 decision_engine.set_llm_service(llm_service)
@@ -106,6 +102,20 @@ async def lifespan(app: FastAPI):
         # Initialize database
         await db.initialize_schema()
         logger.info("Database initialized")
+
+        # Clean up stale "running" tasks left from previous server instance
+        try:
+            from app.utils.timezone import beijing_now
+            now_str = beijing_now().isoformat()
+            result = await db.execute(
+                "UPDATE collaboration_tasks SET status = 'interrupted', output = '服务重启，任务中断', completed_at = ? WHERE status = 'running'",
+                (now_str,)
+            )
+            await db.commit()
+            if result and hasattr(result, 'rowcount') and result.rowcount > 0:
+                logger.info(f"Marked {result.rowcount} stale running tasks as interrupted")
+        except Exception as e:
+            logger.warning(f"Could not clean up stale tasks: {e}")
 
         # Initialize settings and user services with DB connection
         settings_service.set_db(db)
@@ -255,6 +265,7 @@ from app.api import skills  # Import skills module
 from app.api import collaborations, a2a  # Import collaboration and A2A modules
 from app.api import settings as settings_api  # Import settings module
 from app.api import users as users_api  # Import users module
+from app.api import tools as tools_api  # Import tools management module
 
 # Include routers
 app.include_router(chat.router)
@@ -268,19 +279,42 @@ app.include_router(collaborations.router)
 app.include_router(a2a.router)
 app.include_router(settings_api.router)
 app.include_router(users_api.router)
+app.include_router(tools_api.router)
 
 # Mount static files with no-cache headers for development
-from starlette.middleware.base import BaseHTTPMiddleware
+# Using pure ASGI middleware instead of BaseHTTPMiddleware to avoid
+# buffering streaming responses (SSE / event-stream)
+class NoCacheMiddleware:
+    """Pure ASGI middleware — adds no-cache headers for /static/ paths.
+    Unlike BaseHTTPMiddleware, this does NOT buffer streaming responses.
+    """
+    def __init__(self, app):
+        self.app = app
 
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
 
-class NoCacheMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        response = await call_next(request)
-        if request.url.path.startswith("/static/"):
-            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-            response.headers["Pragma"] = "no-cache"
-            response.headers["Expires"] = "0"
-        return response
+        path = scope.get("path", "")
+        is_static = path.startswith("/static/")
+
+        if not is_static:
+            # Not a static file — pass through without touching the response
+            await self.app(scope, receive, send)
+            return
+
+        # For static files, inject no-cache headers into the response
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                headers.append((b"cache-control", b"no-cache, no-store, must-revalidate"))
+                headers.append((b"pragma", b"no-cache"))
+                headers.append((b"expires", b"0"))
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
 
 
 app.add_middleware(NoCacheMiddleware)

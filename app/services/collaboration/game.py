@@ -3,15 +3,22 @@ import asyncio
 import json
 import logging
 import uuid
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
-from app.models.a2a import A2ATask, A2ATaskStatus, A2ATaskStatusState, A2AMessage, A2AMessageRole
-from app.models.collaboration import CollaborationResponse
+from app.models.a2a import A2ATask, A2ATaskStatus, A2AMessageRole
+from app.models.collaboration import CollaborationResponse, IterationConfig
 from app.services.collaboration.base import BaseCollaborationMode
 from app.services.collaboration_service import collaboration_service
 from app.services.agent_registry import agent_registry
 
 logger = logging.getLogger(__name__)
+
+
+def _make_sandbox_handler(sandbox, agent_id: str, role: str):
+    """Create a closure that routes sandbox tool calls to sandbox.handle_action."""
+    async def _handler(action, **kw):
+        return await sandbox.handle_action(agent_id, role, action, **kw)
+    return _handler
 
 
 class GameCollaboration(BaseCollaborationMode):
@@ -24,6 +31,11 @@ class GameCollaboration(BaseCollaborationMode):
     Referee timing:
     - per_round: referee judges after each round
     - final: referee judges once after all rounds complete
+
+    Sandbox integration:
+    - When config_json.sandbox is set, a sandbox environment is created
+    - Sandbox injects tools (via A2ATask.sandbox_tools) and state views
+    - Sandbox validates actions and checks game-over conditions
     """
 
     def _get_participants(self, collab: CollaborationResponse) -> list:
@@ -41,20 +53,49 @@ class GameCollaboration(BaseCollaborationMode):
         """Get referee agent if configured"""
         return next((a for a in collab.agents if a.role == "referee"), None)
 
+    def _init_sandbox(self, config: dict, participants: list):
+        """Initialize sandbox if configured. Returns sandbox instance or None."""
+        sandbox_name = config.get("sandbox")
+        if not sandbox_name:
+            return None
+        from app.sandboxes.registry import SandboxRegistry
+        sandbox = SandboxRegistry.create(sandbox_name, **config.get("sandbox_config", {}))
+        if sandbox is None:
+            logger.warning(f"Sandbox '{sandbox_name}' not found, proceeding without sandbox")
+            return None
+        # Map participants to sandbox roles
+        agents_info = [{"agent_id": a.agent_id, "role": ir} for a, ir, _ in participants]
+        sandbox.on_task_start(agents_info)
+        logger.info(f"Sandbox '{sandbox_name}' initialized with {len(agents_info)} participants")
+        return sandbox
+
     def _build_participant_prompt(self, collab: CollaborationResponse, input_text: str,
                                    shared_state: dict, role: str, player_index: int,
                                    round_num: int, turn_strategy: str,
-                                   round_actions_so_far: list = None) -> str:
+                                   round_actions_so_far: list = None,
+                                   sandbox = None, agent_id: str = None) -> str:
         """Build prompt for a participant agent."""
         config = collab.config_json
         game_rules = config.get("game_rules", "")
         custom_instruction = config.get("round_input_template")
 
         effective_rules = game_rules if game_rules.strip() else input_text
-        shared_state_str = json.dumps(shared_state, ensure_ascii=False)
+
+        # If sandbox is available, use its state view instead of raw shared_state
+        if sandbox and agent_id:
+            state_view = sandbox.get_state_view(agent_id, role)
+        else:
+            state_view = f"当前共享状态：{json.dumps(shared_state, ensure_ascii=False)}"
 
         prefix = f"{custom_instruction}\n\n" if custom_instruction else ""
         is_sequential = turn_strategy == "sequential"
+
+        # Get sandbox action hint if available
+        action_hint = ""
+        if sandbox and agent_id:
+            hint = sandbox.get_action_hint(agent_id, role)
+            if hint:
+                action_hint = f"\n{hint}"
 
         if is_sequential:
             earlier_actions = ""
@@ -65,41 +106,61 @@ class GameCollaboration(BaseCollaborationMode):
 
 游戏规则：{effective_rules}
 原始任务：{input_text}
-当前共享状态：{shared_state_str}
+{state_view}
 你是：{role}（第{player_index}位参与者）
 当前轮次：第{round_num}轮{earlier_actions}
 轮到你行动了。
 
-请严格根据上述游戏规则做出你的行动。只输出你的行动，不要输出其他内容。"""
+请严格根据上述游戏规则做出你的行动。{action_hint}"""
 
         return f"""{prefix}你正在参与一个博弈游戏。
 
 游戏规则：{effective_rules}
 原始任务：{input_text}
-当前共享状态：{shared_state_str}
+{state_view}
 你是：{role}（第{player_index}位参与者）
 当前轮次：第{round_num}轮
 
-请严格根据上述游戏规则做出你的行动。只输出你的行动，不要输出其他内容。"""
+请严格根据上述游戏规则做出你的行动。{action_hint}"""
 
     def _build_referee_prompt(self, collab: CollaborationResponse, input_text: str,
                                shared_state: dict, round_actions: str,
-                               game_rules: str, is_final: bool = False) -> str:
+                               game_rules: str, is_final: bool = False,
+                               sandbox = None) -> str:
         """Build prompt for the referee agent."""
         config = collab.config_json
         custom_instruction = config.get("referee_prompt")
 
         effective_rules = game_rules if game_rules and game_rules.strip() else input_text
-        shared_state_str = json.dumps(shared_state, ensure_ascii=False)
+
+        # If sandbox, include its display state
+        if sandbox:
+            state_view = sandbox.get_state_view("", "referee")
+        else:
+            state_view = f"当前共享状态：{json.dumps(shared_state, ensure_ascii=False)}"
+
         prefix = f"{custom_instruction}\n\n" if custom_instruction else ""
 
+        # When sandbox is present, win/loss is handled by sandbox.check_termination(),
+        # so referee only observes/comments. Output is free text, not JSON.
+        if sandbox:
+            actions_label = "所有轮次的行动记录" if is_final else "本轮各参与者的行动"
+            return f"""{prefix}你是游戏观察员。请根据以下信息做简要点评。
+
+游戏规则：{effective_rules}
+{state_view}
+{actions_label}：
+{round_actions}
+
+直接输出文字即可，不要输出JSON。"""
+
+        # No sandbox — referee does full judging with structured JSON
         if is_final:
             return f"""{prefix}你是游戏裁判。所有轮次已经结束，请根据以下信息做出终局裁决。
 
 游戏规则：{effective_rules}
 原始任务：{input_text}
-当前共享状态：
-{shared_state_str}
+{state_view}
 所有轮次的行动记录：
 {round_actions}
 
@@ -124,7 +185,7 @@ class GameCollaboration(BaseCollaborationMode):
 
 游戏规则：{effective_rules}
 原始任务：{input_text}
-当前共享状态：{shared_state_str}
+{state_view}
 本轮各参与者的行动：
 {round_actions}
 
@@ -195,13 +256,19 @@ class GameCollaboration(BaseCollaborationMode):
         return order_map, participant_order
 
     async def _execute_round_simultaneous(self, collab, input_text, shared_state,
-                                            participants, round_num, turn_strategy, task):
+                                            participants, round_num, turn_strategy, task,
+                                            sandbox=None):
         """Execute one round with simultaneous strategy"""
         tasks = []
         for agent, indexed_role, idx in participants:
             prompt = self._build_participant_prompt(
-                collab, input_text, shared_state, indexed_role, idx, round_num, turn_strategy)
+                collab, input_text, shared_state, indexed_role, idx, round_num, turn_strategy,
+                sandbox=sandbox, agent_id=agent.agent_id)
             t = A2ATask(id=str(uuid.uuid4()), input=prompt)
+            # Inject sandbox tools
+            if sandbox:
+                t.sandbox_tools = sandbox.get_tools_for_llm(agent.agent_id, indexed_role)
+                t.sandbox_handler = _make_sandbox_handler(sandbox, agent.agent_id, indexed_role)
             tasks.append((agent, indexed_role, idx, t))
 
         results = await asyncio.gather(
@@ -224,7 +291,8 @@ class GameCollaboration(BaseCollaborationMode):
 
     async def _execute_round_sequential(self, collab, input_text, shared_state,
                                           participants, participant_order, order_map,
-                                          round_num, turn_strategy, task):
+                                          round_num, turn_strategy, task,
+                                          sandbox=None):
         """Execute one round with sequential strategy"""
         round_actions = []
         round_actions_so_far = []
@@ -238,8 +306,15 @@ class GameCollaboration(BaseCollaborationMode):
 
             prompt = self._build_participant_prompt(
                 collab, input_text, shared_state, role_key, idx, round_num,
-                turn_strategy, round_actions_so_far)
+                turn_strategy, round_actions_so_far,
+                sandbox=sandbox, agent_id=agent.agent_id)
+
             agent_task = A2ATask(id=str(uuid.uuid4()), input=prompt)
+            # Inject sandbox tools
+            if sandbox:
+                agent_task.sandbox_tools = sandbox.get_tools_for_llm(agent.agent_id, role_key)
+                agent_task.sandbox_handler = _make_sandbox_handler(sandbox, agent.agent_id, role_key)
+
             result = await agent_registry.call_agent(agent.agent_id, agent_task)
 
             action = result.output or ""
@@ -255,10 +330,6 @@ class GameCollaboration(BaseCollaborationMode):
 
     def _apply_ruling(self, task, ruling, round_num, is_final: bool = False):
         """Apply referee ruling to task state, return True if game is over"""
-        if ruling["updated_state"]:
-            # Caller is responsible for updating shared_state
-            pass
-
         if ruling["game_over"] or is_final:
             winner = ruling.get("winner")
             prefix = "终局裁决：" if is_final else ""
@@ -294,6 +365,9 @@ class GameCollaboration(BaseCollaborationMode):
             if referee_enabled and not referee_agent:
                 raise ValueError("Referee is enabled but no referee agent found")
 
+            # Initialize sandbox
+            sandbox = self._init_sandbox(config, participants)
+
             if turn_strategy == "sequential":
                 order_map, participant_order = self._build_order_map(
                     participants, participant_order, config)
@@ -308,11 +382,12 @@ class GameCollaboration(BaseCollaborationMode):
                 if turn_strategy == "simultaneous":
                     round_actions = await self._execute_round_simultaneous(
                         collab, input_text, shared_state, participants,
-                        round_num, turn_strategy, task)
+                        round_num, turn_strategy, task, sandbox=sandbox)
                 else:
                     round_actions = await self._execute_round_sequential(
                         collab, input_text, shared_state, participants,
-                        participant_order, order_map, round_num, turn_strategy, task)
+                        participant_order, order_map, round_num, turn_strategy, task,
+                        sandbox=sandbox)
 
                 all_round_actions.append((round_num, round_actions))
 
@@ -321,11 +396,24 @@ class GameCollaboration(BaseCollaborationMode):
                     role_part = action_line.split(":")[0].strip()
                     shared_state[f"round_{round_num}_{role_part}_output"] = action_line
 
+                # Check sandbox termination first
+                if sandbox:
+                    term = sandbox.check_termination()
+                    if term and term.get("game_over"):
+                        winner = term.get("winner")
+                        reason = term.get("reason", "游戏结束")
+                        if winner:
+                            task.set_completed(f"游戏结束，{winner} 获胜！{reason}")
+                        else:
+                            task.set_completed(f"游戏结束。{reason}")
+                        task.add_message(A2AMessageRole.AGENT, f"游戏结束: {reason}")
+                        break
+
                 # Referee per round
                 if referee_enabled and referee_agent and referee_timing == "per_round":
                     referee_prompt = self._build_referee_prompt(
                         collab, input_text, shared_state,
-                        "\n".join(round_actions), game_rules)
+                        "\n".join(round_actions), game_rules, sandbox=sandbox)
                     referee_task = A2ATask(id=str(uuid.uuid4()), input=referee_prompt)
                     referee_result = await agent_registry.call_agent(referee_agent.agent_id, referee_task)
 
@@ -348,7 +436,7 @@ class GameCollaboration(BaseCollaborationMode):
                     )
                     referee_prompt = self._build_referee_prompt(
                         collab, input_text, shared_state,
-                        all_actions_text, game_rules, is_final=True)
+                        all_actions_text, game_rules, is_final=True, sandbox=sandbox)
                     referee_task = A2ATask(id=str(uuid.uuid4()), input=referee_prompt)
                     referee_result = await agent_registry.call_agent(referee_agent.agent_id, referee_task)
 
@@ -365,6 +453,9 @@ class GameCollaboration(BaseCollaborationMode):
                     task.set_completed(result_msg)
                     task.add_message(A2AMessageRole.AGENT, result_msg)
 
+            if sandbox:
+                sandbox.on_task_end()
+
             await self._update_task_record(task, completed=True)
             await collaboration_service.increment_usage(collab.id)
             return task
@@ -378,12 +469,14 @@ class GameCollaboration(BaseCollaborationMode):
     async def execute_stream(self, collab: CollaborationResponse, input_text: str):
         """Execute game mode with SSE event streaming"""
         task = self._create_task(input_text)
-        await self._create_task_record(collab.id, task)
+        if not self._skip_task_record:
+            await self._create_task_record(collab.id, task)
 
         try:
+            tid = self._shared_task_id or task.id
             yield {
                 "type": "task_start",
-                "task_id": task.id,
+                "task_id": tid,
                 "input": input_text,
                 "mode": "game"
             }
@@ -408,6 +501,10 @@ class GameCollaboration(BaseCollaborationMode):
                 yield {"type": "task_failed", "error": "Referee is enabled but no referee agent found"}
                 return
 
+            # Initialize sandbox
+            sandbox = self._init_sandbox(config, participants)
+            sandbox_name = config.get("sandbox", "")
+
             if turn_strategy == "sequential":
                 order_map, participant_order = self._build_order_map(
                     participants, participant_order, config)
@@ -417,8 +514,17 @@ class GameCollaboration(BaseCollaborationMode):
                 "shared_state": shared_state,
                 "participants": [p[1] for p in participants],
                 "turn_strategy": turn_strategy,
-                "referee_enabled": referee_enabled
+                "referee_enabled": referee_enabled,
+                "sandbox": sandbox_name,
             }
+
+            # Emit initial sandbox state
+            if sandbox:
+                yield {
+                    "type": "sandbox_state",
+                    "sandbox": sandbox_name,
+                    "state": sandbox.get_display_state(),
+                }
 
             task.add_message(A2AMessageRole.USER, f"Game start: {input_text}")
 
@@ -430,14 +536,20 @@ class GameCollaboration(BaseCollaborationMode):
                 round_actions = []
 
                 if turn_strategy == "simultaneous":
-                    tasks = []
+                    # Parallel streaming using queue
+                    game_tasks = []
                     for agent, indexed_role, idx in participants:
                         prompt = self._build_participant_prompt(
-                            collab, input_text, shared_state, indexed_role, idx, round_num, turn_strategy)
+                            collab, input_text, shared_state, indexed_role, idx, round_num, turn_strategy,
+                            sandbox=sandbox, agent_id=agent.agent_id)
                         t = A2ATask(id=str(uuid.uuid4()), input=prompt)
-                        tasks.append((agent, indexed_role, idx, t))
+                        # Inject sandbox tools
+                        if sandbox:
+                            t.sandbox_tools = sandbox.get_tools_for_llm(agent.agent_id, indexed_role)
+                            t.sandbox_handler = _make_sandbox_handler(sandbox, agent.agent_id, indexed_role)
+                        game_tasks.append((agent, indexed_role, idx, t))
 
-                    for agent, indexed_role, idx, _ in tasks:
+                    for agent, indexed_role, idx, _ in game_tasks:
                         yield {
                             "type": "agent_start",
                             "agent_id": agent.agent_id,
@@ -445,29 +557,63 @@ class GameCollaboration(BaseCollaborationMode):
                             "round": round_num
                         }
 
-                    results = await asyncio.gather(
-                        *[agent_registry.call_agent(a.agent_id, t) for a, _, _, t in tasks],
-                        return_exceptions=True
-                    )
+                    event_queue: asyncio.Queue = asyncio.Queue()
 
-                    for i, result in enumerate(results):
-                        agent, indexed_role, idx, _ = tasks[i]
-                        if isinstance(result, Exception):
-                            action = f"[{indexed_role} failed: {str(result)}]"
+                    async def _run_participant_stream(agent, indexed_role, g_task, round_num):
+                        output = ""
+                        try:
+                            async for sub_event in agent_registry.call_agent_stream(agent.agent_id, g_task):
+                                await event_queue.put({
+                                    "type": f"agent_{sub_event['type']}",
+                                    "agent_id": agent.agent_id,
+                                    "role": indexed_role,
+                                    "round": round_num,
+                                    **{k: v for k, v in sub_event.items() if k != "type"},
+                                })
+                                if sub_event.get("type") == "content":
+                                    output += sub_event["content"]
+                        except Exception as e:
+                            await event_queue.put({
+                                "type": "agent_error",
+                                "agent_id": agent.agent_id,
+                                "message": str(e),
+                            })
+                        if not output and g_task.output:
+                            output = g_task.output
+                        await event_queue.put({"type": "_participant_done", "agent_id": agent.agent_id, "indexed_role": indexed_role, "output": output})
+
+                    async_tasks = [
+                        asyncio.create_task(_run_participant_stream(a, ir, t, round_num))
+                        for a, ir, _, t in game_tasks
+                    ]
+
+                    done_count = 0
+                    participant_outputs = {}
+                    sandbox_terminated = False
+                    while done_count < len(game_tasks):
+                        event = await event_queue.get()
+                        if event["type"] == "_participant_done":
+                            done_count += 1
+                            participant_outputs[event["agent_id"]] = (event["indexed_role"], event["output"])
+                            round_actions.append(f"{event['indexed_role']}: {event['output']}")
+                            yield {"type": "agent_done", "agent_id": event["agent_id"], "role": event["indexed_role"], "round": round_num}
+                            # Emit sandbox state immediately after each participant finishes
+                            if sandbox and not sandbox_terminated:
+                                yield {
+                                    "type": "sandbox_state",
+                                    "sandbox": sandbox_name,
+                                    "state": sandbox.get_display_state(),
+                                }
+                                # Check if sandbox says game over (e.g. king captured)
+                                term = sandbox.check_termination()
+                                if term and term.get("game_over"):
+                                    sandbox_terminated = True
                         else:
-                            action = result.output or ""
-                        round_actions.append(f"{indexed_role}: {action}")
+                            yield event
 
-                        yield {
-                            "type": "agent_message",
-                            "agent_id": agent.agent_id,
-                            "role": indexed_role,
-                            "content": action,
-                            "round": round_num
-                        }
-                        yield {"type": "agent_done", "agent_id": agent.agent_id, "round": round_num}
+                    await asyncio.gather(*async_tasks, return_exceptions=True)
 
-                else:  # sequential
+                else:  # sequential — stream directly
                     round_actions_so_far = []
                     for role_key in participant_order:
                         agent = order_map.get(role_key)
@@ -479,7 +625,8 @@ class GameCollaboration(BaseCollaborationMode):
 
                         prompt = self._build_participant_prompt(
                             collab, input_text, shared_state, role_key, idx, round_num,
-                            turn_strategy, round_actions_so_far)
+                            turn_strategy, round_actions_so_far,
+                            sandbox=sandbox, agent_id=agent.agent_id)
 
                         yield {
                             "type": "agent_start",
@@ -489,20 +636,40 @@ class GameCollaboration(BaseCollaborationMode):
                         }
 
                         agent_task = A2ATask(id=str(uuid.uuid4()), input=prompt)
-                        result = await agent_registry.call_agent(agent.agent_id, agent_task)
-                        action = result.output or ""
+                        # Inject sandbox tools
+                        if sandbox:
+                            agent_task.sandbox_tools = sandbox.get_tools_for_llm(agent.agent_id, role_key)
+                            agent_task.sandbox_handler = _make_sandbox_handler(sandbox, agent.agent_id, role_key)
+
+                        action = ""
+
+                        async for sub_event in agent_registry.call_agent_stream(agent.agent_id, agent_task):
+                            yield {
+                                "type": f"agent_{sub_event['type']}",
+                                "agent_id": agent.agent_id,
+                                "role": role_key,
+                                "round": round_num,
+                                **{k: v for k, v in sub_event.items() if k != "type"},
+                            }
+                            if sub_event.get("type") == "content":
+                                action += sub_event["content"]
+
+                        if not action and agent_task.output:
+                            action = agent_task.output
+
                         action_line = f"{role_key}: {action}"
                         round_actions.append(action_line)
                         round_actions_so_far.append(action_line)
 
-                        yield {
-                            "type": "agent_message",
-                            "agent_id": agent.agent_id,
-                            "role": role_key,
-                            "content": action,
-                            "round": round_num
-                        }
-                        yield {"type": "agent_done", "agent_id": agent.agent_id, "round": round_num}
+                        yield {"type": "agent_done", "agent_id": agent.agent_id, "role": role_key, "round": round_num}
+
+                        # Emit sandbox state immediately after each participant finishes
+                        if sandbox:
+                            yield {
+                                "type": "sandbox_state",
+                                "sandbox": sandbox_name,
+                                "state": sandbox.get_display_state(),
+                            }
 
                     shared_state[f"round_{round_num}_actions"] = round_actions_so_far
 
@@ -514,7 +681,40 @@ class GameCollaboration(BaseCollaborationMode):
                     content_part = ":".join(action_line.split(":")[1:]).strip()
                     shared_state[f"round_{round_num}_{role_part}_output"] = content_part
 
-                # Referee per round
+                # Check sandbox termination first (before referee)
+                if sandbox:
+                    term = sandbox.check_termination()
+                    if term and term.get("game_over"):
+                        winner = term.get("winner")
+                        reason = term.get("reason", "游戏结束")
+                        if winner:
+                            task.set_completed(f"游戏结束，{winner} 获胜！{reason}")
+                        else:
+                            task.set_completed(f"游戏结束。{reason}")
+                        task.add_message(A2AMessageRole.AGENT, f"游戏结束: {reason}")
+
+                        yield {
+                            "type": "shared_state_update",
+                            "shared_state": shared_state,
+                            "round": round_num,
+                        }
+                        yield {
+                            "type": "round_end",
+                            "round": round_num,
+                            "passed": False,
+                            "round_result": reason,
+                            "winner": winner,
+                            "game_over": True,
+                        }
+                        yield {
+                            "type": "termination",
+                            "round": round_num,
+                            "message": reason,
+                            "winner": winner,
+                        }
+                        break
+
+                # Referee per round (streaming)
                 if referee_enabled and referee_agent and referee_timing == "per_round":
                     yield {
                         "type": "agent_start",
@@ -525,21 +725,27 @@ class GameCollaboration(BaseCollaborationMode):
 
                     referee_prompt = self._build_referee_prompt(
                         collab, input_text, shared_state,
-                        "\n".join(round_actions), game_rules)
+                        "\n".join(round_actions), game_rules, sandbox=sandbox)
                     referee_task = A2ATask(id=str(uuid.uuid4()), input=referee_prompt)
-                    referee_result = await agent_registry.call_agent(referee_agent.agent_id, referee_task)
+                    referee_output = ""
 
-                    ruling = self._parse_referee_output(referee_result.output or "")
+                    async for sub_event in agent_registry.call_agent_stream(referee_agent.agent_id, referee_task):
+                        yield {
+                            "type": f"agent_{sub_event['type']}",
+                            "agent_id": referee_agent.agent_id,
+                            "role": "referee",
+                            "round": round_num,
+                            **{k: v for k, v in sub_event.items() if k != "type"},
+                        }
+                        if sub_event.get("type") == "content":
+                            referee_output += sub_event["content"]
 
-                    yield {
-                        "type": "agent_message",
-                        "agent_id": referee_agent.agent_id,
-                        "role": "referee",
-                        "content": ruling["round_result"],
-                        "round": round_num,
-                        "ruling": ruling
-                    }
-                    yield {"type": "agent_done", "agent_id": referee_agent.agent_id, "round": round_num}
+                    if not referee_output and referee_task.output:
+                        referee_output = referee_task.output
+
+                    ruling = self._parse_referee_output(referee_output)
+
+                    yield {"type": "agent_done", "agent_id": referee_agent.agent_id, "role": "referee", "round": round_num}
 
                     if ruling["updated_state"]:
                         shared_state.update(ruling["updated_state"])
@@ -576,7 +782,7 @@ class GameCollaboration(BaseCollaborationMode):
                     yield {"type": "shared_state_update", "shared_state": shared_state, "round": round_num}
                     yield {"type": "round_end", "round": round_num, "passed": True}
             else:
-                # All rounds completed
+                # All rounds completed — final referee (streaming)
                 if referee_enabled and referee_agent and referee_timing == "final":
                     yield {
                         "type": "agent_start",
@@ -591,21 +797,27 @@ class GameCollaboration(BaseCollaborationMode):
                     )
                     referee_prompt = self._build_referee_prompt(
                         collab, input_text, shared_state,
-                        all_actions_text, game_rules, is_final=True)
+                        all_actions_text, game_rules, is_final=True, sandbox=sandbox)
                     referee_task = A2ATask(id=str(uuid.uuid4()), input=referee_prompt)
-                    referee_result = await agent_registry.call_agent(referee_agent.agent_id, referee_task)
+                    referee_output = ""
 
-                    ruling = self._parse_referee_output(referee_result.output or "")
+                    async for sub_event in agent_registry.call_agent_stream(referee_agent.agent_id, referee_task):
+                        yield {
+                            "type": f"agent_{sub_event['type']}",
+                            "agent_id": referee_agent.agent_id,
+                            "role": "referee",
+                            "round": max_rounds,
+                            **{k: v for k, v in sub_event.items() if k != "type"},
+                        }
+                        if sub_event.get("type") == "content":
+                            referee_output += sub_event["content"]
 
-                    yield {
-                        "type": "agent_message",
-                        "agent_id": referee_agent.agent_id,
-                        "role": "referee",
-                        "content": ruling["round_result"],
-                        "round": max_rounds,
-                        "ruling": ruling
-                    }
-                    yield {"type": "agent_done", "agent_id": referee_agent.agent_id, "round": max_rounds}
+                    if not referee_output and referee_task.output:
+                        referee_output = referee_task.output
+
+                    ruling = self._parse_referee_output(referee_output)
+
+                    yield {"type": "agent_done", "agent_id": referee_agent.agent_id, "role": "referee", "round": max_rounds}
 
                     if ruling["updated_state"]:
                         shared_state.update(ruling["updated_state"])
@@ -630,8 +842,12 @@ class GameCollaboration(BaseCollaborationMode):
                     task.set_completed(result_msg)
                     task.add_message(A2AMessageRole.AGENT, result_msg)
 
-            await self._update_task_record(task, completed=True)
-            await collaboration_service.increment_usage(collab.id)
+            if sandbox:
+                sandbox.on_task_end()
+
+            if not self._skip_task_record:
+                await self._update_task_record(task, completed=True)
+                await collaboration_service.increment_usage(collab.id)
 
             yield {
                 "type": "task_complete",
@@ -644,5 +860,6 @@ class GameCollaboration(BaseCollaborationMode):
         except Exception as e:
             logger.error(f"Game collaboration failed: {e}", exc_info=True)
             task.set_failed(str(e))
-            await self._update_task_record(task, completed=True)
+            if not self._skip_task_record:
+                await self._update_task_record(task, completed=True)
             yield {"type": "task_failed", "task_id": task.id, "error": str(e)}

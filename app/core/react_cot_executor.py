@@ -84,6 +84,7 @@ class ReActCotExecutor:
         self.available_tools: Dict[str, Any] = {}
         self._is_paused = False
         self._should_stop = False
+        self._sandbox_tool_names: set = set()
 
     async def execute(
         self,
@@ -129,7 +130,7 @@ class ReActCotExecutor:
             current_time = datetime.now().strftime("%Y年%m月%d日 %H:%M")
             messages.append({
                 "role": "system",
-                "content": f"【提醒】当前日期时间：{current_time}，请基于此时间回答问题。"
+                "content": f"【提醒】当前日期时间：{current_time}，请基于此时间回答问题或调用工具。"
             })
 
             # 添加当前任务（如果历史中最后一条不是当前用户消息，才追加）
@@ -176,6 +177,23 @@ class ReActCotExecutor:
                 enabled_mcp_servers=enabled_server_ids if enabled_server_ids else None,
                 allowed_tools=agent_tools if agent_tools is not None else None
             )
+
+            # Merge sandbox tools into the tool list
+            sandbox_tools = self.agent_config.get("sandbox_tools")
+            if sandbox_tools:
+                # Avoid duplicates: sandbox tools override same-named tools
+                existing_names = {t["function"]["name"] for t in tools}
+                for st in sandbox_tools:
+                    fname = st.get("function", {}).get("name", "")
+                    if fname in existing_names:
+                        tools = [t for t in tools if t["function"]["name"] != fname]
+                    tools.append(st)
+                logger.info(f"ReActCot: Merged {len(sandbox_tools)} sandbox tools: {[t.get('function',{}).get('name','') for t in sandbox_tools]}")
+
+            # Build a set of sandbox tool names for fast lookup during dispatch
+            self._sandbox_tool_names = set()
+            if sandbox_tools:
+                self._sandbox_tool_names = {t.get("function", {}).get("name") for t in sandbox_tools if t.get("function", {}).get("name")}
 
             logger.info(f"ReActCot: 已为 LLM 准备 {len(tools)} 个工具: {[t['function']['name'] for t in tools]}")
             logger.info(f"ReActCot: enabled_server_ids={enabled_server_ids}, allowed_tools={agent_tools}")
@@ -396,6 +414,14 @@ class ReActCotExecutor:
         """执行工具调用"""
         try:
             logger.info(f"ReActCot: 调用工具 {tool_name}, 参数: {tool_args}")
+
+            # Route sandbox tool calls to sandbox_handler
+            sandbox_handler = self.agent_config.get("sandbox_handler")
+            if sandbox_handler and tool_name in self._sandbox_tool_names:
+                logger.info(f"ReActCot: Routing sandbox tool {tool_name} to sandbox_handler")
+                result = await sandbox_handler(tool_name, **tool_args)
+                logger.info(f"ReActCot: Sandbox tool {tool_name} 执行完成，结果类型: {type(result)}")
+                return result
 
             tool_manager = get_tool_manager()
             result = await tool_manager.call_tool(tool_name, tool_args)
