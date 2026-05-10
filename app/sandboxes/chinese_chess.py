@@ -640,11 +640,11 @@ class ChineseChessSandbox(BaseSandbox):
 
         parts = [
             f"你是{color_name}。当前轮次：{turn_name}走棋（是否轮到你：{is_my_turn}）。已走{self._move_count}步。",
-            f"你的棋子：{my_pieces}",
-            f"对方棋子：{opp_pieces}",
         ]
         if is_my_turn == "是":
             parts.append(f"可吃的棋子：{captures}")
+        parts.append(f"你的棋子：{my_pieces}")
+        parts.append(f"对方棋子：{opp_pieces}")
         parts.append(f"走法记录：{history_str}")
 
         return "\n".join(parts)
@@ -843,7 +843,7 @@ class ChineseChessSandbox(BaseSandbox):
         """Return action hint for Chinese chess participants."""
         if role == "referee":
             return None
-        return "请使用 make_move 工具走棋，格式如：炮二平五、马二进三、车一进四。状态视图中已列出你的每个棋子及路数，直接引用即可。"
+        return "请使用 make_move 工具走棋。可吃的棋子已列出具体走法（如「马三进五」），直接选用即可，无需自行推算坐标。若无吃子机会，根据棋子路数组织走法。"
 
     def on_task_end(self) -> None:
         pass
@@ -1003,13 +1003,66 @@ class ChineseChessSandbox(BaseSandbox):
 
         return " ".join(parts)
 
+    def _format_chinese_move(self, fr: int, fc: int, tr: int, tc: int,
+                             color: str) -> str:
+        """Format a move in standard Chinese notation like '马三进五'.
+
+        Generates the exact move string that can be passed directly to
+        make_move, so the model never needs to compute coordinates.
+        """
+        piece = self.board[fr][fc]
+        if not piece:
+            return ""
+        piece_type = piece[1]
+        piece_char = _PIECE_CHAR.get(piece, "?")
+        road = (9 - fc) if color == RED else (fc + 1)
+        cn_road = _NUM_TO_CN.get(road, str(road))
+
+        # 前/后 prefix for duplicate pieces on same column
+        prefix = ""
+        same_col = [r for r in range(10)
+                    if self.board[r][fc] and self.board[r][fc][0] == color
+                    and self.board[r][fc][1] == piece_type]
+        if len(same_col) > 1:
+            sorted_rows = sorted(same_col)
+            if color == RED:
+                prefix = "前" if fr == sorted_rows[0] else "后"
+            else:
+                prefix = "前" if fr == sorted_rows[-1] else "后"
+
+        dr = tr - fr
+        dc = tc - fc
+
+        if dc == 0:
+            # Same column — vertical
+            forward = (color == RED and dr < 0) or (color == BLACK and dr > 0)
+            direction = "进" if forward else "退"
+            if piece_type in (ROOK, CANNON, PAWN, KING):
+                target_num = _NUM_TO_CN.get(abs(dr), str(abs(dr)))
+            else:
+                target_road = (9 - tc) if color == RED else (tc + 1)
+                target_num = _NUM_TO_CN.get(target_road, str(target_road))
+        elif dr == 0:
+            # Horizontal
+            direction = "平"
+            target_road = (9 - tc) if color == RED else (tc + 1)
+            target_num = _NUM_TO_CN.get(target_road, str(target_road))
+        else:
+            # Diagonal / knight jump
+            forward = (color == RED and dr < 0) or (color == BLACK and dr > 0)
+            direction = "进" if forward else "退"
+            target_road = (9 - tc) if color == RED else (tc + 1)
+            target_num = _NUM_TO_CN.get(target_road, str(target_road))
+
+        return f"{prefix}{piece_char}{cn_road}{direction}{target_num}"
+
     def _list_captures(self, color: str) -> str:
-        """List capture opportunities for the given color.
+        """List capture opportunities with exact move notation.
 
         Returns a human-readable string like:
-        "炮五吃卒五, 車二吃炮(2行7路)"
-        Target pieces are shown with their character and position (row + road
-        from attacker's perspective) for clarity.
+        "马三进五(吃炮五), 炮二进七(吃馬二)"
+        The move notation before parentheses can be directly used as
+        the argument to make_move.
         """
         opponent = BLACK if color == RED else RED
         captures = []
@@ -1020,9 +1073,6 @@ class ChineseChessSandbox(BaseSandbox):
                 if not p or p[0] != color:
                     continue
                 piece_type = p[1]
-                piece_road = (9 - fc) if color == RED else (fc + 1)
-                piece_char = _PIECE_CHAR.get(p, "?")
-                cn_road = _NUM_TO_CN.get(piece_road, str(piece_road))
 
                 for tr in range(10):
                     for tc in range(9):
@@ -1031,10 +1081,11 @@ class ChineseChessSandbox(BaseSandbox):
                             continue
                         err = _validate_move(self.board, fr, fc, tr, tc, color, piece_type)
                         if err is None:
+                            move_cn = self._format_chinese_move(fr, fc, tr, tc, color)
                             target_char = _PIECE_CHAR.get(target, "?")
                             target_road = (9 - tc) if color == RED else (tc + 1)
                             target_cn_road = _NUM_TO_CN.get(target_road, str(target_road))
-                            captures.append(f"{piece_char}{cn_road}吃{target_char}{target_cn_road}")
+                            captures.append(f"{move_cn}(吃{target_char}{target_cn_road})")
 
         return ", ".join(captures) if captures else "无"
 
