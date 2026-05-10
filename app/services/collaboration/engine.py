@@ -1,7 +1,8 @@
 """Collaboration engine dispatcher - routes to appropriate collaboration mode"""
+import json
 import logging
 
-from app.models.collaboration import CollaborationMode, CollaborationResponse
+from app.models.collaboration import CollaborationMode, IterationConfig, CollaborationResponse
 from app.services.collaboration_service import collaboration_service
 from app.services.collaboration.supervisor import SupervisorCollaboration
 from app.services.collaboration.game import GameCollaboration
@@ -35,7 +36,12 @@ class CollaborationEngine:
         if not mode_handler:
             raise ValueError(f"Unsupported collaboration mode: {collab.mode}")
 
-        task = await mode_handler.execute(collab, input_text)
+        # Check if iteration is enabled
+        iteration_config = IterationConfig(**collab.config_json.get("iteration", {}))
+        if iteration_config.enabled:
+            task = await mode_handler.execute_with_iteration(collab, input_text)
+        else:
+            task = await mode_handler.execute(collab, input_text)
 
         return {
             "task_id": task.id,
@@ -47,6 +53,20 @@ class CollaborationEngine:
             "started_at": task.created_at,
             "completed_at": task.updated_at if task.status.state.value in ["completed", "failed"] else None
         }
+
+    async def execute_stream(self, collab: CollaborationResponse, input_text: str):
+        """Execute a collaboration with SSE streaming, handling iteration if enabled."""
+        mode_handler = self.modes.get(collab.mode)
+        if not mode_handler:
+            raise ValueError(f"Unsupported collaboration mode: {collab.mode}")
+
+        iteration_config = IterationConfig(**collab.config_json.get("iteration", {}))
+        if iteration_config.enabled:
+            async for event in mode_handler.execute_stream_with_iteration(collab, input_text):
+                yield event
+        else:
+            async for event in mode_handler.execute_stream(collab, input_text):
+                yield event
 
 
 # Global collaboration engine instance

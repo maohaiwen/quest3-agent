@@ -8,6 +8,81 @@
     <style>
         body { padding: 20px; min-height: 100vh; }
         @media (max-width: 768px) { body { padding: 0; } .page-container { border-radius: 0; } }
+
+        .tool-plugin-card {
+            border: 1px solid var(--border-dark);
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 12px;
+            background: rgba(255,255,255,0.03);
+            transition: all 0.2s;
+        }
+        .tool-plugin-card.tool-not-installed {
+            border-color: var(--warning, #f59e0b);
+            opacity: 0.75;
+        }
+        .tool-plugin-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        .tool-plugin-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .tool-plugin-name {
+            font-weight: 600;
+            font-size: 1.05em;
+        }
+        .tool-plugin-status {
+            font-size: 0.8em;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+        .status-ready { background: rgba(34,197,94,0.15); color: #22c55e; }
+        .status-pending { background: rgba(245,158,11,0.15); color: #f59e0b; }
+        .tool-plugin-tools {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin: 8px 0;
+        }
+        .tool-badge {
+            font-size: 0.85em;
+            padding: 3px 10px;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid var(--border-dark);
+        }
+        .tool-badge.disabled {
+            opacity: 0.5;
+            text-decoration: line-through;
+        }
+        .tool-plugin-deps {
+            font-size: 0.85em;
+            color: var(--text-secondary);
+        }
+        .tool-plugin-deps code {
+            background: rgba(255,255,255,0.08);
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        .tool-install-output {
+            margin-top: 10px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.85em;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        .tool-install-output.installing { background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); }
+        .tool-install-output.success { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); color: #22c55e; }
+        .tool-install-output.error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #ef4444; }
     </style>
 </head>
 <body class="gradient-bg">
@@ -26,6 +101,7 @@
                 <button class="tab active" data-tab="llm">🤖 LLM 配置</button>
                 <button class="tab" data-tab="memory">🧠 记忆配置</button>
                 <button class="tab" data-tab="search">🔍 搜索配置</button>
+                <button class="tab" data-tab="tools">🔧 工具管理</button>
                 <button class="tab" id="userTab" data-tab="users" style="display:none;">👥 用户管理</button>
             </div>
 
@@ -60,6 +136,17 @@
                 </div>
                 <div class="actions-bar">
                     <button class="btn btn-primary" onclick="saveSettings('search')">💾 保存搜索配置</button>
+                </div>
+            </div>
+
+            <!-- Tools Tab -->
+            <div data-tab-panel="tools" class="tab-panel" id="toolsPanel" style="display: none;">
+                <div class="section-title">工具插件管理</div>
+                <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 0.9em;">
+                    部分工具需要额外的依赖包，未安装的工具将显示为灰色。点击"安装"按钮自动下载所需依赖。
+                </p>
+                <div id="toolPluginsList">
+                    <div class="loading">加载中...</div>
                 </div>
             </div>
 
@@ -445,6 +532,110 @@
                 .then(res => res.json())
                 .then(data => { if (data.success) { showToast('用户已删除'); loadUsers(); } else showToast(data.error || '删除失败', 'error'); })
                 .catch(() => showToast('删除失败', 'error'));
+        }
+
+        // ===== Tool Plugin Management =====
+        document.addEventListener('tab-change', (e) => {
+            if (e.detail.tab === 'tools') loadToolPlugins();
+        });
+
+        async function loadToolPlugins() {
+            const container = document.getElementById('toolPluginsList');
+            container.innerHTML = '<div class="loading">加载中...</div>';
+            try {
+                const res = await fetch('/api/tools');
+                const data = await res.json();
+                renderToolPlugins(data.plugins || []);
+            } catch (e) {
+                container.innerHTML = `<div class="test-result error">加载失败: ${e.message}</div>`;
+            }
+        }
+
+        function renderToolPlugins(plugins) {
+            const container = document.getElementById('toolPluginsList');
+            if (plugins.length === 0) {
+                container.innerHTML = '<div class="loading">暂无工具插件</div>';
+                return;
+            }
+
+            let html = '';
+            plugins.forEach(p => {
+                const installed = p.installed;
+                const statusClass = installed ? 'tool-installed' : 'tool-not-installed';
+                const statusText = installed ? '已就绪' : '未安装';
+                const statusIcon = installed ? '✅' : '⬜';
+
+                html += `<div class="tool-plugin-card ${statusClass}">`;
+                html += `  <div class="tool-plugin-header">`;
+                html += `    <div class="tool-plugin-info">`;
+                html += `      <span class="tool-plugin-name">${statusIcon} ${Utils.escapeHtml(p.service_name)}</span>`;
+                html += `      <span class="tool-plugin-status ${installed ? 'status-ready' : 'status-pending'}">${statusText}</span>`;
+                html += `    </div>`;
+
+                if (!installed && p.deps && p.deps.length > 0) {
+                    html += `    <button class="btn btn-primary btn-sm" id="installBtn_${p.service_name}" onclick="installToolPlugin('${p.service_name}')">📦 安装依赖</button>`;
+                }
+                html += `  </div>`;
+
+                // Tools list
+                if (p.tools && p.tools.length > 0) {
+                    html += `  <div class="tool-plugin-tools">`;
+                    p.tools.forEach(t => {
+                        const toolIcon = t.installed ? '🟢' : '⚪';
+                        html += `<span class="tool-badge ${t.installed ? '' : 'disabled'}">${toolIcon} ${Utils.escapeHtml(t.name)}</span>`;
+                    });
+                    html += `  </div>`;
+                }
+
+                // Dependencies info
+                if (p.deps && p.deps.length > 0) {
+                    html += `  <div class="tool-plugin-deps">依赖: ${p.deps.map(d => `<code>${d}</code>`).join(' ')}</div>`;
+                }
+
+                // Install output area
+                html += `  <div id="installOutput_${p.service_name}" class="tool-install-output" style="display:none;"></div>`;
+
+                html += `</div>`;
+            });
+
+            container.innerHTML = html;
+        }
+
+        async function installToolPlugin(serviceName) {
+            const btn = document.getElementById(`installBtn_${serviceName}`);
+            const output = document.getElementById(`installOutput_${serviceName}`);
+
+            btn.disabled = true;
+            btn.textContent = '⏳ 安装中...';
+            output.style.display = 'block';
+            output.className = 'tool-install-output installing';
+            output.textContent = '正在安装依赖，请稍候...';
+
+            try {
+                const res = await fetch(`/api/tools/${serviceName}/install`, { method: 'POST' });
+                const data = await res.json();
+
+                if (data.success) {
+                    output.className = 'tool-install-output success';
+                    output.textContent = '安装成功！';
+                    showToast(`${serviceName} 依赖安装成功`);
+                    // Refresh the plugin list after a short delay
+                    setTimeout(() => loadToolPlugins(), 500);
+                } else {
+                    output.className = 'tool-install-output error';
+                    output.textContent = `安装失败: ${data.error || '未知错误'}`;
+                    if (data.output) {
+                        output.textContent += '\n\n' + data.output;
+                    }
+                    btn.disabled = false;
+                    btn.textContent = '📦 重试安装';
+                }
+            } catch (e) {
+                output.className = 'tool-install-output error';
+                output.textContent = `请求失败: ${e.message}`;
+                btn.disabled = false;
+                btn.textContent = '📦 重试安装';
+            }
         }
 
         loadSettings();

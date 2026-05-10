@@ -7,7 +7,7 @@ import uuid
 from typing import List, Dict, Any
 
 from app.models.a2a import A2ATask, A2ATaskStatus, A2ATaskStatusState, A2AMessage, A2AMessageRole
-from app.models.collaboration import CollaborationResponse
+from app.models.collaboration import CollaborationResponse, IterationConfig
 from app.services.collaboration.base import BaseCollaborationMode
 from app.services.collaboration_service import collaboration_service
 from app.services.agent_registry import agent_registry
@@ -35,8 +35,9 @@ class SupervisorCollaboration(BaseCollaborationMode):
 
             # Step 2: Execute child agents in parallel or sequence
             parallel = collab.config_json.get("parallel_execution", True)
+            iteration_enabled = IterationConfig(**collab.config_json.get("iteration", {})).enabled
             child_results = await self._execute_children(
-                sub_tasks, input_text, parallel, task
+                sub_tasks, input_text, parallel, task, iteration_enabled
             )
 
             # Step 3: Supervisor summarizes results
@@ -61,15 +62,24 @@ class SupervisorCollaboration(BaseCollaborationMode):
     async def execute_stream(self, collab: CollaborationResponse, input_text: str):
         """Execute supervisor mode with SSE event streaming"""
         task = self._create_task(input_text)
-        await self._create_task_record(collab.id, task)
+        if not self._skip_task_record:
+            await self._create_task_record(collab.id, task)
 
         try:
-            yield {
-                "type": "task_start",
-                "task_id": task.id,
-                "input": input_text,
-                "mode": "supervisor"
-            }
+            if self._skip_task_record:
+                yield {
+                    "type": "task_start",
+                    "task_id": self._shared_task_id or task.id,
+                    "input": input_text,
+                    "mode": "supervisor"
+                }
+            else:
+                yield {
+                    "type": "task_start",
+                    "task_id": task.id,
+                    "input": input_text,
+                    "mode": "supervisor"
+                }
 
             supervisor_agent, child_agents, child_agent_info = self._resolve_agents(collab)
             agent_list_str = self._build_agent_list_str(child_agent_info)
@@ -78,7 +88,7 @@ class SupervisorCollaboration(BaseCollaborationMode):
                 yield {"type": "task_failed", "error": "Missing supervisor or child agents"}
                 return
 
-            # Step 1: Supervisor splits task
+            # Step 1: Supervisor splits task (streaming)
             yield {
                 "type": "agent_start",
                 "agent_id": supervisor_agent.agent_id,
@@ -88,26 +98,36 @@ class SupervisorCollaboration(BaseCollaborationMode):
 
             split_prompt = self._build_split_prompt(collab, input_text, agent_list_str)
             split_task = A2ATask(id=str(uuid.uuid4()), input=split_prompt)
-            split_result = await agent_registry.call_agent(supervisor_agent.agent_id, split_task)
+            split_output = ""
 
-            yield {
-                "type": "agent_message",
-                "agent_id": supervisor_agent.agent_id,
-                "role": "supervisor",
-                "content": split_result.output or "",
-                "round": 0
-            }
+            async for sub_event in agent_registry.call_agent_stream(supervisor_agent.agent_id, split_task):
+                yield {
+                    "type": f"agent_{sub_event['type']}",
+                    "agent_id": supervisor_agent.agent_id,
+                    "role": "supervisor",
+                    "round": 0,
+                    **{k: v for k, v in sub_event.items() if k != "type"},
+                }
+                if sub_event.get("type") == "content":
+                    split_output += sub_event["content"]
+
+            if not split_output and split_task.output:
+                split_output = split_task.output
+
             yield {"type": "agent_done", "agent_id": supervisor_agent.agent_id, "round": 0}
 
-            sub_tasks = self._parse_subtasks(split_result.output, child_agent_info)
+            sub_tasks = self._parse_subtasks(split_output, child_agent_info)
 
             # Step 2: Execute child agents with streaming
             parallel = collab.config_json.get("parallel_execution", True)
+            iteration_enabled = IterationConfig(**collab.config_json.get("iteration", {})).enabled
             logger.info(f"Supervisor: parsed {len(sub_tasks)} sub-tasks (parallel={parallel})")
 
             child_results = []
 
             if parallel and len(sub_tasks) > 1:
+                # For parallel: emit agent_start for all, then run in parallel
+                # Use asyncio.Queue to multiplex streams from parallel agents
                 for idx, (child_agent, sub_input) in enumerate(sub_tasks):
                     yield {
                         "type": "agent_start",
@@ -116,31 +136,60 @@ class SupervisorCollaboration(BaseCollaborationMode):
                         "round": idx + 1
                     }
 
-                tasks = []
-                for child_agent, sub_input in sub_tasks:
-                    enhanced_input = self._enhance_child_task(sub_input, input_text)
+                # Create a queue for multiplexing events from parallel agents
+                event_queue: asyncio.Queue = asyncio.Queue()
+                pending_count = len(sub_tasks)
+
+                async def _run_child_stream(child_agent, sub_input, idx):
+                    """Run a child agent's streaming execution and push events to queue."""
+                    enhanced_input = self._enhance_child_task(sub_input, input_text, iteration_enabled)
                     t = A2ATask(id=str(uuid.uuid4()), input=enhanced_input)
-                    tasks.append(agent_registry.call_agent(child_agent.agent_id, t))
+                    output = ""
+                    try:
+                        async for sub_event in agent_registry.call_agent_stream(child_agent.agent_id, t):
+                            await event_queue.put({
+                                "type": f"agent_{sub_event['type']}",
+                                "agent_id": child_agent.agent_id,
+                                "role": "child",
+                                "round": idx + 1,
+                                **{k: v for k, v in sub_event.items() if k != "type"},
+                            })
+                            if sub_event.get("type") == "content":
+                                output += sub_event["content"]
+                    except Exception as e:
+                        await event_queue.put({
+                            "type": "agent_error",
+                            "agent_id": child_agent.agent_id,
+                            "message": str(e),
+                        })
+                    if not output and t.output:
+                        output = t.output
+                    await event_queue.put({"type": "_child_done", "agent_id": child_agent.agent_id, "output": output})
 
-                results = await asyncio.gather(*tasks, return_exceptions=True)
+                # Launch all child streams as tasks
+                child_tasks = []
+                for idx, (child_agent, sub_input) in enumerate(sub_tasks):
+                    child_tasks.append(asyncio.create_task(
+                        _run_child_stream(child_agent, sub_input, idx)
+                    ))
 
-                for idx, result in enumerate(results):
-                    child_agent = sub_tasks[idx][0]
-                    if isinstance(result, Exception):
-                        child_results.append(f"[Agent {child_agent.agent_id} failed: {str(result)}]")
+                # Consume events from queue and yield them
+                done_count = 0
+                agent_round_map = {ca.agent_id: idx + 1 for idx, (ca, _) in enumerate(sub_tasks)}
+                while done_count < pending_count:
+                    event = await event_queue.get()
+                    if event["type"] == "_child_done":
+                        done_count += 1
+                        child_results.append(event["output"])
+                        yield {"type": "agent_done", "agent_id": event["agent_id"], "round": agent_round_map.get(event["agent_id"], 1)}
                     else:
-                        child_results.append(result.output or "")
-                        await self._update_task_record(result)
+                        yield event
 
-                    yield {
-                        "type": "agent_message",
-                        "agent_id": child_agent.agent_id,
-                        "role": "child",
-                        "content": child_results[-1],
-                        "round": idx + 1
-                    }
-                    yield {"type": "agent_done", "agent_id": child_agent.agent_id, "round": idx + 1}
+                # Wait for all tasks to complete (they should be done by now)
+                await asyncio.gather(*child_tasks, return_exceptions=True)
+
             else:
+                # Sequential execution — stream directly
                 for idx, (child_agent, sub_input) in enumerate(sub_tasks):
                     yield {
                         "type": "agent_start",
@@ -149,22 +198,31 @@ class SupervisorCollaboration(BaseCollaborationMode):
                         "round": idx + 1
                     }
 
-                    enhanced_input = self._enhance_child_task(sub_input, input_text)
+                    enhanced_input = self._enhance_child_task(sub_input, input_text, iteration_enabled)
                     t = A2ATask(id=str(uuid.uuid4()), input=enhanced_input)
-                    result = await agent_registry.call_agent(child_agent.agent_id, t)
-                    child_results.append(result.output or "")
+                    child_output = ""
 
-                    yield {
-                        "type": "agent_message",
-                        "agent_id": child_agent.agent_id,
-                        "role": "child",
-                        "content": result.output or "",
-                        "round": idx + 1
-                    }
+                    async for sub_event in agent_registry.call_agent_stream(child_agent.agent_id, t):
+                        yield {
+                            "type": f"agent_{sub_event['type']}",
+                            "agent_id": child_agent.agent_id,
+                            "role": "child",
+                            "round": idx + 1,
+                            **{k: v for k, v in sub_event.items() if k != "type"},
+                        }
+                        if sub_event.get("type") == "content":
+                            child_output += sub_event["content"]
+
+                    if not child_output and t.output:
+                        child_output = t.output
+
+                    child_results.append(child_output)
+                    task.add_message(A2AMessageRole.AGENT,
+                                     f"[Child {idx+1}] {child_agent.agent_id}: {child_output}")
+
                     yield {"type": "agent_done", "agent_id": child_agent.agent_id, "round": idx + 1}
-                    await self._update_task_record(result)
 
-            # Step 3: Supervisor summarizes
+            # Step 3: Supervisor summarizes (streaming)
             yield {
                 "type": "agent_start",
                 "agent_id": supervisor_agent.agent_id,
@@ -175,22 +233,30 @@ class SupervisorCollaboration(BaseCollaborationMode):
             child_results_str = self._build_child_results_str(sub_tasks, child_results)
             summary_prompt = self._build_summary_prompt(collab, input_text, child_results_str)
             summary_task = A2ATask(id=str(uuid.uuid4()), input=summary_prompt)
-            summary_result = await agent_registry.call_agent(supervisor_agent.agent_id, summary_task)
+            summary_output = ""
 
-            task.set_completed(summary_result.output or "No summary generated")
-            task.add_message(A2AMessageRole.AGENT, summary_result.output or "")
+            async for sub_event in agent_registry.call_agent_stream(supervisor_agent.agent_id, summary_task):
+                yield {
+                    "type": f"agent_{sub_event['type']}",
+                    "agent_id": supervisor_agent.agent_id,
+                    "role": "supervisor",
+                    "round": 999,
+                    **{k: v for k, v in sub_event.items() if k != "type"},
+                }
+                if sub_event.get("type") == "content":
+                    summary_output += sub_event["content"]
 
-            yield {
-                "type": "agent_message",
-                "agent_id": supervisor_agent.agent_id,
-                "role": "supervisor",
-                "content": summary_result.output or "",
-                "round": 999
-            }
+            if not summary_output and summary_task.output:
+                summary_output = summary_task.output
+
+            task.set_completed(summary_output or "No summary generated")
+            task.add_message(A2AMessageRole.AGENT, summary_output or "")
+
             yield {"type": "agent_done", "agent_id": supervisor_agent.agent_id, "round": 999}
 
-            await self._update_task_record(task, completed=True)
-            await collaboration_service.increment_usage(collab.id)
+            if not self._skip_task_record:
+                await self._update_task_record(task, completed=True)
+                await collaboration_service.increment_usage(collab.id)
 
             yield {
                 "type": "task_complete",
@@ -203,7 +269,8 @@ class SupervisorCollaboration(BaseCollaborationMode):
         except Exception as e:
             logger.error(f"Supervisor collaboration failed: {e}", exc_info=True)
             task.set_failed(str(e))
-            await self._update_task_record(task, completed=True)
+            if not self._skip_task_record:
+                await self._update_task_record(task, completed=True)
             yield {"type": "task_failed", "task_id": task.id, "error": str(e)}
 
     # --- Private helpers ---
@@ -278,14 +345,14 @@ class SupervisorCollaboration(BaseCollaborationMode):
             result_parts.append(f"Agent {agent_name}: {child_results[i]}")
         return chr(10).join(result_parts)
 
-    async def _execute_children(self, sub_tasks, input_text, parallel, task):
+    async def _execute_children(self, sub_tasks, input_text, parallel, task, iteration_enabled=False):
         """Execute child agents and return list of result strings (non-streaming)"""
         child_results = []
 
         if parallel:
             tasks = []
             for child_agent, sub_input in sub_tasks:
-                enhanced_input = self._enhance_child_task(sub_input, input_text)
+                enhanced_input = self._enhance_child_task(sub_input, input_text, iteration_enabled)
                 t = A2ATask(id=str(uuid.uuid4()), input=enhanced_input)
                 tasks.append(agent_registry.call_agent(child_agent.agent_id, t))
 
@@ -300,7 +367,7 @@ class SupervisorCollaboration(BaseCollaborationMode):
                     await self._update_task_record(result)
         else:
             for child_agent, sub_input in sub_tasks:
-                enhanced_input = self._enhance_child_task(sub_input, input_text)
+                enhanced_input = self._enhance_child_task(sub_input, input_text, iteration_enabled)
                 t = A2ATask(id=str(uuid.uuid4()), input=enhanced_input)
                 try:
                     result = await agent_registry.call_agent(child_agent.agent_id, t)
@@ -404,11 +471,12 @@ class SupervisorCollaboration(BaseCollaborationMode):
         return task_desc.strip()
 
     @staticmethod
-    def _enhance_child_task(sub_input: str, original_task: str) -> str:
+    def _enhance_child_task(sub_input: str, original_task: str, iteration_enabled: bool = False) -> str:
+        artifact_instruction = BaseCollaborationMode.get_artifact_format_instruction() if iteration_enabled else ""
         return f"""【协作子任务】{sub_input}
 
 原始任务：{original_task}
-
+{artifact_instruction}
 重要要求：
 1. 你必须使用可用的工具（如web_search搜索资讯、代码解释器获取和分析数据）获取实际数据后再进行分析
 2. 不要只输出分析框架或大纲，必须包含具体的数据、数值和分析结论

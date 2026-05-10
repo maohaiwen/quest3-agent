@@ -6,7 +6,7 @@ from collections import Counter
 from typing import List, Dict, Any
 
 from app.models.a2a import A2ATask, A2AMessageRole
-from app.models.collaboration import CollaborationResponse
+from app.models.collaboration import CollaborationResponse, IterationConfig
 from app.services.collaboration.base import BaseCollaborationMode
 from app.services.collaboration_service import collaboration_service
 from app.services.agent_registry import agent_registry
@@ -19,13 +19,14 @@ class VotingCollaboration(BaseCollaborationMode):
     then an aggregator consolidates the results via majority vote.
     """
 
-    def _build_voter_prompt(self, input_text: str, custom_instruction: str = None) -> str:
+    def _build_voter_prompt(self, input_text: str, custom_instruction: str = None, iteration_enabled: bool = False) -> str:
         """Build the prompt for a voter agent."""
         prefix = f"{custom_instruction}\n\n" if custom_instruction else ""
+        artifact_instruction = self.get_artifact_format_instruction() if iteration_enabled else ""
         return f"""{prefix}你是一个独立的投票者。请对以下问题表达你的观点并做出明确选择，不要反问或请他人决定。
 
 {input_text}
-
+{artifact_instruction}
 要求：
 1. 你必须明确表明自己的立场或选择
 2. 给出你的理由
@@ -80,12 +81,13 @@ class VotingCollaboration(BaseCollaborationMode):
 
             config = collab.config_json
             strategy = config.get("strategy", "majority")
+            iteration_enabled = IterationConfig(**config.get("iteration", {})).enabled
 
             # Step 1: All voters answer independently in parallel
             voter_instruction = config.get("voter_prompt_template")
             tasks = []
             for voter in voters:
-                voter_input = self._build_voter_prompt(input_text, voter_instruction)
+                voter_input = self._build_voter_prompt(input_text, voter_instruction, iteration_enabled)
                 t = A2ATask(id=str(uuid.uuid4()), input=voter_input)
                 tasks.append((voter, t))
 
@@ -128,10 +130,12 @@ class VotingCollaboration(BaseCollaborationMode):
 
     async def execute_stream(self, collab: CollaborationResponse, input_text: str):
         task = self._create_task(input_text)
-        await self._create_task_record(collab.id, task)
+        if not self._skip_task_record:
+            await self._create_task_record(collab.id, task)
 
         try:
-            yield {"type": "task_start", "task_id": task.id, "input": input_text, "mode": "voting"}
+            tid = self._shared_task_id or task.id
+            yield {"type": "task_start", "task_id": tid, "input": input_text, "mode": "voting"}
 
             voters = [a for a in collab.agents if a.role == "voter"]
             aggregator = next((a for a in collab.agents if a.role == "aggregator"), None)
@@ -143,8 +147,9 @@ class VotingCollaboration(BaseCollaborationMode):
             config = collab.config_json
             strategy = config.get("strategy", "majority")
             voter_instruction = config.get("voter_prompt_template")
+            iteration_enabled = IterationConfig(**config.get("iteration", {})).enabled
 
-            # Step 1: All voters answer in parallel
+            # Step 1: All voters answer in parallel (with streaming)
             for voter in voters:
                 yield {
                     "type": "agent_start",
@@ -153,32 +158,60 @@ class VotingCollaboration(BaseCollaborationMode):
                     "round": 1
                 }
 
-            voter_input = self._build_voter_prompt(input_text, voter_instruction)
-            tasks = [(v, A2ATask(id=str(uuid.uuid4()), input=voter_input)) for v in voters]
-            results = await asyncio.gather(
-                *[agent_registry.call_agent(v.agent_id, t) for v, t in tasks],
-                return_exceptions=True
-            )
+            voter_input = self._build_voter_prompt(input_text, voter_instruction, iteration_enabled)
+            vote_tasks = [(v, A2ATask(id=str(uuid.uuid4()), input=voter_input)) for v in voters]
 
-            votes = []
-            for i, result in enumerate(results):
-                voter = tasks[i][0]
-                if isinstance(result, Exception):
-                    answer = f"[Failed: {str(result)}]"
+            # Use asyncio.Queue for parallel streaming
+            event_queue: asyncio.Queue = asyncio.Queue()
+
+            async def _run_voter_stream(voter, v_task):
+                output = ""
+                try:
+                    async for sub_event in agent_registry.call_agent_stream(voter.agent_id, v_task):
+                        await event_queue.put({
+                            "type": f"agent_{sub_event['type']}",
+                            "agent_id": voter.agent_id,
+                            "role": "voter",
+                            "round": 1,
+                            **{k: v for k, v in sub_event.items() if k != "type"},
+                        })
+                        if sub_event.get("type") == "content":
+                            output += sub_event["content"]
+                except Exception as e:
+                    await event_queue.put({
+                        "type": "agent_error",
+                        "agent_id": voter.agent_id,
+                        "message": str(e),
+                    })
+                if not output and v_task.output:
+                    output = v_task.output
+                await event_queue.put({"type": "_voter_done", "agent_id": voter.agent_id, "output": output})
+
+            voter_async_tasks = [
+                asyncio.create_task(_run_voter_stream(v, t)) for v, t in vote_tasks
+            ]
+
+            # Consume events from queue
+            done_count = 0
+            voter_output_map = {}
+            while done_count < len(voters):
+                event = await event_queue.get()
+                if event["type"] == "_voter_done":
+                    done_count += 1
+                    voter_output_map[event["agent_id"]] = event["output"]
+                    yield {"type": "agent_done", "agent_id": event["agent_id"], "round": 1}
                 else:
-                    answer = result.output or ""
-                votes.append((voter, answer))
+                    yield event
 
-                yield {
-                    "type": "agent_message",
-                    "agent_id": voter.agent_id,
-                    "role": "voter",
-                    "content": answer,
-                    "round": 1
-                }
-                yield {"type": "agent_done", "agent_id": voter.agent_id, "round": 1}
+            await asyncio.gather(*voter_async_tasks, return_exceptions=True)
 
-            # Step 2: Aggregate
+            # Build votes in original order
+            votes = []
+            for voter, _ in vote_tasks:
+                output = voter_output_map.get(voter.agent_id, "")
+                votes.append((voter, output))
+
+            # Step 2: Aggregate (streaming)
             if aggregator:
                 yield {
                     "type": "agent_start",
@@ -187,16 +220,42 @@ class VotingCollaboration(BaseCollaborationMode):
                     "round": 2
                 }
 
-                final_output = await self._aggregate_with_agent(
-                    aggregator, input_text, votes, config)
+                # Build aggregator prompt
+                custom_instruction = config.get("aggregator_prompt")
+                votes_text = "\n".join(
+                    f"Agent {voter.agent_id} (优先级: {voter.priority}): {answer}"
+                    for voter, answer in votes
+                )
+                prefix = f"{custom_instruction}\n\n" if custom_instruction else ""
+                prompt = f"""{prefix}你是答案聚合器。多个独立Agent对同一个问题给出了各自的回答。
 
-                yield {
-                    "type": "agent_message",
-                    "agent_id": aggregator.agent_id,
-                    "role": "aggregator",
-                    "content": final_output,
-                    "round": 2
-                }
+原始问题：{input_text}
+
+各Agent的回答：
+{votes_text}
+
+请根据以上回答，综合分析并给出最终的、最准确的答案。如果多数Agent意见一致，采用多数意见；如果意见分歧，请分析各方理由并给出最佳判断。
+
+请直接输出最终答案。"""
+
+                agg_task = A2ATask(id=str(uuid.uuid4()), input=prompt)
+                agg_output = ""
+
+                async for sub_event in agent_registry.call_agent_stream(aggregator.agent_id, agg_task):
+                    yield {
+                        "type": f"agent_{sub_event['type']}",
+                        "agent_id": aggregator.agent_id,
+                        "role": "aggregator",
+                        "round": 2,
+                        **{k: v for k, v in sub_event.items() if k != "type"},
+                    }
+                    if sub_event.get("type") == "content":
+                        agg_output += sub_event["content"]
+
+                if not agg_output and agg_task.output:
+                    agg_output = agg_task.output
+
+                final_output = agg_output
                 yield {"type": "agent_done", "agent_id": aggregator.agent_id, "round": 2}
             else:
                 final_output = self._aggregate_simple(votes, strategy)
@@ -204,8 +263,9 @@ class VotingCollaboration(BaseCollaborationMode):
             task.set_completed(final_output)
             task.add_message(A2AMessageRole.AGENT, final_output)
 
-            await self._update_task_record(task, completed=True)
-            await collaboration_service.increment_usage(collab.id)
+            if not self._skip_task_record:
+                await self._update_task_record(task, completed=True)
+                await collaboration_service.increment_usage(collab.id)
 
             yield {
                 "type": "task_complete",
@@ -218,5 +278,6 @@ class VotingCollaboration(BaseCollaborationMode):
         except Exception as e:
             logger.error(f"Voting collaboration failed: {e}", exc_info=True)
             task.set_failed(str(e))
-            await self._update_task_record(task, completed=True)
+            if not self._skip_task_record:
+                await self._update_task_record(task, completed=True)
             yield {"type": "task_failed", "task_id": task.id, "error": str(e)}

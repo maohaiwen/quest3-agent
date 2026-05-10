@@ -1,12 +1,54 @@
 """Base classes for tool services"""
-from typing import Dict, Any
+import importlib
+import logging
+from typing import Dict, Any, List, Optional
 
 # Import MCPTool from mcp_service to avoid duplication
 from app.services.mcp_service import MCPTool
 
+logger = logging.getLogger(__name__)
+
 
 class BaseToolService:
-    """Base class for tool services"""
+    """Base class for tool services
+
+    Subclasses can declare pip dependencies via the `deps` class attribute.
+    If dependencies are missing, the service registers as "not installed"
+    and can be installed on demand via the tool management API.
+    """
+
+    # Override in subclass to declare pip dependencies
+    # e.g. ["akshare", "scipy"]
+    deps: List[str] = []
+
+    # Human-readable name for the tool service (shown in UI)
+    service_name: str = "Unknown"
+
+    # Short description of what this service provides
+    service_description: str = ""
+
+    @classmethod
+    def check_deps(cls) -> Dict[str, bool]:
+        """Check which dependencies are missing.
+
+        Returns:
+            Dict mapping package name to True (installed) / False (missing)
+        """
+        result = {}
+        for pkg in cls.deps:
+            try:
+                importlib.import_module(pkg)
+                result[pkg] = True
+            except ImportError:
+                result[pkg] = False
+        return result
+
+    @classmethod
+    def is_installed(cls) -> bool:
+        """Check if all dependencies are installed"""
+        if not cls.deps:
+            return True
+        return all(cls.check_deps().values())
 
     def get_tools(self) -> Dict[str, MCPTool]:
         """Get available tools from this service

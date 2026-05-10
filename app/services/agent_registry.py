@@ -75,6 +75,24 @@ class AgentRegistry:
         # For now, assume agent_id might be a URL or we need to look up
         raise ValueError(f"Agent {agent_id} not found in registry and remote call not configured")
 
+    async def call_agent_stream(self, agent_id: str, task: A2ATask):
+        """Call an agent with streaming events (thinking, tool calls, observations).
+
+        Yields dicts: {"type": "thinking"|"action"|"observation"|"content"|"phase"|"error", ...}
+        The caller should add agent_id before forwarding to SSE.
+        """
+        if agent_id not in self._agents:
+            raise ValueError(f"Agent {agent_id} not found in registry")
+
+        logger.info(f"Streaming agent {agent_id} with task {task.id}")
+        event_count = 0
+        async for event in self._agents[agent_id].handle_task_stream(task):
+            event_count += 1
+            if event_count <= 3 or event_count % 20 == 0:
+                logger.debug(f"Stream event #{event_count} from agent {agent_id}: type={event.get('type')}")
+            yield event
+        logger.info(f"Streaming agent {agent_id} done, {event_count} events total")
+
     async def call_remote_agent(self, agent_card: AgentCard, task: A2ATask) -> A2ATask:
         """Call a remote agent via HTTP (A2A protocol)"""
         try:

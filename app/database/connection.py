@@ -150,6 +150,7 @@ class DatabaseConnection:
         await self._create_collaborations_table()
         await self._create_collaboration_agents_table()
         await self._create_collaboration_tasks_table()
+        await self._create_collaboration_artifacts_table()
         await self._create_settings_table()
         await self._create_users_table()
 
@@ -408,12 +409,19 @@ class DatabaseConnection:
             output TEXT,
             status TEXT DEFAULT 'pending',
             messages_json TEXT,
+            events_json TEXT,
             started_at TEXT,
             completed_at TEXT,
             FOREIGN KEY (collaboration_id) REFERENCES collaborations(id) ON DELETE CASCADE
         )
         """
         await self.execute(sql)
+
+        # Migration: add events_json column if missing
+        try:
+            await self.execute("ALTER TABLE collaboration_tasks ADD COLUMN events_json TEXT")
+        except Exception:
+            pass  # Column already exists
 
         # Create indexes
         sql = """
@@ -425,6 +433,39 @@ class DatabaseConnection:
         sql = """
         CREATE INDEX IF NOT EXISTS idx_collaboration_tasks_task_id
         ON collaboration_tasks (task_id)
+        """
+        await self.execute(sql)
+        await self.commit()
+
+    async def _create_collaboration_artifacts_table(self) -> None:
+        """Create collaboration_artifacts table"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS collaboration_artifacts (
+            id TEXT PRIMARY KEY,
+            collaboration_id TEXT NOT NULL,
+            task_id TEXT,
+            round INTEGER DEFAULT 1,
+            producer_agent_id TEXT,
+            producer_role TEXT,
+            name TEXT NOT NULL,
+            artifact_type TEXT NOT NULL,
+            content TEXT NOT NULL,
+            metadata_json TEXT DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (collaboration_id) REFERENCES collaborations(id) ON DELETE CASCADE
+        )
+        """
+        await self.execute(sql)
+
+        sql = """
+        CREATE INDEX IF NOT EXISTS idx_artifacts_collab_id
+        ON collaboration_artifacts (collaboration_id)
+        """
+        await self.execute(sql)
+
+        sql = """
+        CREATE INDEX IF NOT EXISTS idx_artifacts_task_id
+        ON collaboration_artifacts (task_id)
         """
         await self.execute(sql)
         await self.commit()
