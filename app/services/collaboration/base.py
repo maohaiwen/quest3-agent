@@ -1,5 +1,6 @@
 """Base class for collaboration modes with shared database operations,
-iteration capability, and artifact management"""
+iteration capability, artifact management, and human input support"""
+import asyncio
 import json
 import logging
 import re
@@ -645,3 +646,42 @@ class BaseCollaborationMode:
             input=input_text,
             status=A2ATaskStatus(state=A2ATaskStatusState.RUNNING)
         )
+
+    async def _wait_for_human_input(
+        self, task_id: str, agent_id: str, role: str,
+        sandbox=None, prompt: str = "", timeout: int = 1800
+    ) -> Dict[str, Any]:
+        """Suspend execution and wait for human input via the API.
+
+        Registers the task in the global pending store. The frontend
+        calls POST /tasks/{id}/human-input which validates the move
+        (via sandbox if present) and wakes this coroutine.
+
+        Args:
+            task_id: The collaboration task ID.
+            agent_id: Human agent identifier (usually "human").
+            role: The role of the human player (e.g. "participant_0").
+            sandbox: Optional sandbox instance for move validation.
+            prompt: State description shown to the human player.
+            timeout: Maximum wait time in seconds (default 30 min).
+
+        Returns:
+            Result dict with at least ``success`` key.
+        """
+        from app.api.collaborations import _pending_human_inputs
+        move_event = asyncio.Event()
+        _pending_human_inputs[task_id] = {
+            "event": move_event,
+            "role": role,
+            "agent_id": agent_id,
+            "sandbox": sandbox,
+            "result": None,
+            "prompt": prompt,
+        }
+        try:
+            await asyncio.wait_for(move_event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            _pending_human_inputs.pop(task_id, None)
+            return {"success": False, "error": "等待人类输入超时"}
+        entry = _pending_human_inputs.pop(task_id, None)
+        return entry["result"] if entry else {"success": False, "error": "输入已取消"}

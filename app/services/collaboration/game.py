@@ -623,53 +623,130 @@ class GameCollaboration(BaseCollaborationMode):
 
                         idx = next((i for a, r, i in participants if r == role_key or a.role == role_key), 0)
 
-                        prompt = self._build_participant_prompt(
-                            collab, input_text, shared_state, role_key, idx, round_num,
-                            turn_strategy, round_actions_so_far,
-                            sandbox=sandbox, agent_id=agent.agent_id)
-
-                        yield {
-                            "type": "agent_start",
-                            "agent_id": agent.agent_id,
-                            "role": role_key,
-                            "round": round_num
-                        }
-
-                        agent_task = A2ATask(id=str(uuid.uuid4()), input=prompt)
-                        # Inject sandbox tools
-                        if sandbox:
-                            agent_task.sandbox_tools = sandbox.get_tools_for_llm(agent.agent_id, role_key)
-                            agent_task.sandbox_handler = _make_sandbox_handler(sandbox, agent.agent_id, role_key)
-
-                        action = ""
-
-                        async for sub_event in agent_registry.call_agent_stream(agent.agent_id, agent_task):
+                        # ---- Human participant branch ----
+                        if agent.is_human:
                             yield {
-                                "type": f"agent_{sub_event['type']}",
-                                "agent_id": agent.agent_id,
+                                "type": "agent_start",
+                                "agent_id": "human",
+                                "role": role_key,
+                                "round": round_num
+                            }
+                            yield {
+                                "type": "waiting_for_human",
                                 "role": role_key,
                                 "round": round_num,
-                                **{k: v for k, v in sub_event.items() if k != "type"},
                             }
-                            if sub_event.get("type") == "content":
-                                action += sub_event["content"]
 
-                        if not action and agent_task.output:
-                            action = agent_task.output
+                            if sandbox:
+                                yield {
+                                    "type": "sandbox_state",
+                                    "sandbox": sandbox_name,
+                                    "state": sandbox.get_display_state(),
+                                }
+                                state_view = sandbox.get_state_view("human", role_key)
+                                result = await self._wait_for_human_input(
+                                    task.id, "human", role_key,
+                                    sandbox=sandbox, prompt=state_view,
+                                )
+                            else:
+                                result = await self._wait_for_human_input(
+                                    task.id, "human", role_key,
+                                    prompt="请输入你的行动",
+                                )
 
-                        action_line = f"{role_key}: {action}"
-                        round_actions.append(action_line)
-                        round_actions_so_far.append(action_line)
+                            # If invalid move (sandbox rejected), re-wait until valid or timeout
+                            while not result.get("success"):
+                                # Timeout or cancellation — break out
+                                if result.get("error") in ("等待人类输入超时", "输入已取消"):
+                                    yield {"type": "task_failed", "error": result["error"]}
+                                    return
+                                yield {
+                                    "type": "human_move_error",
+                                    "role": role_key,
+                                    "error": result.get("error", "无效操作"),
+                                }
+                                if sandbox:
+                                    state_view = sandbox.get_state_view("human", role_key)
+                                    result = await self._wait_for_human_input(
+                                        task.id, "human", role_key,
+                                        sandbox=sandbox, prompt=state_view,
+                                    )
+                                else:
+                                    result = await self._wait_for_human_input(
+                                        task.id, "human", role_key,
+                                        prompt="请重新输入",
+                                    )
 
-                        yield {"type": "agent_done", "agent_id": agent.agent_id, "role": role_key, "round": round_num}
-
-                        # Emit sandbox state immediately after each participant finishes
-                        if sandbox:
+                            action = result.get("message", "")
                             yield {
-                                "type": "sandbox_state",
-                                "sandbox": sandbox_name,
-                                "state": sandbox.get_display_state(),
+                                "type": "human_moved",
+                                "role": role_key,
+                                "round": round_num,
+                                "result": result,
                             }
+
+                            action_line = f"{role_key}: {action}"
+                            round_actions.append(action_line)
+                            round_actions_so_far.append(action_line)
+
+                            yield {"type": "agent_done", "agent_id": "human", "role": role_key, "round": round_num}
+
+                            if sandbox:
+                                yield {
+                                    "type": "sandbox_state",
+                                    "sandbox": sandbox_name,
+                                    "state": sandbox.get_display_state(),
+                                }
+
+                        # ---- AI participant branch (original logic) ----
+                        else:
+                            prompt = self._build_participant_prompt(
+                                collab, input_text, shared_state, role_key, idx, round_num,
+                                turn_strategy, round_actions_so_far,
+                                sandbox=sandbox, agent_id=agent.agent_id)
+
+                            yield {
+                                "type": "agent_start",
+                                "agent_id": agent.agent_id,
+                                "role": role_key,
+                                "round": round_num
+                            }
+
+                            agent_task = A2ATask(id=str(uuid.uuid4()), input=prompt)
+                            # Inject sandbox tools
+                            if sandbox:
+                                agent_task.sandbox_tools = sandbox.get_tools_for_llm(agent.agent_id, role_key)
+                                agent_task.sandbox_handler = _make_sandbox_handler(sandbox, agent.agent_id, role_key)
+
+                            action = ""
+
+                            async for sub_event in agent_registry.call_agent_stream(agent.agent_id, agent_task):
+                                yield {
+                                    "type": f"agent_{sub_event['type']}",
+                                    "agent_id": agent.agent_id,
+                                    "role": role_key,
+                                    "round": round_num,
+                                    **{k: v for k, v in sub_event.items() if k != "type"},
+                                }
+                                if sub_event.get("type") == "content":
+                                    action += sub_event["content"]
+
+                            if not action and agent_task.output:
+                                action = agent_task.output
+
+                            action_line = f"{role_key}: {action}"
+                            round_actions.append(action_line)
+                            round_actions_so_far.append(action_line)
+
+                            yield {"type": "agent_done", "agent_id": agent.agent_id, "role": role_key, "round": round_num}
+
+                            # Emit sandbox state immediately after each participant finishes
+                            if sandbox:
+                                yield {
+                                    "type": "sandbox_state",
+                                    "sandbox": sandbox_name,
+                                    "state": sandbox.get_display_state(),
+                                }
 
                     shared_state[f"round_{round_num}_actions"] = round_actions_so_far
 

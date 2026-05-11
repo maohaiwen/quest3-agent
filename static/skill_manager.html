@@ -8,6 +8,8 @@
     <style>
         body { padding: 20px; min-height: 100vh; }
         @media (max-width: 768px) { body { padding: 0; } .page-container { border-radius: 0; } }
+        .filter-controls input { flex: 1; min-width: 0; }
+        .filter-controls select { flex-shrink: 0; width: auto; max-width: 140px; }
     </style>
 </head>
 <body class="gradient-bg">
@@ -153,9 +155,9 @@
                         <span class="skill-name">${Utils.escapeHtml(skill.name)}</span>
                         <span class="source-badge ${skill.source === 'builtin' ? 'builtin' : skill.source === 'github' ? 'github' : 'user-source'}">${getSourceLabel(skill.source)}</span>
                     </div>
-                    <div class="skill-description">${skill.description || '暂无描述'}</div>
-                    ${tagsHtml ? `<div class="skill-tags">${tagsHtml}</div>` : ''}
-                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+                    <div class="skill-description">${skill.description || ''}</div>
+                    ${tagsHtml ? `<div class="skill-tags">${tagsHtml}</div>` : '<div class="skill-tags"></div>'}
+                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px; margin-top: auto;">
                         版本: ${skill.version || '1.0.0'}${skill.author ? ` | 作者: ${Utils.escapeHtml(skill.author)}` : ''}
                     </div>
                     <div class="skill-actions">

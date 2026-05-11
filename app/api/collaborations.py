@@ -54,6 +54,23 @@ _event_flush_pending: Dict[str, bool] = {}       # task_id -> dirty flag
 _event_flush_interval = 3.0  # seconds between DB flushes for a given task
 _event_flush_tasks: Dict[str, asyncio.Task] = {} # task_id -> flush timer task
 
+# ---------------------------------------------------------------------------
+# Human input — tracks tasks paused waiting for human input via the frontend.
+# When a collaboration hits an is_human agent, the executor yields a
+# waiting_for_human SSE event and blocks on the asyncio.Event here.
+# The frontend calls POST /tasks/{id}/human-input to submit the move,
+# which sets the result and wakes the executor.
+# ---------------------------------------------------------------------------
+_pending_human_inputs: Dict[str, Dict] = {}
+# task_id -> {
+#   "event": asyncio.Event(),
+#   "role": str,
+#   "agent_id": str,
+#   "sandbox": Optional[Any],
+#   "result": Optional[Dict],
+#   "prompt": str,
+# }
+
 
 def _store_event(task_id: str, event: Dict):
     """Append an event to the in-memory store and mark for DB flush."""
@@ -531,6 +548,61 @@ async def get_task_events(
     page = all_events[offset:offset + limit]
 
     return {"task_id": task_id, "events": page, "count": len(page), "total": total}
+
+
+@router.post("/tasks/{task_id}/human-input")
+async def submit_human_input(task_id: str, body: Dict[str, Any] = None):
+    """Submit input for a human player node that is currently waiting.
+
+    Body: {"action": "make_move", "params": {"move": "马三进五"}}
+       or: {"action": "text", "content": "我同意方案A"}
+    """
+    if body is None:
+        body = {}
+
+    entry = _pending_human_inputs.get(task_id)
+    if not entry:
+        raise HTTPException(status_code=400, detail="No pending human input for this task")
+
+    action = body.get("action", "text")
+
+    if entry.get("sandbox") and action == "make_move":
+        # Sandbox-based game — validate through sandbox
+        sandbox = entry["sandbox"]
+        role = entry["role"]
+        params = body.get("params", {})
+        move = params.get("move", params.get("content", ""))
+        result = await sandbox.handle_action("human", role, "make_move", move=move)
+    else:
+        # Free-text input (non-sandbox modes)
+        content = body.get("content", body.get("params", {}).get("content", ""))
+        if not content:
+            raise HTTPException(status_code=400, detail="No input content provided")
+        result = {"success": True, "message": content}
+
+    if result.get("success"):
+        entry["result"] = result
+        entry["event"].set()
+
+    return result
+
+
+@router.get("/tasks/{task_id}/pending-human")
+async def get_pending_human(task_id: str):
+    """Check if a task is currently waiting for human input.
+
+    Used by the frontend to restore the input panel after page reload.
+    """
+    entry = _pending_human_inputs.get(task_id)
+    if not entry:
+        return {"waiting": False}
+
+    return {
+        "waiting": True,
+        "role": entry.get("role", ""),
+        "agent_id": entry.get("agent_id", ""),
+        "prompt": entry.get("prompt", ""),
+    }
 
 
 @router.get("/tasks/{task_id}")

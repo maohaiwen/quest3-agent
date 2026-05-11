@@ -290,26 +290,20 @@
                     <div class="agent-header" onclick="startChat('${agent.id}')" style="cursor:pointer">
                         <div>
                             <div class="agent-name">${Utils.escapeHtml(agent.name)}</div>
-                            <div style="margin-top: var(--space-2); display: flex; flex-wrap: wrap; gap: var(--space-1);">
+                            <div style="margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px;">
                                 <span class="agent-type">${getTypeIcon(agent.type)} ${getTypeName(agent.type)}</span>
                                 <span class="agent-mode">${getModeIcon(agent.execution_mode)} ${getModeName(agent.execution_mode)}</span>
                                 <span class="agent-status ${agent.enabled ? 'enabled' : ''}">${agent.enabled ? '✓ 启用' : '✗ 禁用'}</span>
-                                ${agent.enable_long_term_memory ? '<span class="agent-status enabled">🧠 长期记忆</span>' : ''}
                             </div>
                         </div>
                     </div>
-                    ${agent.description ? `<div class="agent-description" onclick="startChat('${agent.id}')" style="cursor:pointer">${Utils.escapeHtml(agent.description)}</div>` : ''}
-                    ${(agent.skills && agent.skills.length > 0) ? `
-                        <div style="margin-bottom: var(--space-3);">
-                            <div class="skill-tags">
-                                ${agent.skills.map(skill => `<span class="skill-tag">${Utils.escapeHtml(skill)}</span>`).join('')}
-                            </div>
-                        </div>
-                    ` : ''}
+                    <div class="agent-description" onclick="startChat('${agent.id}')" style="cursor:pointer">${Utils.escapeHtml(agent.description || '')}</div>
+                    <div class="agent-tags-row">
+                        ${(agent.skills && agent.skills.length > 0) ? agent.skills.map(skill => `<span class="skill-tag">${Utils.escapeHtml(skill)}</span>`).join('') : ''}
+                    </div>
                     <div class="agent-info" onclick="startChat('${agent.id}')" style="cursor:pointer">
-                        <div class="info-item"><span>使用次数</span><strong>${agent.usage_count || 0}</strong></div>
-                        <div class="info-item"><span>优先级</span><strong>${agent.priority || 0}</strong></div>
-                        <div class="info-item"><span>创建时间</span><span>${Utils.formatDate(agent.created_at)}</span></div>
+                        <span>创建于 ${Utils.formatDate(agent.created_at)}</span>
+                        ${agent.enable_long_term_memory ? '<span class="info-sep"></span><span>🧠 长期记忆</span>' : ''}
                     </div>
                     <div class="agent-actions">
                         <button type="button" class="primary" onclick="startChat('${agent.id}')">聊天</button>

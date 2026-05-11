@@ -47,14 +47,15 @@ class CollaborationService:
             # Insert collaboration agents
             for agent_config in data.agents:
                 await db.execute("""
-                INSERT INTO collaboration_agents (id, collaboration_id, agent_id, role, priority, config_json)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO collaboration_agents (id, collaboration_id, agent_id, role, priority, is_human, config_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (
                     str(uuid.uuid4()),
                     collab_id,
                     agent_config.agent_id,
                     agent_config.role,
                     agent_config.priority,
+                    1 if agent_config.is_human else 0,
                     self._serialize_config(agent_config.config_json)
                 ))
 
@@ -87,6 +88,7 @@ class CollaborationService:
                     agent_id=agent_row["agent_id"],
                     role=agent_row["role"],
                     priority=agent_row["priority"],
+                    is_human=bool(agent_row.get("is_human", 0)),
                     config_json=self._deserialize_config(agent_row.get("config_json"))
                 ))
 
@@ -178,14 +180,15 @@ class CollaborationService:
                 # Insert new agents
                 for agent_config in data.agents:
                     await db.execute("""
-                    INSERT INTO collaboration_agents (id, collaboration_id, agent_id, role, priority, config_json)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO collaboration_agents (id, collaboration_id, agent_id, role, priority, is_human, config_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """, (
                         str(uuid.uuid4()),
                         collab_id,
                         agent_config.agent_id,
                         agent_config.role,
                         agent_config.priority,
+                        1 if agent_config.is_human else 0,
                         self._serialize_config(agent_config.config_json)
                     ))
 

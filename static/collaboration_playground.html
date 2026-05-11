@@ -16,7 +16,6 @@
         }
         .page-header-bar h2 { font-size: var(--text-2xl); font-weight: 700; color: var(--text-primary); }
         .collab-card { cursor: pointer; }
-        .collab-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-dark); }
         .collab-mode-badge {
             display: inline-flex; align-items: center; gap: 4px;
             font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600;
@@ -321,6 +320,64 @@
             padding: 8px; background: var(--bg-container);
             border-bottom: 1px solid var(--border-color);
         }
+        /* ========== Human Input Panel ========== */
+        .human-input-panel {
+            flex-shrink: 0; padding: 16px 20px;
+            background: linear-gradient(135deg, rgba(102,126,234,0.06), rgba(102,126,234,0.02));
+            border-bottom: 1px solid var(--border-color);
+            animation: humanPanelIn 0.3s ease;
+        }
+        @keyframes humanPanelIn {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .human-input-header {
+            display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+        }
+        .human-input-icon { font-size: 20px; }
+        .human-input-title { font-weight: 700; color: var(--primary); font-size: 15px; }
+        .human-input-role {
+            font-size: 11px; padding: 2px 8px; border-radius: 10px;
+            background: rgba(102,126,234,0.12); color: var(--primary); font-weight: 600;
+        }
+        .human-input-pulse {
+            width: 8px; height: 8px; border-radius: 50%; background: var(--primary);
+            margin-left: auto;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.7); }
+        }
+        .human-input-error {
+            color: #d32f2f; font-size: 13px; padding: 8px 12px;
+            background: rgba(211,47,47,0.08); border-radius: 8px; margin-bottom: 10px;
+            border-left: 3px solid #d32f2f;
+        }
+        .human-input-row {
+            display: flex; gap: 10px; align-items: center;
+        }
+        .human-move-input {
+            flex: 1; padding: 10px 14px; border: 1.5px solid var(--border-dark);
+            border-radius: 10px; font-size: 15px; outline: none;
+            background: var(--bg-base); color: var(--text-primary);
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .human-move-input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(102,126,234,0.15);
+        }
+        .human-move-input::placeholder { color: var(--text-muted); }
+        .human-submit-btn {
+            padding: 10px 24px; background: var(--primary); color: #fff;
+            border: none; border-radius: 10px; font-size: 14px; font-weight: 600;
+            cursor: pointer; transition: all 0.2s; white-space: nowrap;
+        }
+        .human-submit-btn:hover { background: #4a5fc1; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(102,126,234,0.3); }
+        .human-submit-btn:active { transform: translateY(0); }
+        .human-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+        body { padding: 20px; min-height: 100vh; }
+        @media (max-width: 768px) { body { padding: 0; } .page-container { border-radius: 0; } }
     </style>
 </head>
 <body class="gradient-bg">
@@ -341,7 +398,7 @@
         </div>
 
         <!-- ===== Detail View ===== -->
-        <div id="detailView" style="display:none; height:calc(100vh - 140px);">
+        <div id="detailView" style="display:none; min-height:calc(100vh - 180px);">
             <div class="detail-container">
                 <div class="detail-header">
                     <div class="detail-back" onclick="location.hash='#list'">
@@ -364,6 +421,21 @@
                     </div>
                     <div class="detail-main">
                         <div id="sandboxDisplay" class="sandbox-display" style="display:none;"></div>
+                        <div id="humanInputPanel" class="human-input-panel" style="display:none;">
+                            <div class="human-input-header">
+                                <span class="human-input-icon">&#9995;</span>
+                                <span class="human-input-title">等待你操作</span>
+                                <span id="humanInputRole" class="human-input-role"></span>
+                                <span class="human-input-pulse"></span>
+                            </div>
+                            <div id="humanInputError" class="human-input-error" style="display:none;"></div>
+                            <div class="human-input-row">
+                                <input type="text" id="humanMoveInput" class="human-move-input"
+                                    placeholder="输入走法，如 炮二平五"
+                                    onkeydown="if(event.key==='Enter')submitHumanInput()">
+                                <button class="human-submit-btn" onclick="submitHumanInput()">发送</button>
+                            </div>
+                        </div>
                         <div class="main-messages" id="mainMessages">
                             <div class="welcome-state">
                                 <div class="icon">&#128640;</div>
@@ -473,6 +545,7 @@
     }
 
     function getAgentName(id) {
+        if (id === 'human') return '人类';
         const a = agentsCache.find(a => a.id === id);
         return a ? a.name : id;
     }
@@ -513,22 +586,25 @@
                 <div class="agent-header">
                     <div>
                         <div class="agent-name">${escapeHtml(c.name)}</div>
-                        <div style="margin-top:4px; display:flex; gap:4px; flex-wrap:wrap;">
+                        <div style="margin-top:6px; display:flex; gap:4px; flex-wrap:wrap;">
                             <span class="collab-mode-badge ${c.mode}">${modeIcon} ${modeName}</span>
-                            ${c.enabled ? '' : '<span class="status-badge failed" style="font-size:10px;">已禁用</span>'}
+                            ${c.enabled ? '' : '<span class="agent-status">✗ 已禁用</span>'}
                         </div>
                     </div>
                 </div>
-                ${c.description ? `<div class="collab-desc">${escapeHtml(c.description)}</div>` : ''}
-                ${agents.length ? `<div style="font-size:11px;color:var(--text-muted);margin:4px 0;">${agents.slice(0,4).map(n=>escapeHtml(n)).join(', ')}${agents.length>4?'...':''}</div>` : ''}
-                <div class="collab-meta">
+                <div class="agent-description">${escapeHtml(c.description || '')}</div>
+                <div class="agent-tags-row">
+                    ${agents.length ? agents.slice(0,4).map(n=>`<span class="skill-tag">${escapeHtml(n)}</span>`).join('') + (agents.length>4?`<span class="skill-tag">+${agents.length-4}</span>`:'') : ''}
+                </div>
+                <div class="agent-info">
                     <span>执行 ${c.usage_count||0} 次</span>
+                    <span class="info-sep"></span>
                     <span>${formatDate(c.created_at)}</span>
                 </div>
-                <div class="collab-actions">
-                    <button class="btn btn-primary" onclick="event.stopPropagation();location.hash='#detail/${c.id}'">进入</button>
-                    <button class="btn" onclick="event.stopPropagation();editCollab('${c.id}')">编辑</button>
-                    <button class="btn" style="color:var(--error-color)" onclick="event.stopPropagation();deleteCollab('${c.id}')">删除</button>
+                <div class="agent-actions">
+                    <button type="button" class="primary" onclick="event.stopPropagation();location.hash='#detail/${c.id}'">进入</button>
+                    <button type="button" onclick="event.stopPropagation();editCollab('${c.id}')">编辑</button>
+                    <button type="button" class="danger" onclick="event.stopPropagation();deleteCollab('${c.id}')">删除</button>
                 </div>
             </div>`;
         }).join('');
@@ -712,6 +788,16 @@
             // Add "load thinking" button if there are thinking events excluded
             if (totalEvents > events.length) {
                 addLoadThinkingButton(taskId);
+            }
+            // Disconnect recovery: check if task is waiting for human input
+            if (taskData.status === 'running') {
+                try {
+                    const pendingResp = await fetch(`${API_BASE}/tasks/${taskId}/pending-human`);
+                    const pendingData = await pendingResp.json();
+                    if (pendingData.waiting) {
+                        showHumanInputPanel(pendingData.role || '', '');
+                    }
+                } catch(e) { /* ignore */ }
             }
         } catch(e) {
             main.innerHTML = `<div style="text-align:center;padding:20px;color:var(--error);">加载失败</div>`;
@@ -912,6 +998,7 @@
 
     function finishExec() {
         isRunning = false;
+        hideHumanInputPanel();
         document.getElementById('sendBtn').disabled = false;
         document.getElementById('stopBtn').classList.remove('visible');
     }
@@ -926,6 +1013,7 @@
                 break;
             case 'task_start':
                 currentMode = data.mode || currentMode;
+                if (data.task_id) selectedTaskId = data.task_id;
                 break;
             case 'game_start':
                 // Store sandbox info for rendering
@@ -1085,8 +1173,85 @@
                 }
                 break;
             }
+            case 'waiting_for_human': {
+                showHumanInputPanel(data.role, data.round);
+                addStreamMsg('system', `⏳ 等待${data.role}操作...`, '');
+                break;
+            }
+            case 'human_moved': {
+                addStreamMsg('system', `✅ 操作成功: ${data.result?.message || ''}`, '');
+                hideHumanInputPanel();
+                break;
+            }
+            case 'human_move_error': {
+                showMoveError(data.error || '无效操作');
+                break;
+            }
         }
         main.scrollTop = main.scrollHeight;
+    }
+
+    // =================== Human Input ===================
+    function showHumanInputPanel(role, round) {
+        const panel = document.getElementById('humanInputPanel');
+        const roleEl = document.getElementById('humanInputRole');
+        const errorEl = document.getElementById('humanInputError');
+        const inputEl = document.getElementById('humanMoveInput');
+        if (panel) {
+            panel.style.display = '';
+            if (roleEl) roleEl.textContent = role || '';
+            if (errorEl) errorEl.style.display = 'none';
+            if (inputEl) {
+                inputEl.value = '';
+                // Adjust placeholder based on sandbox type
+                if (currentSandbox === 'chinese_chess') {
+                    inputEl.placeholder = '输入走法，如 炮二平五';
+                } else {
+                    inputEl.placeholder = '输入你的操作';
+                }
+                inputEl.focus();
+            }
+        }
+    }
+
+    function hideHumanInputPanel() {
+        const panel = document.getElementById('humanInputPanel');
+        if (panel) panel.style.display = 'none';
+    }
+
+    function showMoveError(errorMsg) {
+        const errorEl = document.getElementById('humanInputError');
+        if (errorEl) {
+            errorEl.textContent = errorMsg;
+            errorEl.style.display = '';
+        }
+        const inputEl = document.getElementById('humanMoveInput');
+        if (inputEl) inputEl.focus();
+    }
+
+    async function submitHumanInput() {
+        const inputEl = document.getElementById('humanMoveInput');
+        const btn = document.querySelector('.human-submit-btn');
+        const move = inputEl ? inputEl.value.trim() : '';
+        if (!move || !selectedTaskId) return;
+
+        btn.disabled = true;
+        try {
+            const resp = await fetch(`${API_BASE}/tasks/${selectedTaskId}/human-input`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({action: 'make_move', params: {move}})
+            });
+            const result = await resp.json();
+            if (!result.success) {
+                showMoveError(result.error || '操作失败');
+            }
+            // Success: backend will send human_moved via SSE, which hides the panel
+        } catch (e) {
+            showMoveError('网络错误，请重试');
+        } finally {
+            btn.disabled = false;
+        }
     }
 
     // =================== Agent Progress Panel ===================
@@ -1401,7 +1566,7 @@
                 <button class="btn btn-primary" onclick="saveEdit()">保存</button>
             </div>`;
         for (const a of (currentCollab.agents||[])) {
-            addRoleRow(a.role, a.agent_id);
+            addRoleRow(a.role, a.agent_id, a.is_human);
         }
         if (!(currentCollab.agents||[]).length) { addDefaultRoles(mode); }
         renderModeParams(mode);
@@ -1644,16 +1809,17 @@
         }
     }
 
-    function addRoleRow(role, agentId) {
+    function addRoleRow(role, agentId, isHuman) {
         const container = document.getElementById('mRoles');
         if (!container) return;
         const mode = document.getElementById('mMode')?.value || 'supervisor';
         const modeInfo = MODE_ROLES[mode] || MODE_ROLES.supervisor;
         const div = document.createElement('div');
         div.className = 'role-row';
+        const selectedId = isHuman ? 'human' : (agentId || '');
         div.innerHTML = `
             <select style="width:120px;">${modeInfo.roles.map(r=>`<option value="${r}" ${r===role?'selected':''}>${modeInfo.labels[r]||r}</option>`).join('')}</select>
-            <select style="flex:1;"><option value="">选择Agent</option>${agentsCache.map(a=>`<option value="${a.id}" ${a.id===agentId?'selected':''}>${escapeHtml(a.name)}</option>`).join('')}</select>
+            <select style="flex:1;"><option value="human" ${selectedId==='human'?'selected':''}>🧑 人类</option><option value="" ${!selectedId?'selected':''}>选择Agent</option>${agentsCache.map(a=>`<option value="${a.id}" ${a.id===selectedId?'selected':''}>${escapeHtml(a.name)}</option>`).join('')}</select>
             <button class="btn" style="font-size:10px;padding:2px 6px;" onclick="this.parentElement.remove()">✕</button>`;
         container.appendChild(div);
     }
@@ -1668,7 +1834,8 @@
         roleRows.forEach(row => {
             const role = row.querySelector('select').value;
             const agentId = row.querySelectorAll('select')[1].value;
-            if (agentId) agents.push({agent_id: agentId, role: role, priority: 0});
+            const isHuman = agentId === 'human';
+            if (agentId) agents.push({agent_id: isHuman ? 'human' : agentId, role: role, priority: 0, is_human: isHuman});
         });
         const config_json = buildConfigJson();
 
@@ -1696,7 +1863,8 @@
         roleRows.forEach(row => {
             const role = row.querySelector('select').value;
             const agentId = row.querySelectorAll('select')[1].value;
-            if (agentId) agents.push({agent_id: agentId, role: role, priority: 0});
+            const isHuman = agentId === 'human';
+            if (agentId) agents.push({agent_id: isHuman ? 'human' : agentId, role: role, priority: 0, is_human: isHuman});
         });
         const config_json = buildConfigJson();
         try {

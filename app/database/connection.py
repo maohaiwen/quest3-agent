@@ -378,9 +378,9 @@ class DatabaseConnection:
             agent_id TEXT NOT NULL,
             role TEXT NOT NULL,
             priority INTEGER DEFAULT 0,
+            is_human INTEGER DEFAULT 0,
             config_json TEXT DEFAULT '{}',
-            FOREIGN KEY (collaboration_id) REFERENCES collaborations(id) ON DELETE CASCADE,
-            FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+            FOREIGN KEY (collaboration_id) REFERENCES collaborations(id) ON DELETE CASCADE
         )
         """
         await self.execute(sql)
@@ -397,6 +397,7 @@ class DatabaseConnection:
         ON collaboration_agents (agent_id)
         """
         await self.execute(sql)
+
         await self.commit()
 
     async def _create_collaboration_tasks_table(self) -> None:

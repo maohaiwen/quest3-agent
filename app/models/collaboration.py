@@ -93,6 +93,7 @@ class CollaborationAgentConfig(BaseModel):
     role: str = Field(..., description="Agent role in this collaboration")
     priority: int = Field(default=0, description="Execution priority")
     config_json: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Role-specific config")
+    is_human: bool = Field(default=False, description="Whether this is a human node (pause and wait for frontend input instead of calling LLM)")
 
 
 class SupervisorConfig(BaseModel):
@@ -235,7 +236,7 @@ class CollaborationTemplate(BaseModel):
     name: str
     description: str
     mode: CollaborationMode
-    default_agents: List[Dict[str, str]]  # List of {role: xxx, description: xxx}
+    default_agents: List[Dict[str, Any]]  # List of {role: xxx, description: xxx, is_human: bool, ...}
     default_config: Dict[str, Any]
 
 
@@ -369,6 +370,28 @@ TEMPLATES = {
             {"role": "participant", "description": "红方棋手"},
             {"role": "participant", "description": "黑方棋手"},
             {"role": "referee", "description": "裁判，辅助判定和播报"},
+        ],
+        default_config={
+            "turn_strategy": "sequential",
+            "referee_timing": "per_round",
+            "participant_order": ["participant_0", "participant_1"],
+            "max_rounds": 100,
+            "game_rules": "中国象棋规则",
+            "referee_enabled": True,
+            "referee_prompt": None,
+            "shared_state": {},
+            "sandbox": "chinese_chess",
+            "sandbox_config": {},
+        }
+    ),
+    "chinese_chess_human": CollaborationTemplate(
+        name="人机象棋对弈",
+        description="人与AI在中国象棋沙箱中对弈，人类为红方先手",
+        mode=CollaborationMode.ADVERSARIAL_GAME,
+        default_agents=[
+            {"role": "participant", "description": "红方（人类）", "is_human": True},
+            {"role": "participant", "description": "黑方（AI）"},
+            {"role": "referee", "description": "裁判"},
         ],
         default_config={
             "turn_strategy": "sequential",

@@ -8,6 +8,57 @@
     <style>
         body { padding: 20px; min-height: 100vh; }
         @media (max-width: 768px) { body { padding: 0; } .page-container { border-radius: 0; } }
+
+        /* Fix: search input wider, select narrower */
+        .filter-controls input { flex: 1; min-width: 0; }
+        .filter-controls select { flex-shrink: 0; width: auto; min-width: 100px; max-width: 160px; }
+
+        /* Fix: tool card max height with scroll */
+        .tool-card {
+            display: flex; flex-direction: column;
+            max-height: 320px;
+        }
+        .tool-card .tool-description {
+            overflow: hidden; text-overflow: ellipsis;
+            display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+        }
+        .tool-card .tool-params {
+            overflow-y: auto; max-height: 80px; min-height: 0;
+        }
+
+        /* Server tools list inside server card */
+        .server-tools-section {
+            margin-top: 12px;
+            border-top: 1px solid var(--border-light);
+            padding-top: 10px;
+        }
+        .server-tools-title {
+            font-size: 13px; font-weight: 600; color: var(--text-secondary);
+            margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+            user-select: none;
+        }
+        .server-tools-toggle {
+            font-size: 10px; transition: transform 0.2s;
+        }
+        .server-tools-toggle.open {
+            transform: rotate(90deg);
+        }
+        .server-tools-grid {
+            display: flex; flex-wrap: wrap; gap: 6px;
+            overflow: hidden; transition: max-height 0.3s ease, margin 0.3s ease;
+        }
+        .server-tools-grid.collapsed {
+            max-height: 0; margin: 0; gap: 0; overflow: hidden;
+        }
+        .server-tool-badge {
+            font-size: 12px; padding: 4px 10px; border-radius: 6px;
+            background: rgba(255,255,255,0.06); border: 1px solid var(--border-dark);
+            cursor: pointer; transition: all 0.15s; display: inline-flex; align-items: center; gap: 4px;
+        }
+        .server-tool-badge:hover { border-color: var(--primary); background: rgba(102,126,234,0.08); }
+        .server-tool-badge .tool-dot {
+            width: 6px; height: 6px; border-radius: 50%; background: var(--success);
+        }
     </style>
 </head>
 <body class="gradient-bg">
@@ -128,8 +179,10 @@
 
         const SERVERS_API = '/api/mcp/servers';
         const TOOLS_API = '/tools';
+        const CATALOG_API = '/api/mcp/servers/tools/catalog';
         let servers = [];
         let allTools = [];
+        let toolsCatalog = [];
         let currentTestTool = null;
 
         loadServers();
@@ -149,21 +202,37 @@
 
         async function loadAllTools() {
             try {
+                // Fetch tools catalog (grouped by server, includes MCP tools)
+                const [catalogRes, localRes] = await Promise.all([
+                    fetch(CATALOG_API).catch(() => null),
+                    fetch(TOOLS_API).catch(() => null)
+                ]);
+
+                // Parse catalog
+                if (catalogRes && catalogRes.ok) {
+                    const catalogData = await catalogRes.json();
+                    toolsCatalog = catalogData.servers || [];
+                }
+
+                // Build flat tool list from catalog
                 const serverTools = [];
-                for (const server of servers) {
-                    if (server.status === 'connected') {
-                        const response = await fetch(`${SERVERS_API}/${server.id}/tools`);
-                        const data = await response.json();
-                        if (data.tools) {
-                            data.tools.forEach(tool => serverTools.push({ ...tool, source: 'mcp', server_name: server.name, server_id: server.id }));
-                        }
+                for (const svc of toolsCatalog) {
+                    if (svc.server_id === 'local' || svc.server_id === 'skill') continue;
+                    for (const t of (svc.tools || [])) {
+                        serverTools.push({ ...t, source: 'mcp', server_name: svc.server_name, server_id: svc.server_id });
                     }
                 }
-                const localResponse = await fetch(TOOLS_API);
-                const localData = await localResponse.json();
-                const localTools = (localData.tools || []).map(tool => ({ ...tool, source: 'local' }));
+
+                // Fetch local tools detail
+                let localTools = [];
+                if (localRes && localRes.ok) {
+                    const localData = await localRes.json();
+                    localTools = (localData.tools || []).map(tool => ({ ...tool, source: 'local' }));
+                }
+
                 allTools = [...serverTools, ...localTools];
                 renderTools();
+                renderServers(); // Re-render servers to show tools
             } catch (error) {
                 console.error('Error loading tools:', error);
                 document.getElementById('toolsList').innerHTML = '<div class="empty-state">加载失败，请刷新页面</div>';
@@ -182,15 +251,31 @@
                 card.className = 'server-card';
                 const statusIcon = server.status === 'connected' ? '✓' : server.status === 'connecting' ? '⟳' : '✗';
                 const statusClass = server.status === 'connected' ? 'connected' : server.status === 'connecting' ? 'connecting' : 'disconnected';
+                // Find tools for this server from catalog
+                const serverCatalog = toolsCatalog.find(s => s.server_id === server.id);
+                const serverToolList = serverCatalog ? serverCatalog.tools : [];
+                let toolsHtml = '';
+                if (server.status === 'connected' && serverToolList.length > 0) {
+                    toolsHtml = `<div class="server-tools-section">
+                        <div class="server-tools-title" style="cursor:pointer" onclick="this.nextElementSibling.classList.toggle('collapsed'); this.querySelector('.server-tools-toggle').classList.toggle('open')">
+                            🔧 工具 (${serverToolList.length})
+                            <span class="server-tools-toggle">▶</span>
+                        </div>
+                        <div class="server-tools-grid collapsed">
+                            ${serverToolList.map(t => `<span class="server-tool-badge" title="${Utils.escapeHtml(t.description || '')}" onclick="openTestModal('${Utils.escapeHtml(t.name)}', 'mcp', '${server.id}')"><span class="tool-dot"></span>${Utils.escapeHtml(t.original_name || t.name)}</span>`).join('')}
+                        </div>
+                    </div>`;
+                }
                 card.innerHTML = `
                     <div class="server-status ${statusClass}">${statusIcon}</div>
                     <div class="server-info">
                         <h3>${Utils.escapeHtml(server.name)}</h3>
                         <div class="url">${Utils.escapeHtml(server.url)}</div>
                         <div class="stats">
-                            <span>工具数: ${server.tool_count || 0}</span>
+                            <span>工具数: ${serverToolList.length || server.tool_count || 0}</span>
                             ${server.last_connected ? `<span>最后连接: ${Utils.formatRelativeTime(server.last_connected)}</span>` : ''}
                         </div>
+                        ${toolsHtml}
                     </div>
                     <div class="server-actions">
                         ${server.status !== 'connected' ? `<button class="btn btn-primary btn-sm" onclick="connectServer('${server.id}')">连接</button>` : `<button class="btn btn-secondary btn-sm" onclick="disconnectServer('${server.id}')">断开</button>`}
