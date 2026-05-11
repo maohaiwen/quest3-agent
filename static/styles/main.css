@@ -117,6 +117,8 @@
 html {
     height: 100%;
     -webkit-text-size-adjust: 100%;
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
 }
 
 body {
@@ -133,7 +135,16 @@ body {
 /* Gradient background for standalone pages */
 body.gradient-bg {
     background: var(--bg-gradient);
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 20px;
+}
+@media (max-width: 768px) {
+    body.gradient-bg { padding: 0; }
+    body.gradient-bg .page-container { border-radius: 0; }
 }
 
 /* 3. Page Layout */
@@ -144,11 +155,11 @@ body.gradient-bg {
     background: var(--bg-container);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-xl);
-    overflow: hidden;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
     display: flex;
     flex-direction: column;
     max-height: calc(100vh - 40px);
-    min-height: 0;
 }
 
 .page-container.page-narrow { max-width: 900px; }
@@ -1458,6 +1469,7 @@ select.form-control { cursor: pointer; }
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: var(--space-4);
+    align-items: stretch;
 }
 
 .tool-card {
@@ -1466,6 +1478,8 @@ select.form-control { cursor: pointer; }
     border-radius: var(--radius-md);
     padding: var(--space-4);
     transition: all var(--transition);
+    display: flex;
+    flex-direction: column;
 }
 
 .tool-card:hover {
@@ -1487,6 +1501,7 @@ select.form-control { cursor: pointer; }
     font-size: var(--text-sm);
     margin-bottom: var(--space-3);
     line-height: 1.5;
+    min-height: 3.75em;
 }
 
 .tool-card .tool-params {
@@ -1500,7 +1515,7 @@ select.form-control { cursor: pointer; }
 
 .tool-card .tool-params .param-title { font-weight: 600; margin-bottom: var(--space-1); color: var(--text-primary); }
 .tool-card .tool-params .param-list { font-family: var(--font-mono); line-height: 1.5; }
-.tool-card .tool-actions { display: flex; gap: var(--space-2); }
+.tool-card .tool-actions { display: flex; gap: var(--space-2); margin-top: auto; }
 
 /* Test Result */
 .test-result {

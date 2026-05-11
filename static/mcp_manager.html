@@ -6,14 +6,12 @@
     <title>MCP 服务器管理 - Quest3 Agent</title>
     <link rel="stylesheet" href="/static/styles/main.css">
     <style>
-        body { padding: 20px; min-height: 100vh; }
-        @media (max-width: 768px) { body { padding: 0; } .page-container { border-radius: 0; } }
 
         /* Fix: search input wider, select narrower */
         .filter-controls input { flex: 1; min-width: 0; }
         .filter-controls select { flex-shrink: 0; width: auto; min-width: 100px; max-width: 160px; }
 
-        /* Fix: tool card max height with scroll */
+        /* Fix: tool card alignment - equal height cards with aligned sections */
         .tool-card {
             display: flex; flex-direction: column;
             max-height: 320px;
@@ -21,9 +19,13 @@
         .tool-card .tool-description {
             overflow: hidden; text-overflow: ellipsis;
             display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+            min-height: 3.9em; /* 3 lines × 1.3 line-height × 13px ≈ consistent height */
         }
         .tool-card .tool-params {
             overflow-y: auto; max-height: 80px; min-height: 0;
+        }
+        .tool-card .tool-actions {
+            margin-top: auto;
         }
 
         /* Server tools list inside server card */

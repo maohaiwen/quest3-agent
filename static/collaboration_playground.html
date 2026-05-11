@@ -5,9 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>多智能体协作 - Quest3 Agent</title>
     <link rel="stylesheet" href="/static/styles/main.css">
+    <script src="/static/core/Auth.js"></script>
     <script src="/static/shared/nav.js"></script>
-    <script src="/static/shared/Modal.js"></script>
-    <script src="/static/shared/Toast.js"></script>
+    <script src="/static/shared/modal.js"></script>
+    <script src="/static/shared/toast.js"></script>
     <style>
         /* ========== List View ========== */
         .page-header-bar {
@@ -30,7 +31,7 @@
 
         /* ========== Detail View ========== */
         .detail-container {
-            display: flex; flex-direction: column; height: 100%;
+            display: flex; flex-direction: column; flex: 1; min-height: 0;
         }
         .detail-header {
             display: flex; align-items: center; gap: 12px;
@@ -376,8 +377,6 @@
         .human-submit-btn:hover { background: #4a5fc1; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(102,126,234,0.3); }
         .human-submit-btn:active { transform: translateY(0); }
         .human-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
-        body { padding: 20px; min-height: 100vh; }
-        @media (max-width: 768px) { body { padding: 0; } .page-container { border-radius: 0; } }
     </style>
 </head>
 <body class="gradient-bg">
@@ -398,7 +397,7 @@
         </div>
 
         <!-- ===== Detail View ===== -->
-        <div id="detailView" style="display:none; min-height:calc(100vh - 180px);">
+        <div id="detailView" style="display:none; flex:1; min-height:0; overflow:hidden;">
             <div class="detail-container">
                 <div class="detail-header">
                     <div class="detail-back" onclick="location.hash='#list'">
@@ -468,6 +467,7 @@
     </div>
 
     <script>
+    if (!Auth.requireAuth()) { throw new Error('Not authenticated'); }
     const API_BASE = '/api/collaborations';
     const MODE_NAMES = { supervisor:'监督者模式', pipeline:'流水线模式', voting:'投票集成模式', adversarial_game:'博弈模式' };
     const MODE_ICONS = { supervisor:'&#128101;', pipeline:'&#128736;', voting:'&#127913;', adversarial_game:'&#9876;' };
@@ -523,6 +523,9 @@
         if (taskPollTimer) { clearInterval(taskPollTimer); taskPollTimer = null; }
         document.getElementById('listView').style.display = '';
         document.getElementById('detailView').style.display = 'none';
+        // Restore styles - let CSS defaults take over
+        document.querySelector('.page-body').style.cssText = '';
+        document.querySelector('.page-container').style.cssText = '';
         // Hide sandbox display
         const sandboxEl = document.getElementById('sandboxDisplay');
         if (sandboxEl) { sandboxEl.style.display = 'none'; sandboxEl.innerHTML = ''; }
@@ -531,7 +534,10 @@
 
     function showDetailView(collabId) {
         document.getElementById('listView').style.display = 'none';
-        document.getElementById('detailView').style.display = '';
+        document.getElementById('detailView').style.display = 'flex';
+        // Detail view: page-container fills viewport, internal flex layout for scrolling
+        document.querySelector('.page-container').style.cssText = 'overflow:hidden;height:calc(100vh - 40px);';
+        document.querySelector('.page-body').style.cssText = 'display:flex;flex-direction:column;overflow:hidden;padding:0;flex:1;min-height:0;';
         loadCollabDetail(collabId);
     }
 
