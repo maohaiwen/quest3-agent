@@ -151,6 +151,7 @@ class DatabaseConnection:
         await self._create_collaboration_agents_table()
         await self._create_collaboration_tasks_table()
         await self._create_collaboration_artifacts_table()
+        await self._create_task_events_table()
         await self._create_settings_table()
         await self._create_users_table()
 
@@ -466,6 +467,41 @@ class DatabaseConnection:
         sql = """
         CREATE INDEX IF NOT EXISTS idx_artifacts_task_id
         ON collaboration_artifacts (task_id)
+        """
+        await self.execute(sql)
+        await self.commit()
+
+    async def _create_task_events_table(self) -> None:
+        """Create task_events table for per-row event storage (replaces events_json blob)"""
+        sql = """
+        CREATE TABLE IF NOT EXISTS task_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id TEXT NOT NULL,
+            seq INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            event_json TEXT NOT NULL,
+            created_at TEXT,
+            FOREIGN KEY (task_id) REFERENCES collaboration_tasks(task_id) ON DELETE CASCADE
+        )
+        """
+        await self.execute(sql)
+
+        sql = """
+        CREATE INDEX IF NOT EXISTS idx_task_events_task_id
+        ON task_events (task_id)
+        """
+        await self.execute(sql)
+
+        sql = """
+        CREATE INDEX IF NOT EXISTS idx_task_events_task_type
+        ON task_events (task_id, event_type)
+        """
+        await self.execute(sql)
+
+        # Unique constraint to prevent duplicate writes
+        sql = """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_task_events_task_seq
+        ON task_events (task_id, seq)
         """
         await self.execute(sql)
         await self.commit()

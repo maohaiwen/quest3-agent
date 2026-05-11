@@ -65,21 +65,37 @@ def _store_event(task_id: str, event: Dict):
 
 
 async def _flush_events_to_db(task_id: str):
-    """Flush in-memory events for a task to the database."""
+    """Flush in-memory events for a task to the database.
+
+    Writes to both events_json (legacy blob) and task_events (per-row table).
+    """
     events = _event_store.get(task_id)
     if not events:
         return
     try:
         from app.database.connection import DatabaseConnection
         from app.config import settings
+        from app.utils.timezone import beijing_now
         db = DatabaseConnection(settings.DATABASE_URL)
         await db.connect()
         try:
+            # 1. Write legacy events_json blob (backward compat)
             events_json = json.dumps(events, ensure_ascii=False)
             await db.execute(
                 "UPDATE collaboration_tasks SET events_json = ? WHERE task_id = ?",
                 (events_json, task_id),
             )
+
+            # 2. Write per-row to task_events table (only new events)
+            now = beijing_now().isoformat()
+            for i, evt in enumerate(events):
+                evt_type = evt.get("type", "unknown")
+                evt_json = json.dumps(evt, ensure_ascii=False)
+                await db.execute(
+                    "INSERT OR IGNORE INTO task_events (task_id, seq, event_type, event_json, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (task_id, i, evt_type, evt_json, now),
+                )
+
             await db.commit()
         finally:
             await db.disconnect()
@@ -428,10 +444,93 @@ def _run_in_background(collab_id: str, input_text: str, existing_task_id: str = 
 
 
 @router.get("/tasks/{task_id}/events")
-async def get_task_events(task_id: str):
-    """Return stored execution events for a task (checks memory then DB)."""
-    events = await _get_events_persisted(task_id)
-    return {"task_id": task_id, "events": events, "count": len(events)}
+async def get_task_events(
+    task_id: str,
+    exclude_types: Optional[str] = Query(default=None, description="Comma-separated event types to exclude (e.g. 'agent_thinking')"),
+    types: Optional[str] = Query(default=None, description="Comma-separated event types to include (only these)"),
+    limit: int = Query(default=500, ge=1, le=5000, description="Max events to return"),
+    offset: int = Query(default=0, ge=0, description="Offset for pagination"),
+):
+    """Return stored execution events for a task, with optional filtering and pagination.
+
+    Tries the per-row task_events table first (fast, indexed).
+    Falls back to the events_json blob for legacy tasks.
+    """
+    # Parse filter params
+    exclude_set = set(exclude_types.split(",")) if exclude_types else set()
+    include_set = set(types.split(",")) if types else set()
+
+    # 1. Try task_events table (fast path)
+    try:
+        from app.database.connection import DatabaseConnection
+        from app.config import settings
+
+        db = DatabaseConnection(settings.DATABASE_URL)
+        await db.connect()
+        try:
+            # Check if task_events has data for this task
+            count_row = await db.fetch_one(
+                "SELECT COUNT(*) as cnt FROM task_events WHERE task_id = ?",
+                (task_id,)
+            )
+            has_row_data = count_row and count_row["cnt"] > 0
+
+            if has_row_data:
+                # Build WHERE clause
+                conditions = ["task_id = ?"]
+                params = [task_id]
+
+                if include_set:
+                    placeholders = ",".join(["?"] * len(include_set))
+                    conditions.append(f"event_type IN ({placeholders})")
+                    params.extend(include_set)
+                elif exclude_set:
+                    placeholders = ",".join(["?"] * len(exclude_set))
+                    conditions.append(f"event_type NOT IN ({placeholders})")
+                    params.extend(exclude_set)
+
+                where = " AND ".join(conditions)
+
+                # Get total count (without limit/offset)
+                total_row = await db.fetch_one(
+                    f"SELECT COUNT(*) as cnt FROM task_events WHERE {where}",
+                    tuple(params)
+                )
+                total = total_row["cnt"] if total_row else 0
+
+                # Get filtered events with pagination
+                rows = await db.fetch_all(
+                    f"SELECT seq, event_json FROM task_events WHERE {where} ORDER BY seq ASC LIMIT ? OFFSET ?",
+                    tuple(params) + (limit, offset)
+                )
+
+                events = []
+                for row in rows:
+                    try:
+                        events.append(json.loads(row["event_json"]))
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                return {"task_id": task_id, "events": events, "count": len(events), "total": total}
+
+        finally:
+            await db.disconnect()
+    except Exception as e:
+        logger.error(f"Error reading task_events table for {task_id}: {e}")
+
+    # 2. Fallback: read from events_json blob (legacy)
+    all_events = await _get_events_persisted(task_id)
+
+    # Apply filters in memory
+    if include_set:
+        all_events = [e for e in all_events if e.get("type") in include_set]
+    elif exclude_set:
+        all_events = [e for e in all_events if e.get("type") not in exclude_set]
+
+    total = len(all_events)
+    page = all_events[offset:offset + limit]
+
+    return {"task_id": task_id, "events": page, "count": len(page), "total": total}
 
 
 @router.get("/tasks/{task_id}")
@@ -447,7 +546,7 @@ async def get_task_status(task_id: str):
 
         try:
             row = await db.fetch_one(
-                "SELECT * FROM collaboration_tasks WHERE task_id = ?",
+                "SELECT id, collaboration_id, task_id, input, output, status, started_at, completed_at FROM collaboration_tasks WHERE task_id = ?",
                 (task_id,)
             )
 
@@ -460,7 +559,6 @@ async def get_task_status(task_id: str):
                 "input": row["input"],
                 "output": row["output"],
                 "status": row["status"],
-                "messages": json.loads(row.get("messages_json", "[]")),
                 "started_at": row.get("started_at"),
                 "completed_at": row.get("completed_at"),
             }
@@ -496,7 +594,17 @@ async def delete_task(task_id: str):
             if row["status"] == "running":
                 raise HTTPException(status_code=400, detail="Cannot delete a running task, wait for it to finish or interrupt first")
 
-            # Delete artifacts first
+            # Delete task events first (largest table)
+            await db.execute(
+                "DELETE FROM task_events WHERE task_id = ?",
+                (task_id,)
+            )
+            # Delete artifacts
+            await db.execute(
+                "DELETE FROM collaboration_artifacts WHERE task_id = ?",
+                (task_id,)
+            )
+            # Delete task
             await db.execute(
                 "DELETE FROM collaboration_artifacts WHERE task_id = ?",
                 (task_id,)
