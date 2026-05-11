@@ -501,9 +501,9 @@
     let agentProgressState = {};   // agent_id -> {stepCount, status, thinkingContent, content}
 
     // =================== Init ===================
-    window.addEventListener('load', () => {
+    window.addEventListener('load', async () => {
         SharedNav.render(document.getElementById('pageNav'), { active: 'playground' });
-        loadAgentsCache();
+        await loadAgentsCache();
         handleRoute();
     });
     window.addEventListener('hashchange', handleRoute);
@@ -518,7 +518,7 @@
         }
     }
 
-    function showListView() {
+    async function showListView() {
         // Clean up polling timer when leaving detail view
         if (taskPollTimer) { clearInterval(taskPollTimer); taskPollTimer = null; }
         document.getElementById('listView').style.display = '';
@@ -529,6 +529,7 @@
         // Hide sandbox display
         const sandboxEl = document.getElementById('sandboxDisplay');
         if (sandboxEl) { sandboxEl.style.display = 'none'; sandboxEl.innerHTML = ''; }
+        if (!agentsCache.length) await loadAgentsCache();
         loadCollabList();
     }
 
