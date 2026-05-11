@@ -7,6 +7,10 @@ from app.tools.base import BaseToolService, MCPTool
 class FileSystemToolService(BaseToolService):
     """File system tool service for local file operations"""
 
+    service_name = "文件系统"
+    service_description = "读写本地文件、列出目录内容，用于需要文件操作的Agent任务"
+    deps = []
+
     def __init__(self, base_path: str = "."):
         """Initialize file system tool service
 
@@ -79,13 +83,13 @@ class FileSystemToolService(BaseToolService):
         return {
             "read_file": MCPTool(
                 name="read_file",
-                description="Read the content of a file",
+                description="读取文件内容，返回文本字符串",
                 input_schema={
                     "type": "object",
                     "properties": {
                         "file_path": {
                             "type": "string",
-                            "description": "Path to the file to read"
+                            "description": "文件路径"
                         }
                     },
                     "required": ["file_path"]
@@ -94,17 +98,17 @@ class FileSystemToolService(BaseToolService):
             ),
             "write_file": MCPTool(
                 name="write_file",
-                description="Write content to a file",
+                description="将内容写入文件，覆盖已有内容",
                 input_schema={
                     "type": "object",
                     "properties": {
                         "file_path": {
                             "type": "string",
-                            "description": "Path to the file to write"
+                            "description": "文件路径"
                         },
                         "content": {
                             "type": "string",
-                            "description": "Content to write to the file"
+                            "description": "要写入的内容"
                         }
                     },
                     "required": ["file_path", "content"]
@@ -113,13 +117,13 @@ class FileSystemToolService(BaseToolService):
             ),
             "list_directory": MCPTool(
                 name="list_directory",
-                description="List contents of a directory",
+                description="列出目录下的文件和子目录",
                 input_schema={
                     "type": "object",
                     "properties": {
                         "directory_path": {
                             "type": "string",
-                            "description": "Path to the directory (default: current directory)",
+                            "description": "目录路径（默认当前目录）",
                             "default": "."
                         }
                     },

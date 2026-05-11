@@ -585,15 +585,11 @@ class StockBacktestToolService(BaseToolService):
     # Static tool metadata for display when deps are not installed
     TOOL_STUBS = {
         "get_market_data": {
-            "description": (
-                "获取A股市场数据，包括指数成分股列表和个股日线行情。"
-                "支持沪深300(000300)、中证500(000905)、上证50(000016)、中证1000(000852)等指数。"
-                "用于因子检测前获取数据。"
-            ),
+            "description": "获取A股市场数据（指数成分股+个股行情），支持沪深300/中证500/上证50等",
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "index": {"type": "string", "description": "指数代码"},
+                    "index": {"type": "string", "description": "指数代码，如 '000300'(沪深300)"},
                     "start_date": {"type": "string", "description": "开始日期YYYYMMDD"},
                     "end_date": {"type": "string", "description": "结束日期YYYYMMDD"},
                     "max_stocks": {"type": "integer", "description": "最大获取股票数量"},
@@ -602,35 +598,11 @@ class StockBacktestToolService(BaseToolService):
             "handler": None,
         },
         "run_backtest": {
-            "description": (
-                "在沙箱中执行Python因子检测代码。代码运行时已预加载akshare/pandas/numpy/scipy，"
-                "并自动提供以下函数(无需import)：\n"
-                "【行情数据】\n"
-                "1. get_index_constituents(index_code) -> list[str] 成分股代码列表，可直接传给get_batch_prices()\n"
-                "2. get_index_data(index_code, start_date, end_date) -> DataFrame 指数日线行情，★获取指数行情必须用此函数★\n"
-                "   返回列: open/close/high/low/volume/turnover(float)，索引DatetimeIndex\n"
-                "3. get_stock_prices(symbol, start_date, end_date) -> DataFrame 个股日线行情(仅用于个股)\n"
-                "   返回列: open/close/high/low/volume/turnover/pct_change/change/turnover_rate(float)，索引DatetimeIndex\n"
-                "4. get_batch_prices(symbols, start_date, end_date, max_stocks) -> dict[str,DataFrame] 批量个股行情\n"
-                "【估值数据】\n"
-                "5. get_valuation_data(symbol, start_date, end_date) -> DataFrame 每日估值(PE/PB/PS/股息率)\n"
-                "   返回列: pe_ttm/pb/ps_ttm/dv_ratio(float)，索引DatetimeIndex\n"
-                "6. get_batch_valuation(symbols, start_date, end_date, max_stocks) -> dict[str,DataFrame] 批量估值\n"
-                "【财务数据】\n"
-                "7. get_financial_indicator(symbol, start_year) -> DataFrame 财务指标(按报告期)\n"
-                "   返回列: date/roe/gross_profit_margin/revenue_yoy/net_profit_yoy\n"
-                "【行业分类】\n"
-                "8. get_industry_mapping(symbols) -> dict[str,str] 行业分类映射，如{'000001':'银行'}\n"
-                "【因子测试】\n"
-                "9. calc_ic / calc_rank_ic -> 计算IC/Rank IC\n"
-                "10. factor_group_test(factor_df, n_groups=5) -> dict 因子分组测试(需含date/symbol/factor/forward_return列)\n"
-                "★ 列名和索引类型已确定，无需探索数据结构，直接使用即可。"
-                "代码最后应print结果或输出JSON格式的指标。"
-            ),
+            "description": "在沙箱中执行Python因子检测代码，预置行情/估值/财务/行业数据函数和IC/分组测试工具",
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "code": {"type": "string", "description": "要执行的Python代码"},
+                    "code": {"type": "string", "description": "Python因子检测代码"},
                     "index": {"type": "string", "description": "股票池指数代码"},
                     "start_date": {"type": "string", "description": "开始日期YYYYMMDD"},
                     "end_date": {"type": "string", "description": "结束日期YYYYMMDD"},

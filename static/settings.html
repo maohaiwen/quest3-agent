@@ -577,12 +577,18 @@
                 }
                 html += `  </div>`;
 
+                // Service description
+                if (p.service_description) {
+                    html += `  <div style="font-size:0.85em;color:var(--text-secondary);margin-bottom:8px;">${Utils.escapeHtml(p.service_description)}</div>`;
+                }
+
                 // Tools list
                 if (p.tools && p.tools.length > 0) {
                     html += `  <div class="tool-plugin-tools">`;
                     p.tools.forEach(t => {
                         const toolIcon = t.installed ? '🟢' : '⚪';
-                        html += `<span class="tool-badge ${t.installed ? '' : 'disabled'}">${toolIcon} ${Utils.escapeHtml(t.name)}</span>`;
+                        const shortDesc = t.description ? t.description.split(/[。\n]/)[0] : '';
+                        html += `<span class="tool-badge ${t.installed ? '' : 'disabled'}" title="${Utils.escapeHtml(t.description)}">${toolIcon} ${Utils.escapeHtml(t.name)}${shortDesc ? ' — ' + Utils.escapeHtml(shortDesc) : ''}</span>`;
                     });
                     html += `  </div>`;
                 }

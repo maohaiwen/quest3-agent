@@ -64,14 +64,14 @@ def register_all_services(tool_manager: "UnifiedToolManager") -> None:
     # Define all services
     _service_descriptors.clear()
 
-    _service_descriptors["FileSystem"] = ToolServiceDescriptor(
-        service_name="FileSystem",
+    _service_descriptors["文件系统"] = ToolServiceDescriptor(
+        service_name="文件系统",
         service_cls=FileSystemToolService,
         enabled_by_default=True,
     )
 
-    _service_descriptors["WebSearch"] = ToolServiceDescriptor(
-        service_name="WebSearch",
+    _service_descriptors["网络搜索"] = ToolServiceDescriptor(
+        service_name="网络搜索",
         service_cls=WebSearchToolService,
         factory=lambda: WebSearchToolService(
             api_key=settings.WEB_SEARCH_API_KEY,
@@ -80,8 +80,8 @@ def register_all_services(tool_manager: "UnifiedToolManager") -> None:
         enabled_by_default=True,
     )
 
-    _service_descriptors["FactorTest"] = ToolServiceDescriptor(
-        service_name="FactorTest",
+    _service_descriptors["因子检测"] = ToolServiceDescriptor(
+        service_name="因子检测",
         service_cls=StockBacktestToolService,
         enabled_by_default=False,  # Not enabled by default — needs deps
     )
@@ -138,7 +138,7 @@ def _register_service_tools(
             handler=handler,
             source="local",
             installed=is_installed,
-            service_name=name,
+            service_name=getattr(desc.service_cls, 'service_name', name),
             deps=desc.service_cls.deps,
         )
 

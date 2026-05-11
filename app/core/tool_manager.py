@@ -439,15 +439,29 @@ class UnifiedToolManager:
         """Get all tool plugins with install status, grouped by service.
 
         Returns:
-            List of plugin info dicts
+            List of plugin info dicts, each with:
+            - service_name, service_description, installed, deps, tools[]
         """
         # Group tools by service_name
         services: Dict[str, Dict[str, Any]] = {}
         for tool_name, tool_def in self._local_tools.items():
             svc_name = tool_def.service_name or tool_def.source
             if svc_name not in services:
+                # Try to get service_description from the tool's source class
+                svc_desc = ""
+                if tool_def.source == "local":
+                    # Look up the service class to get description
+                    from app.tools.plugin_registry import get_service_descriptors
+                    descriptors = get_service_descriptors()
+                    for dname, desc in descriptors.items():
+                        cls_svc_name = getattr(desc.service_cls, 'service_name', dname)
+                        if cls_svc_name == svc_name or dname == svc_name:
+                            svc_desc = getattr(desc.service_cls, 'service_description', '')
+                            break
+
                 services[svc_name] = {
                     "service_name": svc_name,
+                    "service_description": svc_desc,
                     "installed": True,
                     "deps": [],
                     "tools": []

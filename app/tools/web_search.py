@@ -12,6 +12,10 @@ logger = logging.getLogger(__name__)
 class WebSearchToolService(BaseToolService):
     """Web search tool service using Volcano Engine (火山引擎) Web Search API"""
 
+    service_name = "网络搜索"
+    service_description = "通过火山引擎搜索互联网信息，支持AI摘要和时间筛选"
+    deps = []
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -240,33 +244,33 @@ class WebSearchToolService(BaseToolService):
         return {
             "web_search": MCPTool(
                 name="web_search",
-                description="Search the internet for information using web search. Use this when you need current events, facts, news, or data that requires accessing the web. Returns titles, URLs, snippets, and optional AI-generated summaries.",
+                description="搜索互联网信息，返回标题、链接和摘要，支持AI总结和时间范围筛选",
                 input_schema={
                     "type": "object",
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "The search query (1-100 characters)"
+                            "description": "搜索关键词（1-100字）"
                         },
                         "search_type": {
                             "type": "string",
                             "enum": ["web", "web_summary"],
-                            "description": "Search type: 'web' for basic results, 'web_summary' for results with AI summary",
+                            "description": "搜索类型：'web'普通搜索，'web_summary'带AI总结",
                             "default": "web"
                         },
                         "count": {
                             "type": "integer",
-                            "description": "Number of results to return (default: 10, max: 50)",
+                            "description": "返回结果数量（默认10，最多50）",
                             "default": 10
                         },
                         "need_summary": {
                             "type": "boolean",
-                            "description": "Whether to include detailed summary (精准摘要) in results",
+                            "description": "是否返回AI精准摘要",
                             "default": True
                         },
                         "time_range": {
                             "type": "string",
-                            "description": "Filter by time: 'OneDay', 'OneWeek', 'OneMonth', 'OneYear', or 'YYYY-MM-DD..YYYY-MM-DD'",
+                            "description": "时间筛选：'OneDay'/一天内，'OneWeek'/一周内，'OneMonth'/一月内，或'YYYY-MM-DD..YYYY-MM-DD'",
                             "default": None
                         }
                     },
