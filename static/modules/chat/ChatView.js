@@ -161,7 +161,7 @@ const ChatView = {
         if (this._aiMessageEl) {
             const contentDiv = this._aiMessageEl.querySelector('.message-content');
             if (contentDiv && this._aiContent) {
-                contentDiv.innerHTML = this._renderMarkdown(this._aiContent);
+                this._renderContentSafely(contentDiv);
             }
             this.messageCount++;
         }
@@ -186,12 +186,35 @@ const ChatView = {
 
     _renderMarkdown(text) {
         if (!text) return '';
+        // 纯 markdown 渲染，不含 visual block 处理
         if (typeof marked !== 'undefined') {
             try {
                 return marked.parse(text);
-            } catch (e) { /* fall through */ }
+            } catch (e) {
+                return this.escapeHtml(text).replace(/\n/g, '<br>');
+            }
         }
         return this.escapeHtml(text).replace(/\n/g, '<br>');
+    },
+
+    /** 生成可视化 iframe HTML */
+    _renderVisualIframe(htmlContent) {
+        const frameId = 'vframe-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
+        // 构建完整的 iframe 内 HTML 文档
+        var docHtml = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+            '<style>body{margin:0;padding:8px;font-family:sans-serif;}</style>' +
+            '</head><body>' + htmlContent +
+            '<script>(function(){' +
+            'function notifyHeight(){parent.postMessage({type:"visual-resize",frameId:"' + frameId + '",height:document.body.scrollHeight},"*");}' +
+            'new ResizeObserver(notifyHeight).observe(document.body);' +
+            'setTimeout(notifyHeight,300);setTimeout(notifyHeight,800);setTimeout(notifyHeight,2000);' +
+            '})();<\/script></body></html>';
+        // 对 srcdoc 属性值做 HTML 转义：先转义 & 再转义 "（顺序很重要）
+        var srcdocValue = docHtml.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+        return '<div class="visual-block-wrapper">' +
+            '<iframe sandbox="allow-scripts allow-same-origin" id="' + frameId + '" ' +
+            'style="width:100%;border:none;overflow:hidden;min-height:200px;display:block;border-radius:8px;background:#fff;" ' +
+            'srcdoc="' + srcdocValue + '"></iframe></div>';
     },
 
     /** Add a static (historical) message */
@@ -207,7 +230,6 @@ const ChatView = {
 
         const avatarIcon = sender === 'user' ? '👤' : sender === 'ai' ? '🤖' : '⚙️';
         const avatarClass = sender === 'user' ? 'user' : sender === 'ai' ? 'ai' : '';
-        const renderedContent = sender === 'ai' ? this._renderMarkdown(content) : this.escapeHtml(content);
 
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message';
@@ -217,8 +239,26 @@ const ChatView = {
                 <span class="message-sender">${sender === 'user' ? '我' : 'AI'}</span>
                 <span class="message-time">${timeStr}</span>
             </div>
-            <div class="message-content">${renderedContent}</div>
+            <div class="message-content"></div>
         `;
+
+        const contentDiv = messageDiv.querySelector('.message-content');
+        if (sender === 'ai') {
+            // AI 消息可能包含 <!--visual--> 标记，使用统一渲染
+            const savedContent = this._aiContent;
+            this._aiContent = content;
+            this._renderContentSafely(contentDiv);
+            this._aiContent = savedContent;
+        } else {
+            contentDiv.textContent = content;
+        }
+
+        // 调试：检测是否有未渲染的可视化标记
+        if (sender === 'ai' && content && content.indexOf('<!--visual-->') !== -1) {
+            const segments = this._parseSegments(content);
+            const visualCount = segments.filter(function(s) { return s.type === 'visual'; }).length;
+            console.log('[ChatView] addMessage: content has <!--visual--> markers, parsed ' + visualCount + ' visual segments out of ' + segments.length + ' total');
+        }
 
         const indicator = document.getElementById('typingIndicator');
         messagesArea.insertBefore(messageDiv, indicator);
@@ -254,6 +294,115 @@ const ChatView = {
         return messageDiv;
     },
 
+    /**
+     * Parse _aiContent into text/visual segments with stable IDs.
+     * Each visual block gets seg-visual-{n}, text between visuals gets seg-text-{n}.
+     * IDs are stable across renders: adding a new visual block at the end
+     * doesn't change the IDs of earlier segments.
+     */
+    _parseSegments(content) {
+        if (!content) return [];
+        const segments = [];
+        const pattern = /<!--visual-->\s*([\s\S]*?)\s*<!--\/visual-->/g;
+        let lastIndex = 0;
+        let match;
+        let visualCount = 0;
+
+        while ((match = pattern.exec(content)) !== null) {
+            if (match.index > lastIndex) {
+                const text = content.substring(lastIndex, match.index).trim();
+                if (text) {
+                    segments.push({ type: 'text', content: text, id: 'seg-text-' + visualCount });
+                }
+            }
+            segments.push({ type: 'visual', html: match[1], id: 'seg-visual-' + visualCount });
+            visualCount++;
+            lastIndex = pattern.lastIndex;
+        }
+
+        if (lastIndex < content.length) {
+            const text = content.substring(lastIndex).trim();
+            if (text) {
+                segments.push({ type: 'text', content: text, id: 'seg-text-' + visualCount });
+            }
+        }
+
+        if (segments.length === 0 && content.trim()) {
+            segments.push({ type: 'text', content: content, id: 'seg-text-0' });
+        }
+
+        return segments;
+    },
+
+    /** Render markdown text only (no visual blocks) */
+    _renderMarkdownText(text) {
+        if (!text) return '';
+        if (typeof marked !== 'undefined') {
+            try {
+                return marked.parse(text);
+            } catch (e) {
+                return this.escapeHtml(text).replace(/\n/g, '<br>');
+            }
+        }
+        return this.escapeHtml(text).replace(/\n/g, '<br>');
+    },
+
+    /**
+     * Re-render message content using segmented approach.
+     * Text segments: only update innerHTML (no iframe destruction).
+     * Visual segments: reuse existing DOM element — iframe is never touched.
+     */
+    _renderContentSafely(contentDiv) {
+        const segments = this._parseSegments(this._aiContent);
+
+        // Build a map of existing segment elements by data-seg-id
+        const existingMap = {};
+        Array.from(contentDiv.children).forEach(el => {
+            const segId = el.getAttribute('data-seg-id');
+            if (segId) existingMap[segId] = el;
+        });
+
+        // Build new children list, reusing existing elements where possible
+        const newChildren = [];
+        segments.forEach(seg => {
+            const existing = existingMap[seg.id];
+
+            if (seg.type === 'visual') {
+                if (existing) {
+                    // Reuse existing visual element — iframe stays completely intact
+                    newChildren.push(existing);
+                } else {
+                    // Create new visual element
+                    const temp = document.createElement('div');
+                    temp.innerHTML = this._renderVisualIframe(seg.html);
+                    const el = temp.firstChild;
+                    el.setAttribute('data-seg-id', seg.id);
+                    newChildren.push(el);
+                }
+            } else {
+                // Text segment — only update innerHTML
+                const rendered = this._renderMarkdownText(seg.content);
+                if (existing) {
+                    existing.innerHTML = rendered;
+                    newChildren.push(existing);
+                } else {
+                    const el = document.createElement('div');
+                    el.setAttribute('data-seg-id', seg.id);
+                    el.innerHTML = rendered;
+                    newChildren.push(el);
+                }
+            }
+        });
+
+        // Remove all current children (removeChild preserves element in memory,
+        // unlike innerHTML = '' which destroys it)
+        while (contentDiv.firstChild) {
+            contentDiv.removeChild(contentDiv.firstChild);
+        }
+        // Append new children in order
+        newChildren.forEach(el => contentDiv.appendChild(el));
+    },
+
     /** Append content to the current AI message */
     updateAiMessage(content) {
         if (!this._aiMessageEl) {
@@ -262,7 +411,20 @@ const ChatView = {
         const contentDiv = this._aiMessageEl.querySelector('.message-content');
         if (contentDiv) {
             this._aiContent += content;
-            contentDiv.innerHTML = this._renderMarkdown(this._aiContent);
+            this._renderContentSafely(contentDiv);
+        }
+        this._aiMessageEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    },
+
+    /** Append a visual (HTML) block to the current AI message */
+    appendVisualBlock(htmlContent) {
+        if (!this._aiMessageEl) {
+            this._createAiMessageEl();
+        }
+        this._aiContent += `\n<!--visual-->\n${htmlContent}\n<!--/visual-->\n`;
+        const contentDiv = this._aiMessageEl.querySelector('.message-content');
+        if (contentDiv) {
+            this._renderContentSafely(contentDiv);
         }
         this._aiMessageEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     },
@@ -275,7 +437,7 @@ const ChatView = {
         const contentDiv = this._aiMessageEl.querySelector('.message-content');
         if (contentDiv) {
             this._aiContent = content;
-            contentDiv.innerHTML = this._renderMarkdown(this._aiContent);
+            this._renderContentSafely(contentDiv);
         }
         this._aiMessageEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     },
@@ -774,7 +936,6 @@ const ChatView = {
 
             const avatarIcon = sender === 'user' ? '👤' : '🤖';
             const avatarClass = sender === 'user' ? 'user' : 'ai';
-            const renderedContent = sender === 'ai' ? this._renderMarkdown(msg.content) : this.escapeHtml(msg.content);
 
             const messageDiv = document.createElement('div');
             messageDiv.className = 'message';
@@ -784,8 +945,20 @@ const ChatView = {
                     <span class="message-sender">${sender === 'user' ? '我' : 'AI'}</span>
                     <span class="message-time">${timeStr}</span>
                 </div>
-                <div class="message-content">${renderedContent}</div>
+                <div class="message-content"></div>
             `;
+
+            const contentDiv = messageDiv.querySelector('.message-content');
+            if (sender === 'ai') {
+                // AI 消息可能包含 <!--visual--> 标记，使用统一渲染
+                const savedContent = this._aiContent;
+                this._aiContent = msg.content;
+                this._renderContentSafely(contentDiv);
+                this._aiContent = savedContent;
+            } else {
+                contentDiv.textContent = msg.content;
+            }
+
             fragment.appendChild(messageDiv);
         });
 
@@ -898,5 +1071,10 @@ chatStyles.textContent = `
     @keyframes typingBounce { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
 
     .pending-response-text { color: #888; font-style: italic; }
+
+    .visual-block-wrapper { margin: 12px -4px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-color); box-shadow: 0 1px 4px rgba(0,0,0,0.06); background: #fff; }
+    .visual-block-wrapper iframe { display: block; }
+    .message-content .visual-block-wrapper:first-child { margin-top: 8px; }
+    .message-content .visual-block-wrapper:last-child { margin-bottom: 4px; }
 `;
 document.head.appendChild(chatStyles);

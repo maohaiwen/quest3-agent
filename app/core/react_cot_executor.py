@@ -295,9 +295,19 @@ class ReActCotExecutor:
                         logger.info(f"ReActCot: 步骤 {step} - 执行工具: {tool_name}")
                         yield {"type": "cot_phase", "phase": "observation"}
 
-                        observation = await self._execute_tool(tool_name, tool_args)
+                        # 收集可视化事件
+                        visual_events = []
+
+                        def _on_visual(event):
+                            visual_events.append(event)
+
+                        observation = await self._execute_tool(tool_name, tool_args, visual_callback=_on_visual)
                         step_record.observation = observation
                         step_record.phase = CotPhase.OBSERVING
+
+                        # Yield 可视化事件（由 tool_manager 检测 __render_html__ 后通过回调收集）
+                        for ve in visual_events:
+                            yield ve
 
                         yield {
                             "type": "cot_observation",
@@ -410,7 +420,7 @@ class ReActCotExecutor:
 
         logger.info(f"ReActCot: 总共可用 {len(self.available_tools)} 个工具: {list(self.available_tools.keys())}")
 
-    async def _execute_tool(self, tool_name: str, tool_args: Dict[str, Any]) -> Any:
+    async def _execute_tool(self, tool_name: str, tool_args: Dict[str, Any], visual_callback=None) -> Any:
         """执行工具调用"""
         try:
             logger.info(f"ReActCot: 调用工具 {tool_name}, 参数: {tool_args}")
@@ -424,7 +434,11 @@ class ReActCotExecutor:
                 return result
 
             tool_manager = get_tool_manager()
-            result = await tool_manager.call_tool(tool_name, tool_args)
+            result = await tool_manager.call_tool(
+                tool_name,
+                tool_args,
+                visual_callback=visual_callback,
+            )
 
             logger.info(f"ReActCot: 工具 {tool_name} 执行完成，结果类型: {type(result)}")
             return result

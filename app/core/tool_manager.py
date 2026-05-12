@@ -403,7 +403,8 @@ class UnifiedToolManager:
     async def call_tool(
         self,
         tool_name: str,
-        arguments: Dict[str, Any]
+        arguments: Dict[str, Any],
+        visual_callback: Optional[Callable] = None,
     ) -> Any:
         """
         调用工具
@@ -411,9 +412,10 @@ class UnifiedToolManager:
         Args:
             tool_name: 工具名称
             arguments: 工具参数
+            visual_callback: 可视化事件回调（同步函数），当工具返回 __render_html__ 时调用
 
         Returns:
-            工具执行结果
+            工具执行结果（已移除 __render_html__，替换为纯文本摘要）
         """
         # 1. Check local tools
         if tool_name in self._local_tools:
@@ -421,17 +423,53 @@ class UnifiedToolManager:
             if not tool_def.installed:
                 return {"error": f"工具 '{tool_name}' 依赖未安装，请先在工具管理中安装依赖"}
             if tool_def.handler:
-                logger.info(f"Calling local tool: {tool_name}")
-                return await tool_def.handler(**arguments)
+                logger.info(f"Calling local tool: {tool_name}, arguments: {list(arguments.keys())}")
+                try:
+                    result = await tool_def.handler(**arguments)
+                except TypeError as e:
+                    logger.warning(f"Tool '{tool_name}' handler call failed with arguments {arguments}: {e}")
+                    return {"error": f"工具 '{tool_name}' 调用参数错误: {e}"}
+
+                # 统一处理可视化结果
+                result, html, summary = self._extract_visual(result)
+                if html and visual_callback:
+                    try:
+                        visual_callback({"type": "html", "content": html})
+                    except Exception as e:
+                        logger.warning(f"Visual callback error: {e}")
+                return result
 
         # 2. Try MCP tools via pool (uses original_name, no prefix)
         try:
             logger.info(f"Calling MCP tool: {tool_name}")
-            return await mcp_client_pool.call_tool(tool_name, arguments)
+            result = await mcp_client_pool.call_tool(tool_name, arguments)
+            # MCP 工具结果也可能包含可视化内容
+            result, html, summary = self._extract_visual(result)
+            if html and visual_callback:
+                try:
+                    visual_callback({"type": "html", "content": html})
+                except Exception as e:
+                    logger.warning(f"Visual callback error: {e}")
+            return result
         except ValueError:
             raise ValueError(f"Tool '{tool_name}' not found")
         except Exception as e:
             raise ValueError(f"Tool '{tool_name}' failed: {e}")
+
+    def _extract_visual(self, result: Any) -> tuple:
+        """从工具结果中提取可视化内容，返回清洗后的结果
+
+        Args:
+            result: 工具调用结果
+
+        Returns:
+            (clean_result, html_or_none, summary)
+        """
+        if not isinstance(result, dict) or "__render_html__" not in result:
+            return result, None, ""
+
+        from app.tools.visual import extract_visual_from_result
+        return extract_visual_from_result(result)
 
     # ===== Plugin Management =====
 

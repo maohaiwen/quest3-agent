@@ -170,6 +170,8 @@ async def _run_llm_and_save(
     ws_connected = websocket is not None
     full_response = ""
     sent_end = False
+    # 有序追踪内容片段，保留文本和可视化事件的相对位置
+    content_parts = []  # list of {"type": "text"|"html", "content": ...}
 
     async def _send_event(event: dict):
         """安全发送事件，断连后静默跳过"""
@@ -196,6 +198,9 @@ async def _run_llm_and_save(
                 await _send_event(event)
                 if event.get("type") == "message":
                     full_response += event.get("content", "")
+                    content_parts.append({"type": "text", "content": event.get("content", "")})
+                if event.get("type") == "html":
+                    content_parts.append({"type": "html", "content": event.get("content", "")})
                 if event.get("type") == "end":
                     sent_end = True
         except Exception as e:
@@ -223,6 +228,10 @@ async def _run_llm_and_save(
                 await _send_event(event)
                 if event.get("type") == "cot_complete":
                     full_response = event.get("message", "") or full_response
+                if event.get("type") == "message":
+                    content_parts.append({"type": "text", "content": event.get("content", "")})
+                if event.get("type") == "html":
+                    content_parts.append({"type": "html", "content": event.get("content", "")})
                 if event.get("type") == "end":
                     sent_end = True
         except Exception as e:
@@ -246,12 +255,51 @@ async def _run_llm_and_save(
                 await _send_event(event)
                 if event.get("type") == "message":
                     full_response += event.get("content", "")
+                    content_parts.append({"type": "text", "content": event.get("content", "")})
+                if event.get("type") == "html":
+                    content_parts.append({"type": "html", "content": event.get("content", "")})
         except Exception as e:
             logger.error(f"Plan mode execution error: {e}", exc_info=True)
             await _send_event({"type": "error", "content": f"执行错误: {str(e)}"})
 
-    # ── 无论 WebSocket 状态如何，保存结果 ──
+    # ── 无论 WebSocket 状态何如，保存结果 ──
     if full_response:
+        # 用有序的 content_parts 重构保存内容，保留文本和可视化的相对位置
+        if content_parts:
+            from app.tools.visual import VISUAL_BLOCK_MARKER, VISUAL_BLOCK_END
+            # 先清理 full_response 中可能被 LLM 回显的旧标记
+            from app.tools.visual import split_message_with_visuals
+            clean_text, _ = split_message_with_visuals(full_response)
+
+            html_count = sum(1 for p in content_parts if p["type"] == "html")
+            text_count = sum(1 for p in content_parts if p["type"] == "text")
+            logger.info(f"Saving response: content_parts has {html_count} html + {text_count} text events, full_response length={len(full_response)}")
+
+            # 用 content_parts 按事件顺序重构
+            parts = []
+            text_buf = ""
+            for part in content_parts:
+                if part["type"] == "text":
+                    text_buf += part["content"]
+                elif part["type"] == "html":
+                    # 遇到 html 时，先把累积的文本刷出
+                    if text_buf:
+                        # 文本可能被 LLM 回显了标记，需要清理
+                        t, _ = split_message_with_visuals(text_buf)
+                        if t.strip():
+                            parts.append(t)
+                        text_buf = ""
+                    parts.append(f"{VISUAL_BLOCK_MARKER}\n{part['content']}\n{VISUAL_BLOCK_END}")
+            # 最后的文本
+            if text_buf:
+                t, _ = split_message_with_visuals(text_buf)
+                if t.strip():
+                    parts.append(t)
+
+            if parts:
+                full_response = "\n".join(parts)
+            else:
+                full_response = clean_text
         try:
             await message_repo.create(MessageCreate(
                 session_id=session_id,

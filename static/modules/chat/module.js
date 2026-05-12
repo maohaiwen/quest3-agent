@@ -62,7 +62,7 @@ const ChatModule = {
                 data.messages.forEach(msg => {
                     // Map "assistant" role from backend to "ai" for frontend rendering
                     const sender = msg.role === 'assistant' ? 'ai' : msg.role;
-                    ChatView.addMessage(sender, msg.content, msg.created_at);
+                    ChatView.addMessage(sender, msg.content, msg.created_at, msg.html_parts || null);
                 });
             }
             // Show "load more" button if there are older messages
@@ -102,7 +102,7 @@ const ChatModule = {
             ChatView.removePendingResponse();
             if (data.message) {
                 const sender = data.message.role === 'assistant' ? 'ai' : data.message.role;
-                ChatView.addMessage(sender, data.message.content, data.message.created_at);
+                ChatView.addMessage(sender, data.message.content, data.message.created_at, data.message.html_parts || null);
             }
         });
 
@@ -113,6 +113,15 @@ const ChatModule = {
                 ChatView.startAiResponse();
             }
             ChatView.updateAiMessage(data.content);
+        });
+
+        // HTML visual content (from render_visual tool)
+        ChatService.on('html', (data) => {
+            ChatView.showTypingIndicator(false);
+            if (!ChatView._aiResponding) {
+                ChatView.startAiResponse();
+            }
+            ChatView.appendVisualBlock(data.content);
         });
 
         // End of response (all modes)
@@ -226,8 +235,22 @@ const ChatModule = {
             ChatView.updateThinkingPhase('complete');
             ChatView.showTypingIndicator(false);
             if (data.message && !data.streamed) {
-                // 内容未流式发送（答案在 thinking 中），一次性设置
-                ChatView.setAiMessage(data.message);
+                // 如果已有内容（如可视化块），追加而非替换，避免覆盖
+                if (ChatView._aiContent) {
+                    ChatView.updateAiMessage(data.message);
+                } else {
+                    ChatView.setAiMessage(data.message);
+                }
+            }
+        });
+
+        // Global listener for iframe height auto-resize
+        window.addEventListener('message', (e) => {
+            if (e.data && e.data.type === 'visual-resize' && e.data.frameId) {
+                const iframe = document.getElementById(e.data.frameId);
+                if (iframe && e.data.height) {
+                    iframe.style.height = (e.data.height + 4) + 'px';
+                }
             }
         });
     },

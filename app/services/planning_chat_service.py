@@ -396,7 +396,23 @@ class PlanningChatService:
                         })
 
                         try:
-                            result = await execution_engine._execute_step(step)
+                            # 收集可视化事件（_execute_step 内部通过 _emit 发出）
+                            step_visual_events = []
+                            def _collect_visual(event):
+                                if event.get("type") == "html":
+                                    step_visual_events.append(event)
+                            execution_engine.execution_callbacks.append(_collect_visual)
+
+                            try:
+                                result = await execution_engine._execute_step(step)
+                            finally:
+                                # 确保移除临时回调
+                                if _collect_visual in execution_engine.execution_callbacks:
+                                    execution_engine.execution_callbacks.remove(_collect_visual)
+
+                            # 发送可视化事件
+                            for ve in step_visual_events:
+                                yield ve
 
                             if step.status == "completed":
                                 yield ChatEvent.step_complete(step.step_id, result)

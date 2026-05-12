@@ -2,7 +2,7 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
 from app.utils.timezone import beijing_now
-from typing import Optional
+from typing import Optional, List
 from enum import Enum
 
 
@@ -46,6 +46,7 @@ class ChatResponse(BaseModel):
 
 class StreamMessage(BaseModel):
     """WebSocket stream message"""
-    type: str = Field(..., description="Message type: 'message', 'error', 'end'")
+    type: str = Field(..., description="Message type: 'message', 'error', 'end', 'html'")
     content: str = Field(default="", description="Message content")
+    html_content: Optional[str] = Field(default=None, description="HTML visual content (only for type='html')")
     session_id: str = Field(..., description="Session ID")

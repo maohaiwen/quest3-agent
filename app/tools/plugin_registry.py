@@ -59,6 +59,7 @@ def register_all_services(tool_manager: "UnifiedToolManager") -> None:
     from app.tools.filesystem import FileSystemToolService
     from app.tools.web_search import WebSearchToolService
     from app.tools.stock_backtest import StockBacktestToolService
+    from app.tools.visual import VisualToolService
     from app.config import settings
 
     # Define all services
@@ -84,6 +85,12 @@ def register_all_services(tool_manager: "UnifiedToolManager") -> None:
         service_name="因子检测",
         service_cls=StockBacktestToolService,
         enabled_by_default=False,  # Not enabled by default — needs deps
+    )
+
+    _service_descriptors["可视化"] = ToolServiceDescriptor(
+        service_name="可视化",
+        service_cls=VisualToolService,
+        enabled_by_default=True,  # No external deps
     )
 
     # Register each service

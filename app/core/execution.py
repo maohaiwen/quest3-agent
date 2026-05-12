@@ -430,10 +430,23 @@ class ToolExecutionEngine:
                 # Execute tool via unified tool manager
                 from app.core.tool_manager import get_tool_manager
                 tool_manager = get_tool_manager()
+
+                # 可视化回调：检测到 __render_html__ 时通过 _emit 发出 html 事件
+                # 注意：call_tool 要求同步回调，这里收集事件后由 _emit 异步发出
+                step_visual_events = []
+
+                def _visual_callback(event):
+                    step_visual_events.append(event)
+
                 result = await tool_manager.call_tool(
                     step.tool_name,
-                    step.arguments
+                    step.arguments,
+                    visual_callback=_visual_callback,
                 )
+
+                # 异步发出收集到的可视化事件
+                for ve in step_visual_events:
+                    await self._emit(ve)
 
                 step.status = "completed"
                 step.result = result
