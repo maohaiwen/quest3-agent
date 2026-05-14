@@ -1,5 +1,5 @@
 """Memory management API endpoints"""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 import logging
 
 from app.models.agent_memory import (
@@ -8,19 +8,12 @@ from app.models.agent_memory import (
 )
 from app.models.memory import MemoryStoreResponse
 from app.services.agent_memory_service import agent_memory_service
-from app.services.vector_service import VectorService
-from app.config import settings
-from app.database.connection import DatabaseConnection
 from app.database.repositories import AgentMemoryRepository
+from app.api.deps import get_vector_service, get_db
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/memory", tags=["memory"])
-
-
-def get_vector_service():
-    from app.main import vector_service
-    return vector_service
 
 
 # ---- Agent-level long-term memory API ----
@@ -93,13 +86,17 @@ async def get_agent_memory_stats(agent_id: str):
 
 
 @router.delete("/agent/{agent_id}/{memory_id}")
-async def delete_agent_memory(agent_id: str, memory_id: str):
+async def delete_agent_memory(
+    agent_id: str,
+    memory_id: str,
+    vector_service=Depends(get_vector_service),
+    db=Depends(get_db),
+):
     """Delete a specific agent memory"""
-    repo = AgentMemoryRepository(DatabaseConnection(settings.DATABASE_URL))
+    repo = AgentMemoryRepository(db)
     try:
         await repo.delete(memory_id)
         # Also delete from ChromaDB
-        vector_service = get_vector_service()
         if vector_service.is_available():
             try:
                 vector_service.delete(agent_id, memory_id)
@@ -111,5 +108,3 @@ async def delete_agent_memory(agent_id: str, memory_id: str):
     except Exception as e:
         logger.error(f"Error deleting agent memory: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        await repo.db.disconnect()

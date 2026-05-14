@@ -6,90 +6,15 @@ from contextlib import asynccontextmanager
 import logging
 
 from app.config import settings
-from app.database.connection import DatabaseConnection
-from app.database.repositories import SessionRepository, MessageRepository, MemoryRepository
-from app.services.llm_service import llm_service
-from app.services.session_working_memory import SessionWorkingMemory
-from app.services.vector_service import VectorService
-from app.services.agent_memory_service import agent_memory_service
-from app.services.mcp_service import mcp_tool_manager
-from app.tools.filesystem import FileSystemToolService
-from app.tools.web_search import WebSearchToolService
-from app.tools.stock_backtest import StockBacktestToolService
-from app.services.mcp_pool import mcp_client_pool
-from app.services.planning_chat_service import planning_chat_service
-from app.core.decision import decision_engine
-from app.core.execution import execution_engine
-from app.core.strategy_router import strategy_router
-from app.services.settings_service import settings_service
-from app.services.user_service import user_service
+from app.container import ServiceContainer
+from app.api.deps import set_container
+
 # Configure logging
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-# Initialize services
-db = DatabaseConnection(settings.DATABASE_URL)
-session_repo = SessionRepository(db)
-message_repo = MessageRepository(db)
-memory_repo = MemoryRepository(db)
-# llm_service is the global singleton from app.services.llm.service
-memory_service = SessionWorkingMemory()
-vector_service = VectorService()
-
-# Wire agent_memory_service with vector_service
-agent_memory_service.set_vector_service(vector_service)
-
-# Initialize agent registry for A2A
-from app.services.agent_registry import agent_registry
-
-# Initialize MCP services
-fs_tool_service = FileSystemToolService()
-mcp_tool_manager.register_local_service("FileSystem", fs_tool_service)
-
-# Initialize sandbox types
-from app.sandboxes.registry import SandboxRegistry
-from app.sandboxes.chinese_chess import ChineseChessSandbox
-SandboxRegistry.register("chinese_chess", ChineseChessSandbox)
-logger.info("Sandbox types registered")
-
-# Initialize web search service (uses Volcano Engine Web Search API)
-web_search_service = WebSearchToolService(
-    api_key=settings.WEB_SEARCH_API_KEY,
-    base_url=settings.WEB_SEARCH_API_URL
-)
-mcp_tool_manager.register_local_service("WebSearch", web_search_service)
-
-# Initialize factor testing service (sandbox with akshare)
-# Note: deps may not be installed — plugin_registry handles this
-stock_backtest_service = StockBacktestToolService()
-mcp_tool_manager.register_local_service("FactorTest", stock_backtest_service)
-
-# 使用统一工具管理器 + 插件注册系统注册所有工具
-from app.core.tool_manager import get_tool_manager
-from app.tools.plugin_registry import register_all_services
-tool_manager = get_tool_manager()
-
-# Plugin-based registration: checks deps, registers with installed=True/False
-register_all_services(tool_manager)
-
-logger.info("All tools registered with UnifiedToolManager (plugin system)")
-
-# Set LLM service for decision engine
-decision_engine.set_llm_service(llm_service)
-
-# Set LLM service for strategy router (it imports llm_service internally)
-strategy_router.set_llm_client(llm_service)
-
-# Register execution callback for streaming
-async def execution_callback(event):
-    """Execution callback for streaming events"""
-    # This will be used by chat API to stream events
-    pass
-
-execution_engine.register_callback(execution_callback)
 
 
 @asynccontextmanager
@@ -98,63 +23,69 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting up application...")
 
+    # Create and wire service container
+    container = ServiceContainer()
+    container.setup()
+    app.state.container = container
+    set_container(container)  # Enable get_db_sync() for non-request code
+
     try:
         # Initialize database
-        await db.initialize_schema()
+        await container.db.initialize_schema()
         logger.info("Database initialized")
 
         # Clean up stale "running" tasks left from previous server instance
         try:
             from app.utils.timezone import beijing_now
             now_str = beijing_now().isoformat()
-            result = await db.execute(
+            result = await container.db.execute(
                 "UPDATE collaboration_tasks SET status = 'interrupted', output = '服务重启，任务中断', completed_at = ? WHERE status = 'running'",
                 (now_str,)
             )
-            await db.commit()
+            await container.db.commit()
             if result and hasattr(result, 'rowcount') and result.rowcount > 0:
                 logger.info(f"Marked {result.rowcount} stale running tasks as interrupted")
         except Exception as e:
             logger.warning(f"Could not clean up stale tasks: {e}")
 
         # Initialize settings and user services with DB connection
-        settings_service.set_db(db)
-        user_service.set_db(db)
+        container.settings_service.set_db(container.db)
+        container.user_service.set_db(container.db)
 
         # Ensure default settings exist in database
-        await settings_service.ensure_default_settings()
+        await container.settings_service.ensure_default_settings()
         logger.info("Settings initialized")
 
         # Ensure default admin user exists
-        await user_service.ensure_default_admin()
+        await container.user_service.ensure_default_admin()
         logger.info("Default admin user ensured")
 
         # Reload settings from database (DB values override .env)
-        await settings.reload_from_db(db)
+        await settings.reload_from_db(container.db)
         logger.info("Settings loaded from database")
 
         # Reconfigure LLM service with DB-loaded settings
-        llm_service.reconfigure()
+        container.llm_service.reconfigure()
         logger.info("LLM service reconfigured with database settings")
 
 
         # Check LLM configuration
-        if not llm_service.is_configured():
+        if not container.llm_service.is_configured():
             logger.warning("LLM service not configured. Please set the appropriate API key in .env file")
 
         # Check vector service
-        if not vector_service.is_available():
+        if not container.vector_service.is_available():
             logger.warning("Vector store not available. Long-term memory search will be disabled")
 
         # Initialize MCP tools
         logger.info("Initializing MCP tools...")
-        fs_tools = fs_tool_service.get_tools()
+        fs_tools = container.fs_tool_service.get_tools()
         logger.info(f"Loaded {len(fs_tools)} local file system tools")
 
         # Load MCP servers from database
         try:
             from app.database.mcp_schema import create_mcp_tables
-            await create_mcp_tables(db)
+            await create_mcp_tables(container.db)
             logger.info("MCP database tables initialized")
         except Exception as e:
             logger.warning(f"Could not initialize MCP tables: {e}")
@@ -163,7 +94,7 @@ async def lifespan(app: FastAPI):
         mcp_server_url = getattr(settings, 'MCP_SERVER_URL', None)
         if mcp_server_url:
             logger.info(f"Connecting to MCP server: {mcp_server_url}")
-            connected = await mcp_tool_manager.connect_to_mcp_server(mcp_server_url)
+            connected = await container.mcp_tool_manager.connect_to_mcp_server(mcp_server_url)
             if connected:
                 logger.info("MCP server connected successfully")
             else:
@@ -173,7 +104,7 @@ async def lifespan(app: FastAPI):
 
         # Load and connect MCP servers from database
         try:
-            servers_from_db = await db.fetch_all("SELECT * FROM mcp_servers WHERE enabled = 1")
+            servers_from_db = await container.db.fetch_all("SELECT * FROM mcp_servers WHERE enabled = 1")
             logger.info(f"Found {len(servers_from_db)} enabled MCP servers in database")
 
             for server in servers_from_db:
@@ -202,7 +133,7 @@ async def lifespan(app: FastAPI):
                     )
 
                     logger.info(f"Connecting to MCP server from DB: {name}")
-                    success = await mcp_client_pool.add_server(config)
+                    success = await container.mcp_client_pool.add_server(config)
 
                     if success:
                         logger.info(f"Successfully connected to MCP server: {name}")
@@ -217,7 +148,7 @@ async def lifespan(app: FastAPI):
 
         # Initialize agent registry for A2A protocol
         try:
-            await agent_registry.initialize()
+            await container.agent_registry.initialize()
             logger.info("Agent registry initialized for A2A protocol")
         except Exception as e:
             logger.warning(f"Could not initialize agent registry: {e}")
@@ -240,13 +171,13 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down application...")
 
     # Close MCP client pool
-    await mcp_client_pool.close_all()
+    await container.mcp_client_pool.close_all()
 
     # Disconnect from MCP server
-    if mcp_tool_manager.mcp_service.is_connected():
-        await mcp_tool_manager.mcp_service.disconnect()
+    if container.mcp_tool_manager.mcp_service.is_connected():
+        await container.mcp_tool_manager.mcp_service.disconnect()
 
-    await db.disconnect()
+    await container.db.disconnect()
     logger.info("Application shutdown complete")
 
 
@@ -257,6 +188,28 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan
 )
+
+# CORS middleware
+from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+
+cors_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Rate limiting
+limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 # Import routers
 from app.api import chat, sessions, memory, mcp, mcp_servers
@@ -280,6 +233,38 @@ app.include_router(a2a.router)
 app.include_router(settings_api.router)
 app.include_router(users_api.router)
 app.include_router(tools_api.router)
+
+# Security headers middleware (pure ASGI — does not buffer streaming responses)
+class SecurityHeadersMiddleware:
+    """Adds standard security headers to all HTTP responses."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                headers.append((b"x-content-type-options", b"nosniff"))
+                headers.append((b"x-frame-options", b"DENY"))
+                headers.append((b"x-xss-protection", b"1; mode=block"))
+                headers.append(
+                    (b"strict-transport-security", b"max-age=31536000; includeSubDomains")
+                )
+                headers.append(
+                    (b"referrer-policy", b"strict-origin-when-cross-origin")
+                )
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Mount static files with no-cache headers for development
 # Using pure ASGI middleware instead of BaseHTTPMiddleware to avoid
@@ -336,32 +321,34 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
+    container = app.state.container
     return {
         "status": "healthy",
-        "llm_configured": llm_service.is_configured(),
-        "vector_store_available": vector_service.is_available(),
-        "mcp_connected": mcp_tool_manager.mcp_service.is_connected()
+        "llm_configured": container.llm_service.is_configured(),
+        "vector_store_available": container.vector_service.is_available(),
+        "mcp_connected": container.mcp_tool_manager.mcp_service.is_connected()
     }
 
 
 @app.get("/tools")
 async def list_tools():
     """List available MCP tools"""
-    tools = mcp_tool_manager.get_tools_description()
+    container = app.state.container
+    tools = container.mcp_tool_manager.get_tools_description()
 
     # Get detailed tool list
     all_tools = []
-    for tool_name, tool in mcp_tool_manager.all_tools.items():
+    for tool_name, tool in container.mcp_tool_manager.all_tools.items():
         all_tools.append({
             "name": tool.name,
             "description": tool.description,
             "input_schema": tool.input_schema,
-            "source": "mcp_server" if tool_name in mcp_tool_manager.mcp_service.tools else "local"
+            "source": "mcp_server" if tool_name in container.mcp_tool_manager.mcp_service.tools else "local"
         })
 
     return {
-        "mcp_connected": mcp_tool_manager.mcp_service.is_connected(),
-        "total_tools": len(mcp_tool_manager.all_tools),
+        "mcp_connected": container.mcp_tool_manager.mcp_service.is_connected(),
+        "total_tools": len(container.mcp_tool_manager.all_tools),
         "tools": all_tools,
         "tools_description": tools
     }

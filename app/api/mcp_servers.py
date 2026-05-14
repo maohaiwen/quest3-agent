@@ -1,12 +1,11 @@
 """MCP servers management API endpoints"""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Any
 import logging
 import uuid
 
 from app.services.mcp_pool import mcp_client_pool, MCPServerConfig
-from app.database.connection import DatabaseConnection
-from app.config import settings
+from app.api.deps import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -14,44 +13,37 @@ router = APIRouter(prefix="/api/mcp/servers", tags=["mcp_servers"])
 
 
 @router.get("")
-async def list_servers():
+async def list_servers(db=Depends(get_db)):
     """List all MCP servers"""
     try:
-        # Get all servers from database
-        db = DatabaseConnection(settings.DATABASE_URL)
-        await db.connect()
+        servers_from_db = await db.fetch_all("SELECT * FROM mcp_servers")
 
-        try:
-            servers_from_db = await db.fetch_all("SELECT * FROM mcp_servers")
+        # Get connected servers info
+        connected_servers = await mcp_client_pool.get_all_servers()
 
-            # Get connected servers info
-            connected_servers = await mcp_client_pool.get_all_servers()
+        # Merge status from connected servers
+        connected_map = {s['id']: s for s in connected_servers}
 
-            # Merge status from connected servers
-            connected_map = {s['id']: s for s in connected_servers}
+        for server in servers_from_db:
+            server_id = server['id']
+            if server_id in connected_map:
+                # Add status and tool count from connected server
+                server.update({
+                    'status': connected_map[server_id].get('status', 'disconnected'),
+                    'tool_count': connected_map[server_id].get('tool_count', 0)
+                })
+            else:
+                server['status'] = 'disconnected'
+                server['tool_count'] = 0
 
-            for server in servers_from_db:
-                server_id = server['id']
-                if server_id in connected_map:
-                    # Add status and tool count from connected server
-                    server.update({
-                        'status': connected_map[server_id].get('status', 'disconnected'),
-                        'tool_count': connected_map[server_id].get('tool_count', 0)
-                    })
-                else:
-                    server['status'] = 'disconnected'
-                    server['tool_count'] = 0
-
-            return {"servers": servers_from_db}
-        finally:
-            await db.disconnect()
+        return {"servers": servers_from_db}
     except Exception as e:
         logger.error(f"Error listing servers: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("")
-async def add_server(request: Dict[str, Any]):
+async def add_server(request: Dict[str, Any], db=Depends(get_db)):
     """Add MCP server"""
     try:
         name = request.get("name")
@@ -102,7 +94,7 @@ async def add_server(request: Dict[str, Any]):
         )
 
         # Save to database first
-        await _save_server_to_db(config)
+        await _save_server_to_db(config, db)
 
         # Try to connect to server (non-blocking)
         try:
@@ -158,11 +150,11 @@ async def get_server(server_id: str):
 
 
 @router.delete("/{server_id}")
-async def delete_server(server_id: str):
+async def delete_server(server_id: str, db=Depends(get_db)):
     """Delete MCP server"""
     try:
         # First, remove from database
-        await _delete_server_from_db(server_id)
+        await _delete_server_from_db(server_id, db)
 
         # Then try to remove from pool (may fail if not connected)
         await mcp_client_pool.remove_server(server_id)
@@ -180,62 +172,55 @@ async def delete_server(server_id: str):
 
 
 @router.post("/{server_id}/connect")
-async def connect_server(server_id: str):
+async def connect_server(server_id: str, db=Depends(get_db)):
     """Connect to MCP server"""
     try:
-        # Get server from database to get config including server_type
-        db = DatabaseConnection(settings.DATABASE_URL)
-        await db.connect()
+        server_data = await db.fetch_one(
+            "SELECT * FROM mcp_servers WHERE id = ?",
+            (server_id,)
+        )
 
-        try:
-            server_data = await db.fetch_one(
-                "SELECT * FROM mcp_servers WHERE id = ?",
-                (server_id,)
-            )
+        if not server_data:
+            raise HTTPException(status_code=404, detail="Server not found")
 
-            if not server_data:
-                raise HTTPException(status_code=404, detail="Server not found")
+        # Remove from pool if exists
+        await mcp_client_pool.remove_server(server_id)
 
-            # Remove from pool if exists
-            await mcp_client_pool.remove_server(server_id)
+        # Create server config
+        config = MCPServerConfig(
+            id=server_data['id'],
+            name=server_data['name'],
+            url=server_data['url'],
+            description=server_data.get('description', ''),
+            priority=server_data.get('priority', 0),
+            enabled=bool(server_data.get('enabled', 1)),
+            server_type=server_data.get('server_type', 'standard')
+        )
 
-            # Create server config
-            config = MCPServerConfig(
-                id=server_data['id'],
-                name=server_data['name'],
-                url=server_data['url'],
-                description=server_data.get('description', ''),
-                priority=server_data.get('priority', 0),
-                enabled=bool(server_data.get('enabled', 1)),
-                server_type=server_data.get('server_type', 'standard')
-            )
+        # Parse headers if stored
+        import json
+        headers = {}
+        if server_data.get('headers'):
+            try:
+                headers = json.loads(server_data['headers'])
+            except:
+                pass
 
-            # Parse headers if stored
-            import json
-            headers = {}
-            if server_data.get('headers'):
-                try:
-                    headers = json.loads(server_data['headers'])
-                except:
-                    pass
+        config.headers = headers
 
-            config.headers = headers
+        # Add server to pool and connect
+        success = await mcp_client_pool.add_server(config)
 
-            # Add server to pool and connect
-            success = await mcp_client_pool.add_server(config)
-
-            if success:
-                return {
-                    "success": True,
-                    "message": "Connected to server"
-                }
-            else:
-                return {
-                    "success": False,
-                    "message": "Failed to connect to server"
-                }
-        finally:
-            await db.disconnect()
+        if success:
+            return {
+                "success": True,
+                "message": "Connected to server"
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Failed to connect to server"
+            }
 
     except HTTPException:
         raise
@@ -529,52 +514,40 @@ async def call_server_tool(server_id: str, request: Dict[str, Any]):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def _save_server_to_db(config: MCPServerConfig):
+async def _save_server_to_db(config: MCPServerConfig, db):
     """Save server configuration to database
 
     Args:
         config: Server configuration
+        db: DatabaseConnection from container
     """
-    db = DatabaseConnection(settings.DATABASE_URL)
-    await db.connect()
+    # Serialize headers to JSON
+    import json
+    headers_json = json.dumps(config.headers) if config.headers else "{}"
 
-    try:
-        # Serialize headers to JSON
-        import json
-        headers_json = json.dumps(config.headers) if config.headers else "{}"
-
-        await db.execute("""
-        INSERT INTO mcp_servers (id, name, url, description, priority, enabled, added_at, headers, server_type)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            config.id,
-            config.name,
-            config.url,
-            config.description,
-            config.priority,
-            1 if config.enabled else 0,
-            config.added_at.isoformat(),
-            headers_json,
-            config.server_type
-        ))
-        await db.commit()
-
-    finally:
-        await db.disconnect()
+    await db.execute("""
+    INSERT INTO mcp_servers (id, name, url, description, priority, enabled, added_at, headers, server_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        config.id,
+        config.name,
+        config.url,
+        config.description,
+        config.priority,
+        1 if config.enabled else 0,
+        config.added_at.isoformat(),
+        headers_json,
+        config.server_type
+    ))
+    await db.commit()
 
 
-async def _delete_server_from_db(server_id: str):
+async def _delete_server_from_db(server_id: str, db):
     """Delete server from database
 
     Args:
         server_id: Server ID
+        db: DatabaseConnection from container
     """
-    db = DatabaseConnection(settings.DATABASE_URL)
-    await db.connect()
-
-    try:
-        await db.execute("DELETE FROM mcp_servers WHERE id = ?", (server_id,))
-        await db.commit()
-
-    finally:
-        await db.disconnect()
+    await db.execute("DELETE FROM mcp_servers WHERE id = ?", (server_id,))
+    await db.commit()

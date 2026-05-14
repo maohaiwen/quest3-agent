@@ -29,9 +29,9 @@ from app.skills.file_manager import get_skill_file_manager
 from app.skills.skill_writer import get_skill_writer_service
 from app.database.connection import DatabaseConnection
 from app.database.skill_repository import SkillRepository
-from app.config import settings
 from app.skills.registry import get_skill_registry
 from app.core.tool_manager import get_tool_manager
+from app.api.deps import get_db_sync
 
 
 class GitHubImportRequest(BaseModel):
@@ -56,7 +56,7 @@ async def initialize_skills():
     if _initialized:
         return
 
-    db = DatabaseConnection(settings.DATABASE_URL)
+    db = get_db_sync()
     await db.initialize_schema()
     repo = SkillRepository(db)
 
@@ -83,12 +83,12 @@ async def initialize_skills():
     logger.info("Skill system initialized")
 
 
-def get_db() -> DatabaseConnection:
-    """Get database connection"""
-    return DatabaseConnection(settings.DATABASE_URL)
+def get_db_dep() -> DatabaseConnection:
+    """Get database connection for FastAPI Depends"""
+    return get_db_sync()
 
 
-def get_repo(db: DatabaseConnection = Depends(get_db)) -> SkillRepository:
+def get_repo(db: DatabaseConnection = Depends(get_db_dep)) -> SkillRepository:
     """Get skill repository"""
     return SkillRepository(db)
 

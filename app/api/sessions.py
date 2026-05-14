@@ -5,15 +5,12 @@ import logging
 
 from app.models.session import SessionCreate, SessionUpdate, SessionResponse, SessionCreateResponse
 from app.database.repositories import SessionRepository
+from app.database.connection import DatabaseConnection
+from app.api.deps import get_session_repo, get_db
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
-
-
-def get_session_repo():
-    from app.main import session_repo
-    return session_repo
 
 
 @router.post("/create", response_model=SessionCreateResponse)
@@ -33,15 +30,9 @@ async def create_session(
 async def list_all_sessions(
     limit: int = 50,
     offset: int = 0,
-    session_repo: SessionRepository = Depends(get_session_repo)
+    db: DatabaseConnection = Depends(get_db)
 ):
     """List all sessions with pagination"""
-    from app.database.connection import DatabaseConnection
-    from app.config import settings
-
-    db = DatabaseConnection(settings.DATABASE_URL)
-    await db.connect()
-
     try:
         # Get total count
         count_row = await db.fetch_one("SELECT COUNT(*) as count FROM sessions")
@@ -70,8 +61,9 @@ async def list_all_sessions(
 
         return {"sessions": sessions, "total": total, "limit": limit, "offset": offset}
 
-    finally:
-        await db.disconnect()
+    except Exception as e:
+        logger.error(f"Error listing sessions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/list/by-agent/{agent_id}")
@@ -79,15 +71,9 @@ async def list_sessions_by_agent(
     agent_id: str,
     limit: int = 50,
     offset: int = 0,
-    session_repo: SessionRepository = Depends(get_session_repo)
+    db: DatabaseConnection = Depends(get_db)
 ):
     """List sessions for a specific agent with pagination"""
-    from app.database.connection import DatabaseConnection
-    from app.config import settings
-
-    db = DatabaseConnection(settings.DATABASE_URL)
-    await db.connect()
-
     try:
         # Get total count
         count_row = await db.fetch_one("SELECT COUNT(*) as count FROM sessions WHERE agent_id = ?", (agent_id,))
@@ -116,8 +102,9 @@ async def list_sessions_by_agent(
 
         return {"sessions": sessions, "total": total, "limit": limit, "offset": offset}
 
-    finally:
-        await db.disconnect()
+    except Exception as e:
+        logger.error(f"Error listing sessions by agent: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/{session_id}", response_model=SessionResponse)

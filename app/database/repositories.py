@@ -71,6 +71,9 @@ class SessionRepository:
 
         return None
 
+    # Whitelist of allowed update fields for dynamic UPDATE construction
+    _SESSION_UPDATE_FIELDS = {"title": "title", "status": "status"}
+
     async def update(self, session_id: str, update_data: SessionUpdate) -> Optional[SessionResponse]:
         """Update session
 
@@ -82,20 +85,20 @@ class SessionRepository:
             Updated session response or None
         """
         now = beijing_now().isoformat()
-        updates = []
+        set_clauses = []
         params = []
 
         if update_data.title is not None:
-            updates.append("title = ?")
+            set_clauses.append(f"{self._SESSION_UPDATE_FIELDS['title']} = ?")
             params.append(update_data.title)
 
         if update_data.status is not None:
-            updates.append("status = ?")
+            set_clauses.append(f"{self._SESSION_UPDATE_FIELDS['status']} = ?")
             params.append(update_data.status.value)
 
-        if updates:
+        if set_clauses:
             params.extend([now, session_id])
-            sql = f"UPDATE sessions SET {', '.join(updates)}, updated_at = ? WHERE id = ?"
+            sql = f"UPDATE sessions SET {', '.join(set_clauses)}, updated_at = ? WHERE id = ?"
             await self.db.execute(sql, tuple(params))
             await self.db.commit()
 
@@ -444,12 +447,15 @@ class AgentMemoryRepository:
         await self.db.execute(sql, (now, memory_id))
         await self.db.commit()
 
+    # Whitelist of allowed update fields for dynamic UPDATE construction
+    _MEMORY_UPDATE_FIELDS = {"content", "importance", "memory_type", "metadata"}
+
     async def update(self, memory_id: str, **kwargs) -> bool:
         """Update memory fields
 
         Args:
             memory_id: Memory ID
-            **kwargs: Fields to update
+            **kwargs: Fields to update (only whitelisted fields are accepted)
 
         Returns:
             True if updated
@@ -460,7 +466,7 @@ class AgentMemoryRepository:
         updates = []
         params = []
         for key, value in kwargs.items():
-            if key in ("content", "importance", "memory_type", "metadata"):
+            if key in self._MEMORY_UPDATE_FIELDS:
                 updates.append(f"{key} = ?")
                 if key == "metadata" and isinstance(value, dict):
                     value = json.dumps(value)

@@ -1,8 +1,9 @@
 """User service - manages user accounts and authentication"""
-import hashlib
 import logging
+import re
 import uuid
-from datetime import datetime
+
+from app.core.security import hash_password, verify_password, is_bcrypt_hash
 from app.utils.timezone import beijing_now
 from typing import Optional, Dict, Any, List
 
@@ -10,17 +11,18 @@ from app.database.connection import DatabaseConnection
 
 logger = logging.getLogger(__name__)
 
+# Password policy
+MIN_PASSWORD_LENGTH = 8
+PASSWORD_PATTERN = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$")
 
-def _hash_password(password: str) -> str:
-    """Hash password using SHA-256.
 
-    Args:
-        password: Plain text password
-
-    Returns:
-        Hashed password hex string
-    """
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+def _validate_password(password: str) -> Optional[str]:
+    """Validate password against policy. Returns error message or None."""
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return f"Password must be at least {MIN_PASSWORD_LENGTH} characters"
+    if not PASSWORD_PATTERN.match(password):
+        return "Password must contain uppercase, lowercase, and a digit"
+    return None
 
 
 class UserService:
@@ -36,7 +38,7 @@ class UserService:
     async def ensure_default_admin(self):
         """Create default admin user if no users exist.
 
-        Default credentials: admin / admin123
+        Default credentials: admin / Admin123
         """
         if not self._db:
             logger.error("Database not set for UserService")
@@ -49,18 +51,21 @@ class UserService:
 
         now = beijing_now().isoformat()
         user_id = str(uuid.uuid4())
-        password_hash = _hash_password("admin123")
+        password_hash = hash_password("Admin123")
 
         await self._db.execute(
             """INSERT INTO app_users (id, username, password_hash, role, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?)""",
-            (user_id, "admin", password_hash, "admin", now, now)
+            (user_id, "admin", password_hash, "admin", now, now),
         )
         await self._db.commit()
-        logger.info("Default admin user created (username: admin, password: admin123)")
+        logger.info("Default admin user created (username: admin, password: Admin123)")
 
     async def authenticate(self, username: str, password: str) -> Optional[Dict[str, Any]]:
         """Authenticate a user.
+
+        If the stored hash is legacy SHA-256, auto-migrates to bcrypt after
+        successful verification.
 
         Args:
             username: Username
@@ -72,14 +77,28 @@ class UserService:
         if not self._db:
             return None
 
-        password_hash = _hash_password(password)
         row = await self._db.fetch_one(
-            "SELECT * FROM app_users WHERE username = ? AND password_hash = ?",
-            (username, password_hash)
+            "SELECT * FROM app_users WHERE username = ?",
+            (username,),
         )
 
         if not row:
             return None
+
+        stored_hash = row["password_hash"]
+        if not verify_password(password, stored_hash):
+            return None
+
+        # Auto-migrate legacy SHA-256 hash to bcrypt
+        if not is_bcrypt_hash(stored_hash):
+            new_hash = hash_password(password)
+            now = beijing_now().isoformat()
+            await self._db.execute(
+                "UPDATE app_users SET password_hash = ?, updated_at = ? WHERE id = ?",
+                (new_hash, now, row["id"]),
+            )
+            await self._db.commit()
+            logger.info(f"Auto-migrated password hash for user '{username}' to bcrypt")
 
         return {
             "id": row["id"],
@@ -111,17 +130,19 @@ class UserService:
         if role not in ("admin", "user"):
             return {"success": False, "error": "Invalid role"}
 
-        if len(password) < 4:
-            return {"success": False, "error": "Password must be at least 4 characters"}
+        # Validate password
+        pw_error = _validate_password(password)
+        if pw_error:
+            return {"success": False, "error": pw_error}
 
         now = beijing_now().isoformat()
         user_id = str(uuid.uuid4())
-        password_hash = _hash_password(password)
+        password_hash = hash_password(password)
 
         await self._db.execute(
             """INSERT INTO app_users (id, username, password_hash, role, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?)""",
-            (user_id, username, password_hash, role, now, now)
+            (user_id, username, password_hash, role, now, now),
         )
         await self._db.commit()
 
@@ -137,7 +158,9 @@ class UserService:
         if not self._db:
             return []
 
-        rows = await self._db.fetch_all("SELECT id, username, role, created_at, updated_at FROM app_users ORDER BY created_at")
+        rows = await self._db.fetch_all(
+            "SELECT id, username, role, created_at, updated_at FROM app_users ORDER BY created_at"
+        )
         return [dict(row) for row in rows]
 
     async def update_user(self, user_id: str, **kwargs) -> Dict[str, Any]:
@@ -160,7 +183,7 @@ class UserService:
             # Check uniqueness
             existing = await self._db.fetch_one(
                 "SELECT id FROM app_users WHERE username = ? AND id != ?",
-                (kwargs["username"], user_id)
+                (kwargs["username"], user_id),
             )
             if existing:
                 return {"success": False, "error": "Username already exists"}
@@ -168,10 +191,11 @@ class UserService:
             params.append(kwargs["username"])
 
         if "password" in kwargs and kwargs["password"]:
-            if len(kwargs["password"]) < 4:
-                return {"success": False, "error": "Password must be at least 4 characters"}
+            pw_error = _validate_password(kwargs["password"])
+            if pw_error:
+                return {"success": False, "error": pw_error}
             updates.append("password_hash = ?")
-            params.append(_hash_password(kwargs["password"]))
+            params.append(hash_password(kwargs["password"]))
 
         if "role" in kwargs and kwargs["role"]:
             if kwargs["role"] not in ("admin", "user"):
@@ -189,7 +213,7 @@ class UserService:
 
         await self._db.execute(
             f"UPDATE app_users SET {', '.join(updates)} WHERE id = ?",
-            tuple(params)
+            tuple(params),
         )
         await self._db.commit()
 
@@ -208,12 +232,16 @@ class UserService:
             return {"success": False, "error": "Database not available"}
 
         # Don't allow deleting the last admin
-        user = await self._db.fetch_one("SELECT role FROM app_users WHERE id = ?", (user_id,))
+        user = await self._db.fetch_one(
+            "SELECT role FROM app_users WHERE id = ?", (user_id,)
+        )
         if not user:
             return {"success": False, "error": "User not found"}
 
         if user["role"] == "admin":
-            admin_count = await self._db.fetch_one("SELECT COUNT(*) as cnt FROM app_users WHERE role = 'admin'")
+            admin_count = await self._db.fetch_one(
+                "SELECT COUNT(*) as cnt FROM app_users WHERE role = 'admin'"
+            )
             if admin_count and admin_count["cnt"] <= 1:
                 return {"success": False, "error": "Cannot delete the last admin user"}
 
@@ -223,20 +251,24 @@ class UserService:
         return {"success": True}
 
     async def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
-        """Get user by ID (without password hash).
-
-        Args:
-            user_id: User ID
-
-        Returns:
-            User dict or None
-        """
+        """Get user by ID (without password hash)."""
         if not self._db:
             return None
 
         row = await self._db.fetch_one(
             "SELECT id, username, role, created_at, updated_at FROM app_users WHERE id = ?",
-            (user_id,)
+            (user_id,),
+        )
+        return dict(row) if row else None
+
+    async def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
+        """Get user by username (without password hash)."""
+        if not self._db:
+            return None
+
+        row = await self._db.fetch_one(
+            "SELECT id, username, role, created_at, updated_at FROM app_users WHERE username = ?",
+            (username,),
         )
         return dict(row) if row else None
 

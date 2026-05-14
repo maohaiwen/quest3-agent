@@ -67,6 +67,20 @@ class Settings(BaseSettings):
     WEB_SEARCH_API_KEY: str = Field(default="", description="Volcano Engine Web Search API key")
     WEB_SEARCH_API_URL: str = Field(default="https://open.feedcoopapi.com/search_api/web_search", description="Web search API endpoint")
 
+    # Security Configuration
+    SECRET_KEY: str = Field(
+        default="change-me-in-production-use-a-random-secret",
+        description="Secret key for JWT signing — MUST be changed in production",
+    )
+    CORS_ORIGINS: str = Field(
+        default="http://localhost:8000,http://127.0.0.1:8000",
+        description="Comma-separated allowed CORS origins",
+    )
+    TOOL_SANDBOX_DIR: str = Field(
+        default="./sandbox_workspace",
+        description="Base directory for file system tool sandbox",
+    )
+
     # MCP Configuration
     MCP_SERVER_URL: str = Field(default="", description="MCP server URL")
 

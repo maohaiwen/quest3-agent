@@ -923,7 +923,10 @@
                 self._intentionalClose = false;
                 self.updateConnStatus(true);
                 if (!self.isResponding) self.setInputEnabled(true);
-                self.ws.send(JSON.stringify({ session_id: sessionId, agent_id: agentId }));
+                var initMsg = { session_id: sessionId, agent_id: agentId };
+                var token = localStorage.getItem('quest3_access_token');
+                if (token) initMsg.token = token;
+                self.ws.send(JSON.stringify(initMsg));
             };
 
             this.ws.onmessage = function(evt) {

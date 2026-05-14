@@ -1,14 +1,32 @@
-"""Database connection management"""
-import aiosqlite
+"""Database connection management — with write-lock and transaction support
+
+SQLite only allows one writer at a time. This module:
+- Uses a single connection with WAL mode for concurrent reads
+- Serializes writes through an asyncio.Lock
+- Provides a transaction() context manager for atomic operations
+- Maintains full backward compatibility with the previous API
+"""
+import asyncio
+import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
+import aiosqlite
+
+logger = logging.getLogger(__name__)
+
 
 class DatabaseConnection:
-    """Async SQLite database connection manager"""
+    """Async SQLite database connection manager with write serialization.
+
+    SQLite WAL mode allows concurrent reads while one write is in progress.
+    We protect writes with an asyncio.Lock so coroutines don't step on
+    each other's transactions.
+    """
 
     def __init__(self, database_url: str):
-        """Initialize database connection
+        """Initialize database connection manager.
 
         Args:
             database_url: Database URL in format sqlite+aiosqlite:///path/to/db
@@ -16,24 +34,20 @@ class DatabaseConnection:
         self.database_url = database_url
         self.db_path: Optional[Path] = None
         self.connection: Optional[aiosqlite.Connection] = None
+        self._write_lock = asyncio.Lock()
+        # Flag: when inside a transaction() context, execute/commit/rollback
+        # skip acquiring _write_lock because the transaction already holds it.
+        self._in_transaction = False
 
     def _parse_url(self) -> Path:
-        """Parse database URL and return path
-
-        Returns:
-            Database file path
-        """
-        # Remove sqlite+aiosqlite:/// prefix
+        """Parse database URL and return path."""
         db_path_str = self.database_url.replace("sqlite+aiosqlite:///", "")
-
-        # Handle relative paths
         if db_path_str.startswith("./"):
             db_path_str = db_path_str[2:]
-
         return Path(db_path_str)
 
     async def connect(self) -> aiosqlite.Connection:
-        """Connect to database
+        """Connect to database.
 
         Returns:
             Database connection
@@ -52,6 +66,9 @@ class DatabaseConnection:
             # Configure WAL mode for better concurrency
             await self.connection.execute("PRAGMA journal_mode = WAL")
 
+            # Use Row factory for dict-like access
+            self.connection.row_factory = aiosqlite.Row
+
         return self.connection
 
     async def disconnect(self) -> None:
@@ -60,8 +77,12 @@ class DatabaseConnection:
             await self.connection.close()
             self.connection = None
 
+    # -----------------------------------------------------------------------
+    # Write operations (serialized through _write_lock)
+    # -----------------------------------------------------------------------
+
     async def execute(self, sql: str, params: Optional[tuple] = None) -> aiosqlite.Cursor:
-        """Execute SQL query
+        """Execute SQL query (write-safe via lock).
 
         Args:
             sql: SQL query
@@ -71,27 +92,49 @@ class DatabaseConnection:
             Cursor
         """
         conn = await self.connect()
-        if params:
-            return await conn.execute(sql, params)
-        return await conn.execute(sql)
+        if self._in_transaction:
+            # Already inside transaction() which holds the write lock
+            if params:
+                return await conn.execute(sql, params)
+            return await conn.execute(sql)
+        async with self._write_lock:
+            if params:
+                return await conn.execute(sql, params)
+            return await conn.execute(sql)
 
     async def execute_many(
         self, sql: str, params: list[tuple]
     ) -> aiosqlite.Cursor:
-        """Execute SQL query multiple times
-
-        Args:
-            sql: SQL query
-            params: List of parameter tuples
-
-        Returns:
-            Cursor
-        """
+        """Execute SQL query multiple times."""
         conn = await self.connect()
-        return await conn.executemany(sql, params)
+        if self._in_transaction:
+            return await conn.executemany(sql, params)
+        async with self._write_lock:
+            return await conn.executemany(sql, params)
+
+    async def commit(self) -> None:
+        """Commit transaction."""
+        if self.connection:
+            if self._in_transaction:
+                # Transaction context manages commit
+                return
+            async with self._write_lock:
+                await self.connection.commit()
+
+    async def rollback(self) -> None:
+        """Rollback transaction."""
+        if self.connection:
+            if self._in_transaction:
+                return
+            async with self._write_lock:
+                await self.connection.rollback()
+
+    # -----------------------------------------------------------------------
+    # Read operations (no lock needed — WAL mode allows concurrent reads)
+    # -----------------------------------------------------------------------
 
     async def fetch_one(self, sql: str, params: Optional[tuple] = None) -> Optional[dict]:
-        """Fetch one row
+        """Fetch one row.
 
         Args:
             sql: SQL query
@@ -100,7 +143,11 @@ class DatabaseConnection:
         Returns:
             Row as dictionary or None
         """
-        cursor = await self.execute(sql, params)
+        conn = await self.connect()
+        if params:
+            cursor = await conn.execute(sql, params)
+        else:
+            cursor = await conn.execute(sql)
         row = await cursor.fetchone()
 
         if row:
@@ -110,7 +157,7 @@ class DatabaseConnection:
         return None
 
     async def fetch_all(self, sql: str, params: Optional[tuple] = None) -> list[dict]:
-        """Fetch all rows
+        """Fetch all rows.
 
         Args:
             sql: SQL query
@@ -119,7 +166,11 @@ class DatabaseConnection:
         Returns:
             List of rows as dictionaries
         """
-        cursor = await self.execute(sql, params)
+        conn = await self.connect()
+        if params:
+            cursor = await conn.execute(sql, params)
+        else:
+            cursor = await conn.execute(sql)
         rows = await cursor.fetchall()
 
         if rows:
@@ -128,18 +179,41 @@ class DatabaseConnection:
 
         return []
 
-    async def commit(self) -> None:
-        """Commit transaction"""
-        if self.connection:
-            await self.connection.commit()
+    # -----------------------------------------------------------------------
+    # Transaction context manager
+    # -----------------------------------------------------------------------
 
-    async def rollback(self) -> None:
-        """Rollback transaction"""
-        if self.connection:
-            await self.connection.rollback()
+    @asynccontextmanager
+    async def transaction(self):
+        """Async context manager for database transactions.
+
+        Automatically commits on success, rolls back on exception.
+        Holds the write lock for the entire transaction scope.
+
+        Usage:
+            async with db.transaction():
+                await db.execute("INSERT ...", (...))
+                await db.execute("UPDATE ...", (...))
+                # auto-commit on exit, auto-rollback on exception
+        """
+        conn = await self.connect()
+        async with self._write_lock:
+            self._in_transaction = True
+            try:
+                yield
+                await conn.commit()
+            except Exception:
+                await conn.rollback()
+                raise
+            finally:
+                self._in_transaction = False
+
+    # -----------------------------------------------------------------------
+    # Schema initialization (kept for backward compat, will migrate to Alembic)
+    # -----------------------------------------------------------------------
 
     async def initialize_schema(self) -> None:
-        """Initialize database schema"""
+        """Initialize database schema."""
         await self._create_sessions_table()
         await self._create_messages_table()
         await self._create_memory_table()
@@ -170,13 +244,11 @@ class DatabaseConnection:
         """
         await self.execute(sql)
         await self.commit()
-
-        # Add agent_id column if it doesn't exist (for existing databases)
         try:
             await self.execute("ALTER TABLE sessions ADD COLUMN agent_id TEXT")
             await self.commit()
         except Exception:
-            pass  # Column already exists
+            pass
 
     async def _create_messages_table(self) -> None:
         """Create messages table"""
@@ -191,13 +263,9 @@ class DatabaseConnection:
         )
         """
         await self.execute(sql)
-
-        # Create index for faster queries
-        sql = """
-        CREATE INDEX IF NOT EXISTS idx_messages_session_id
-        ON messages (session_id)
-        """
-        await self.execute(sql)
+        await self.execute(
+            "CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages (session_id)"
+        )
         await self.commit()
 
     async def _create_memory_table(self) -> None:
@@ -213,13 +281,9 @@ class DatabaseConnection:
         )
         """
         await self.execute(sql)
-
-        # Create index for faster queries
-        sql = """
-        CREATE INDEX IF NOT EXISTS idx_memory_session_id
-        ON memory (session_id)
-        """
-        await self.execute(sql)
+        await self.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memory_session_id ON memory (session_id)"
+        )
         await self.commit()
 
     async def _create_skills_table(self) -> None:
@@ -245,19 +309,12 @@ class DatabaseConnection:
         )
         """
         await self.execute(sql)
-
-        # Add requirements column if it doesn't exist
         try:
             await self.execute("ALTER TABLE skills ADD COLUMN requirements TEXT DEFAULT '[]'")
             await self.commit()
         except Exception:
-            pass  # Column already exists
-
-        sql = """
-        CREATE INDEX IF NOT EXISTS idx_skills_name
-        ON skills (name)
-        """
-        await self.execute(sql)
+            pass
+        await self.execute("CREATE INDEX IF NOT EXISTS idx_skills_name ON skills (name)")
         await self.commit()
 
     async def _create_agent_skills_table(self) -> None:
@@ -273,12 +330,9 @@ class DatabaseConnection:
         )
         """
         await self.execute(sql)
-
-        sql = """
-        CREATE INDEX IF NOT EXISTS idx_agent_skills_agent_id
-        ON agent_skills (agent_id)
-        """
-        await self.execute(sql)
+        await self.execute(
+            "CREATE INDEX IF NOT EXISTS idx_agent_skills_agent_id ON agent_skills (agent_id)"
+        )
         await self.commit()
 
     async def _create_agents_table(self) -> None:
@@ -309,14 +363,12 @@ class DatabaseConnection:
             await self.execute(sql)
             await self.commit()
         except Exception:
-            pass  # Table might already exist
-
-        # Add enable_long_term_memory column if it doesn't exist
+            pass
         try:
             await self.execute("ALTER TABLE agents ADD COLUMN enable_long_term_memory INTEGER DEFAULT 0")
             await self.commit()
         except Exception:
-            pass  # Column already exists
+            pass
 
     async def _create_agent_memories_table(self) -> None:
         """Create agent_memories table for long-term agent-level memory"""
@@ -337,18 +389,12 @@ class DatabaseConnection:
         )
         """
         await self.execute(sql)
-
-        sql = """
-        CREATE INDEX IF NOT EXISTS idx_agent_memories_agent_id
-        ON agent_memories(agent_id)
-        """
-        await self.execute(sql)
-
-        sql = """
-        CREATE INDEX IF NOT EXISTS idx_agent_memories_type
-        ON agent_memories(agent_id, memory_type)
-        """
-        await self.execute(sql)
+        await self.execute(
+            "CREATE INDEX IF NOT EXISTS idx_agent_memories_agent_id ON agent_memories(agent_id)"
+        )
+        await self.execute(
+            "CREATE INDEX IF NOT EXISTS idx_agent_memories_type ON agent_memories(agent_id, memory_type)"
+        )
         await self.commit()
 
     async def _create_collaborations_table(self) -> None:
@@ -384,20 +430,12 @@ class DatabaseConnection:
         )
         """
         await self.execute(sql)
-
-        # Create indexes
-        sql = """
-        CREATE INDEX IF NOT EXISTS idx_collaboration_agents_collab_id
-        ON collaboration_agents (collaboration_id)
-        """
-        await self.execute(sql)
-
-        sql = """
-        CREATE INDEX IF NOT EXISTS idx_collaboration_agents_agent_id
-        ON collaboration_agents (agent_id)
-        """
-        await self.execute(sql)
-
+        await self.execute(
+            "CREATE INDEX IF NOT EXISTS idx_collaboration_agents_collab_id ON collaboration_agents (collaboration_id)"
+        )
+        await self.execute(
+            "CREATE INDEX IF NOT EXISTS idx_collaboration_agents_agent_id ON collaboration_agents (agent_id)"
+        )
         await self.commit()
 
     async def _create_collaboration_tasks_table(self) -> None:
@@ -418,25 +456,16 @@ class DatabaseConnection:
         )
         """
         await self.execute(sql)
-
-        # Migration: add events_json column if missing
         try:
             await self.execute("ALTER TABLE collaboration_tasks ADD COLUMN events_json TEXT")
         except Exception:
-            pass  # Column already exists
-
-        # Create indexes
-        sql = """
-        CREATE INDEX IF NOT EXISTS idx_collaboration_tasks_collab_id
-        ON collaboration_tasks (collaboration_id)
-        """
-        await self.execute(sql)
-
-        sql = """
-        CREATE INDEX IF NOT EXISTS idx_collaboration_tasks_task_id
-        ON collaboration_tasks (task_id)
-        """
-        await self.execute(sql)
+            pass
+        await self.execute(
+            "CREATE INDEX IF NOT EXISTS idx_collaboration_tasks_collab_id ON collaboration_tasks (collaboration_id)"
+        )
+        await self.execute(
+            "CREATE INDEX IF NOT EXISTS idx_collaboration_tasks_task_id ON collaboration_tasks (task_id)"
+        )
         await self.commit()
 
     async def _create_collaboration_artifacts_table(self) -> None:
@@ -458,22 +487,16 @@ class DatabaseConnection:
         )
         """
         await self.execute(sql)
-
-        sql = """
-        CREATE INDEX IF NOT EXISTS idx_artifacts_collab_id
-        ON collaboration_artifacts (collaboration_id)
-        """
-        await self.execute(sql)
-
-        sql = """
-        CREATE INDEX IF NOT EXISTS idx_artifacts_task_id
-        ON collaboration_artifacts (task_id)
-        """
-        await self.execute(sql)
+        await self.execute(
+            "CREATE INDEX IF NOT EXISTS idx_artifacts_collab_id ON collaboration_artifacts (collaboration_id)"
+        )
+        await self.execute(
+            "CREATE INDEX IF NOT EXISTS idx_artifacts_task_id ON collaboration_artifacts (task_id)"
+        )
         await self.commit()
 
     async def _create_task_events_table(self) -> None:
-        """Create task_events table for per-row event storage (replaces events_json blob)"""
+        """Create task_events table for per-row event storage"""
         sql = """
         CREATE TABLE IF NOT EXISTS task_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -486,25 +509,15 @@ class DatabaseConnection:
         )
         """
         await self.execute(sql)
-
-        sql = """
-        CREATE INDEX IF NOT EXISTS idx_task_events_task_id
-        ON task_events (task_id)
-        """
-        await self.execute(sql)
-
-        sql = """
-        CREATE INDEX IF NOT EXISTS idx_task_events_task_type
-        ON task_events (task_id, event_type)
-        """
-        await self.execute(sql)
-
-        # Unique constraint to prevent duplicate writes
-        sql = """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_task_events_task_seq
-        ON task_events (task_id, seq)
-        """
-        await self.execute(sql)
+        await self.execute(
+            "CREATE INDEX IF NOT EXISTS idx_task_events_task_id ON task_events (task_id)"
+        )
+        await self.execute(
+            "CREATE INDEX IF NOT EXISTS idx_task_events_task_type ON task_events (task_id, event_type)"
+        )
+        await self.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_task_events_task_seq ON task_events (task_id, seq)"
+        )
         await self.commit()
 
     async def _create_settings_table(self) -> None:

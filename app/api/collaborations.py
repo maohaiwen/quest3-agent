@@ -15,6 +15,7 @@ from app.models.collaboration import (
 )
 from app.services.collaboration_service import collaboration_service
 from app.services.collaboration_engine import collaboration_engine
+from app.api.deps import get_db_sync
 
 
 class ExecuteRequest(BaseModel):
@@ -90,11 +91,8 @@ async def _flush_events_to_db(task_id: str):
     if not events:
         return
     try:
-        from app.database.connection import DatabaseConnection
-        from app.config import settings
         from app.utils.timezone import beijing_now
-        db = DatabaseConnection(settings.DATABASE_URL)
-        await db.connect()
+        db = get_db_sync()
         try:
             # 1. Write legacy events_json blob (backward compat)
             events_json = json.dumps(events, ensure_ascii=False)
@@ -114,8 +112,8 @@ async def _flush_events_to_db(task_id: str):
                 )
 
             await db.commit()
-        finally:
-            await db.disconnect()
+        except Exception as inner_e:
+            logger.error(f"DB write failed in _flush_events_to_db: {inner_e}")
     except Exception as e:
         logger.error(f"Failed to flush events to DB for task {task_id}: {e}")
 
@@ -141,23 +139,17 @@ async def _get_events_persisted(task_id: str) -> List[Dict]:
         return mem_events
     # Fall back to database
     try:
-        from app.database.connection import DatabaseConnection
-        from app.config import settings
-        db = DatabaseConnection(settings.DATABASE_URL)
-        await db.connect()
-        try:
-            row = await db.fetch_one(
-                "SELECT events_json FROM collaboration_tasks WHERE task_id = ?",
-                (task_id,)
-            )
-            if row and row.get("events_json"):
-                events = json.loads(row["events_json"])
-                # Cache in memory for subsequent reads
-                _event_store[task_id] = events
-                _event_store_ts[task_id] = time.time()
-                return events
-        finally:
-            await db.disconnect()
+        db = get_db_sync()
+        row = await db.fetch_one(
+            "SELECT events_json FROM collaboration_tasks WHERE task_id = ?",
+            (task_id,)
+        )
+        if row and row.get("events_json"):
+            events = json.loads(row["events_json"])
+            # Cache in memory for subsequent reads
+            _event_store[task_id] = events
+            _event_store_ts[task_id] = time.time()
+            return events
     except Exception as e:
         logger.error(f"Failed to load events from DB for task {task_id}: {e}")
     return []
@@ -429,19 +421,13 @@ def _run_in_background(collab_id: str, input_text: str, existing_task_id: str = 
             if bg_task_id:
                 # Mark the task as failed
                 try:
-                    from app.database.connection import DatabaseConnection
-                    from app.config import settings
                     from app.utils.timezone import beijing_now
-                    db = DatabaseConnection(settings.DATABASE_URL)
-                    await db.connect()
-                    try:
-                        await db.execute(
-                            "UPDATE collaboration_tasks SET status = ?, output = ?, completed_at = ? WHERE task_id = ?",
-                            ("failed", str(e), beijing_now().isoformat(), bg_task_id),
-                        )
-                        await db.commit()
-                    finally:
-                        await db.disconnect()
+                    db = get_db_sync()
+                    await db.execute(
+                        "UPDATE collaboration_tasks SET status = ?, output = ?, completed_at = ? WHERE task_id = ?",
+                        ("failed", str(e), beijing_now().isoformat(), bg_task_id),
+                    )
+                    await db.commit()
                 except Exception as db_err:
                     logger.error(f"Failed to mark background task {bg_task_id} as failed: {db_err}")
         finally:
@@ -479,59 +465,53 @@ async def get_task_events(
 
     # 1. Try task_events table (fast path)
     try:
-        from app.database.connection import DatabaseConnection
-        from app.config import settings
+        db = get_db_sync()
 
-        db = DatabaseConnection(settings.DATABASE_URL)
-        await db.connect()
-        try:
-            # Check if task_events has data for this task
-            count_row = await db.fetch_one(
-                "SELECT COUNT(*) as cnt FROM task_events WHERE task_id = ?",
-                (task_id,)
+        # Check if task_events has data for this task
+        count_row = await db.fetch_one(
+            "SELECT COUNT(*) as cnt FROM task_events WHERE task_id = ?",
+            (task_id,)
+        )
+        has_row_data = count_row and count_row["cnt"] > 0
+
+        if has_row_data:
+            # Build WHERE clause
+            conditions = ["task_id = ?"]
+            params = [task_id]
+
+            if include_set:
+                placeholders = ",".join(["?"] * len(include_set))
+                conditions.append(f"event_type IN ({placeholders})")
+                params.extend(include_set)
+            elif exclude_set:
+                placeholders = ",".join(["?"] * len(exclude_set))
+                conditions.append(f"event_type NOT IN ({placeholders})")
+                params.extend(exclude_set)
+
+            where = " AND ".join(conditions)
+
+            # Get total count (without limit/offset)
+            total_row = await db.fetch_one(
+                f"SELECT COUNT(*) as cnt FROM task_events WHERE {where}",
+                tuple(params)
             )
-            has_row_data = count_row and count_row["cnt"] > 0
+            total = total_row["cnt"] if total_row else 0
 
-            if has_row_data:
-                # Build WHERE clause
-                conditions = ["task_id = ?"]
-                params = [task_id]
+            # Get filtered events with pagination
+            rows = await db.fetch_all(
+                f"SELECT seq, event_json FROM task_events WHERE {where} ORDER BY seq ASC LIMIT ? OFFSET ?",
+                tuple(params) + (limit, offset)
+            )
 
-                if include_set:
-                    placeholders = ",".join(["?"] * len(include_set))
-                    conditions.append(f"event_type IN ({placeholders})")
-                    params.extend(include_set)
-                elif exclude_set:
-                    placeholders = ",".join(["?"] * len(exclude_set))
-                    conditions.append(f"event_type NOT IN ({placeholders})")
-                    params.extend(exclude_set)
+            events = []
+            for row in rows:
+                try:
+                    events.append(json.loads(row["event_json"]))
+                except (json.JSONDecodeError, TypeError):
+                    pass
 
-                where = " AND ".join(conditions)
+            return {"task_id": task_id, "events": events, "count": len(events), "total": total}
 
-                # Get total count (without limit/offset)
-                total_row = await db.fetch_one(
-                    f"SELECT COUNT(*) as cnt FROM task_events WHERE {where}",
-                    tuple(params)
-                )
-                total = total_row["cnt"] if total_row else 0
-
-                # Get filtered events with pagination
-                rows = await db.fetch_all(
-                    f"SELECT seq, event_json FROM task_events WHERE {where} ORDER BY seq ASC LIMIT ? OFFSET ?",
-                    tuple(params) + (limit, offset)
-                )
-
-                events = []
-                for row in rows:
-                    try:
-                        events.append(json.loads(row["event_json"]))
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-
-                return {"task_id": task_id, "events": events, "count": len(events), "total": total}
-
-        finally:
-            await db.disconnect()
     except Exception as e:
         logger.error(f"Error reading task_events table for {task_id}: {e}")
 
@@ -609,34 +589,25 @@ async def get_pending_human(task_id: str):
 async def get_task_status(task_id: str):
     """Get collaboration task status"""
     try:
-        from app.database.connection import DatabaseConnection
-        from app.config import settings
-        import json
+        db = get_db_sync()
 
-        db = DatabaseConnection(settings.DATABASE_URL)
-        await db.connect()
+        row = await db.fetch_one(
+            "SELECT id, collaboration_id, task_id, input, output, status, started_at, completed_at FROM collaboration_tasks WHERE task_id = ?",
+            (task_id,)
+        )
 
-        try:
-            row = await db.fetch_one(
-                "SELECT id, collaboration_id, task_id, input, output, status, started_at, completed_at FROM collaboration_tasks WHERE task_id = ?",
-                (task_id,)
-            )
+        if not row:
+            raise HTTPException(status_code=404, detail="Task not found")
 
-            if not row:
-                raise HTTPException(status_code=404, detail="Task not found")
-
-            return {
-                "task_id": row["task_id"],
-                "collaboration_id": row["collaboration_id"],
-                "input": row["input"],
-                "output": row["output"],
-                "status": row["status"],
-                "started_at": row.get("started_at"),
-                "completed_at": row.get("completed_at"),
-            }
-
-        finally:
-            await db.disconnect()
+        return {
+            "task_id": row["task_id"],
+            "collaboration_id": row["collaboration_id"],
+            "input": row["input"],
+            "output": row["output"],
+            "status": row["status"],
+            "started_at": row.get("started_at"),
+            "completed_at": row.get("completed_at"),
+        }
 
     except HTTPException:
         raise
@@ -649,47 +620,34 @@ async def get_task_status(task_id: str):
 async def delete_task(task_id: str):
     """Delete a collaboration task and its artifacts"""
     try:
-        from app.database.connection import DatabaseConnection
-        from app.config import settings
+        db = get_db_sync()
 
-        db = DatabaseConnection(settings.DATABASE_URL)
-        await db.connect()
+        # Check task exists
+        row = await db.fetch_one(
+            "SELECT task_id, status FROM collaboration_tasks WHERE task_id = ?",
+            (task_id,)
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Task not found")
+        if row["status"] == "running":
+            raise HTTPException(status_code=400, detail="Cannot delete a running task, wait for it to finish or interrupt first")
 
-        try:
-            # Check task exists
-            row = await db.fetch_one(
-                "SELECT task_id, status FROM collaboration_tasks WHERE task_id = ?",
-                (task_id,)
-            )
-            if not row:
-                raise HTTPException(status_code=404, detail="Task not found")
-            if row["status"] == "running":
-                raise HTTPException(status_code=400, detail="Cannot delete a running task, wait for it to finish or interrupt first")
-
-            # Delete task events first (largest table)
-            await db.execute(
-                "DELETE FROM task_events WHERE task_id = ?",
-                (task_id,)
-            )
-            # Delete artifacts
-            await db.execute(
-                "DELETE FROM collaboration_artifacts WHERE task_id = ?",
-                (task_id,)
-            )
-            # Delete task
-            await db.execute(
-                "DELETE FROM collaboration_artifacts WHERE task_id = ?",
-                (task_id,)
-            )
-            # Delete task
-            await db.execute(
-                "DELETE FROM collaboration_tasks WHERE task_id = ?",
-                (task_id,)
-            )
-            await db.commit()
-
-        finally:
-            await db.disconnect()
+        # Delete task events first (largest table)
+        await db.execute(
+            "DELETE FROM task_events WHERE task_id = ?",
+            (task_id,)
+        )
+        # Delete artifacts
+        await db.execute(
+            "DELETE FROM collaboration_artifacts WHERE task_id = ?",
+            (task_id,)
+        )
+        # Delete task
+        await db.execute(
+            "DELETE FROM collaboration_tasks WHERE task_id = ?",
+            (task_id,)
+        )
+        await db.commit()
 
         # Clean up in-memory event store
         _event_store.pop(task_id, None)
@@ -709,44 +667,37 @@ async def delete_task(task_id: str):
 async def list_collaboration_tasks(collab_id: str):
     """List all tasks for a collaboration"""
     try:
-        from app.database.connection import DatabaseConnection
-        from app.config import settings
         from app.utils.timezone import beijing_now
         import json
 
-        db = DatabaseConnection(settings.DATABASE_URL)
-        await db.connect()
+        db = get_db_sync()
 
-        try:
-            # Auto-fix: mark running tasks older than 30 min as interrupted
-            from datetime import timedelta
-            cutoff = (beijing_now() - timedelta(minutes=30)).isoformat()
-            await db.execute(
-                """UPDATE collaboration_tasks
-                   SET status = 'interrupted', output = '运行超时，任务中断', completed_at = ?
-                   WHERE status = 'running' AND started_at < ?""",
-                (beijing_now().isoformat(), cutoff),
-            )
-            await db.commit()
+        # Auto-fix: mark running tasks older than 30 min as interrupted
+        from datetime import timedelta
+        cutoff = (beijing_now() - timedelta(minutes=30)).isoformat()
+        await db.execute(
+            """UPDATE collaboration_tasks
+               SET status = 'interrupted', output = '运行超时，任务中断', completed_at = ?
+               WHERE status = 'running' AND started_at < ?""",
+            (beijing_now().isoformat(), cutoff),
+        )
+        await db.commit()
 
-            rows = await db.fetch_all(
-                "SELECT * FROM collaboration_tasks WHERE collaboration_id = ? ORDER BY started_at DESC",
-                (collab_id,)
-            )
+        rows = await db.fetch_all(
+            "SELECT * FROM collaboration_tasks WHERE collaboration_id = ? ORDER BY started_at DESC",
+            (collab_id,)
+        )
 
-            return {
-                "tasks": [{
-                    "task_id": row["task_id"],
-                    "input": row["input"],
-                    "output": row["output"],
-                    "status": row["status"],
-                    "started_at": row.get("started_at"),
-                    "completed_at": row.get("completed_at"),
-                } for row in rows]
-            }
-
-        finally:
-            await db.disconnect()
+        return {
+            "tasks": [{
+                "task_id": row["task_id"],
+                "input": row["input"],
+                "output": row["output"],
+                "status": row["status"],
+                "started_at": row.get("started_at"),
+                "completed_at": row.get("completed_at"),
+            } for row in rows]
+        }
 
     except Exception as e:
         logger.error(f"Error listing tasks: {e}")
@@ -761,50 +712,42 @@ async def list_artifacts(
 ):
     """List artifacts for a collaboration, optionally filtered by round or type"""
     try:
-        from app.database.connection import DatabaseConnection
-        from app.config import settings
+        db = get_db_sync()
 
-        db = DatabaseConnection(settings.DATABASE_URL)
-        await db.connect()
+        conditions = ["collaboration_id = ?"]
+        params = [collab_id]
 
-        try:
-            conditions = ["collaboration_id = ?"]
-            params = [collab_id]
+        if round is not None:
+            conditions.append("round = ?")
+            params.append(round)
 
-            if round is not None:
-                conditions.append("round = ?")
-                params.append(round)
+        if type is not None:
+            conditions.append("artifact_type = ?")
+            params.append(type)
 
-            if type is not None:
-                conditions.append("artifact_type = ?")
-                params.append(type)
+        where = " AND ".join(conditions)
+        rows = await db.fetch_all(
+            f"SELECT * FROM collaboration_artifacts WHERE {where} ORDER BY round ASC, created_at ASC",
+            tuple(params)
+        )
 
-            where = " AND ".join(conditions)
-            rows = await db.fetch_all(
-                f"SELECT * FROM collaboration_artifacts WHERE {where} ORDER BY round ASC, created_at ASC",
-                tuple(params)
-            )
+        artifacts = []
+        for row in rows:
+            artifacts.append(ArtifactResponse(
+                id=row["id"],
+                collaboration_id=row["collaboration_id"],
+                task_id=row.get("task_id"),
+                round=row.get("round", 1),
+                producer_agent_id=row.get("producer_agent_id", ""),
+                producer_role=row.get("producer_role", ""),
+                name=row["name"],
+                artifact_type=ArtifactType(row["artifact_type"]),
+                content=row["content"],
+                metadata=json.loads(row.get("metadata_json", "{}")),
+                created_at=datetime.fromisoformat(row["created_at"]) if row.get("created_at") else datetime.now(),
+            ))
 
-            artifacts = []
-            for row in rows:
-                artifacts.append(ArtifactResponse(
-                    id=row["id"],
-                    collaboration_id=row["collaboration_id"],
-                    task_id=row.get("task_id"),
-                    round=row.get("round", 1),
-                    producer_agent_id=row.get("producer_agent_id", ""),
-                    producer_role=row.get("producer_role", ""),
-                    name=row["name"],
-                    artifact_type=ArtifactType(row["artifact_type"]),
-                    content=row["content"],
-                    metadata=json.loads(row.get("metadata_json", "{}")),
-                    created_at=datetime.fromisoformat(row["created_at"]) if row.get("created_at") else datetime.now(),
-                ))
-
-            return {"artifacts": [a.dict() for a in artifacts]}
-
-        finally:
-            await db.disconnect()
+        return {"artifacts": [a.dict() for a in artifacts]}
 
     except Exception as e:
         logger.error(f"Error listing artifacts: {e}")
@@ -815,38 +758,30 @@ async def list_artifacts(
 async def list_task_artifacts(task_id: str):
     """List artifacts for a specific collaboration task"""
     try:
-        from app.database.connection import DatabaseConnection
-        from app.config import settings
+        db = get_db_sync()
 
-        db = DatabaseConnection(settings.DATABASE_URL)
-        await db.connect()
+        rows = await db.fetch_all(
+            "SELECT * FROM collaboration_artifacts WHERE task_id = ? ORDER BY round ASC, created_at ASC",
+            (task_id,)
+        )
 
-        try:
-            rows = await db.fetch_all(
-                "SELECT * FROM collaboration_artifacts WHERE task_id = ? ORDER BY round ASC, created_at ASC",
-                (task_id,)
-            )
+        artifacts = []
+        for row in rows:
+            artifacts.append(ArtifactResponse(
+                id=row["id"],
+                collaboration_id=row["collaboration_id"],
+                task_id=row.get("task_id"),
+                round=row.get("round", 1),
+                producer_agent_id=row.get("producer_agent_id", ""),
+                producer_role=row.get("producer_role", ""),
+                name=row["name"],
+                artifact_type=ArtifactType(row["artifact_type"]),
+                content=row["content"],
+                metadata=json.loads(row.get("metadata_json", "{}")),
+                created_at=datetime.fromisoformat(row["created_at"]) if row.get("created_at") else datetime.now(),
+            ))
 
-            artifacts = []
-            for row in rows:
-                artifacts.append(ArtifactResponse(
-                    id=row["id"],
-                    collaboration_id=row["collaboration_id"],
-                    task_id=row.get("task_id"),
-                    round=row.get("round", 1),
-                    producer_agent_id=row.get("producer_agent_id", ""),
-                    producer_role=row.get("producer_role", ""),
-                    name=row["name"],
-                    artifact_type=ArtifactType(row["artifact_type"]),
-                    content=row["content"],
-                    metadata=json.loads(row.get("metadata_json", "{}")),
-                    created_at=datetime.fromisoformat(row["created_at"]) if row.get("created_at") else datetime.now(),
-                ))
-
-            return {"artifacts": [a.dict() for a in artifacts]}
-
-        finally:
-            await db.disconnect()
+        return {"artifacts": [a.dict() for a in artifacts]}
 
     except Exception as e:
         logger.error(f"Error listing task artifacts: {e}")

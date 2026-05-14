@@ -55,10 +55,15 @@ const ChatService = {
                 agentId: this.agentId
             });
 
-            // Send initial message
+            // Send initial message with JWT token
             const message = { session_id: this.sessionId };
             if (this.agentId) {
                 message.agent_id = this.agentId;
+            }
+            // Include access token for authentication
+            const token = localStorage.getItem('quest3_access_token');
+            if (token) {
+                message.token = token;
             }
             this.ws.send(JSON.stringify(message));
         };

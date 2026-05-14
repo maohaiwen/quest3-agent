@@ -111,7 +111,11 @@ quest3-agent/
 │   ├── tools/                     # 本地工具
 │   │   ├── base.py                # 工具基类
 │   │   ├── filesystem.py          # 文件系统工具
-│   │   └── web_search.py          # 网络搜索工具
+│   │   ├── web_search.py          # 网络搜索工具
+│   │   ├── visual.py              # 可视化工具（ECharts/Mermaid/表格/图片/HTML）
+│   │   ├── stock_backtest.py      # 因子检测工具
+│   │   ├── sandbox_bridge.py      # 沙盒工具桥接
+│   │   └── plugin_registry.py     # 工具插件注册中心
 │   └── skills/                    # 技能系统
 │       ├── registry.py            # 技能注册中心
 │       ├── loader.py              # 技能加载器
@@ -466,10 +470,19 @@ class ReActCotExecutor:
                 elif event["type"] == "tool_calls":
                     # 累加 tool_calls
 
-            # 3b. 如果有工具调用 → 执行工具
+            # 3b. 如果有工具调用 → 执行工具（带可视化回调）
             if tool_calls_to_execute:
                 for tool_call in tool_calls_to_execute:
-                    result = await self._execute_tool(tool_name, tool_args)
+                    visual_events = []
+                    def _on_visual(event):
+                        visual_events.append(event)
+                    result = await self._execute_tool(
+                        tool_name, tool_args, visual_callback=_on_visual
+                    )
+                    # yield 可视化事件（tool_manager 通过回调收集）
+                    for ve in visual_events:
+                        yield ve
+                    # observation 只包含纯文本摘要，不含 HTML
                     messages.append({"role": "tool", "content": result})
 
             # 3c. 如果没有工具调用 → 任务完成
@@ -590,7 +603,18 @@ class ExecutionStep:
 async def _execute_step(self, step):
     while step.retry_count <= step.max_retries:
         try:
-            result = await tool_manager.call_tool(step.tool_name, step.arguments)
+            # 可视化回调：收集事件后由 _emit 异步发出
+            step_visual_events = []
+            def _visual_callback(event):
+                step_visual_events.append(event)
+
+            result = await tool_manager.call_tool(
+                step.tool_name, step.arguments,
+                visual_callback=_visual_callback
+            )
+            # 异步发出收集到的可视化事件
+            for ve in step_visual_events:
+                await self._emit(ve)
             return result
         except Exception as e:
             error_type = self._classify_error(e)  # network/timeout/parameter/tool_not_found/permission
@@ -604,15 +628,16 @@ async def _execute_step(self, step):
 
 ### 7.1 UnifiedToolManager
 
-统一管理三类工具，提供一致的访问接口：
+统一管理三类工具，提供一致的访问接口，同时集中处理可视化结果提取：
 
 ```python
 class UnifiedToolManager:
     def __init__(self):
         self._local_tools: Dict[str, ToolDefinition] = {}
 
-    # 注册本地工具（包括技能工具）
-    def register_local_tool(self, name, description, input_schema, handler, source)
+    # 注册本地工具（包括技能工具、插件工具）
+    def register_local_tool(self, name, description, input_schema, handler, source,
+                            installed=True, service_name="", deps=None)
 
     # 注册技能工具（load_skill, execute_skill）
     def register_skill_tools(self)
@@ -627,15 +652,27 @@ class UnifiedToolManager:
     # 获取 LLM 格式的工具列表
     async def get_tools_for_llm(...) -> List[Dict]
 
-    # 调用工具
-    async def call_tool(self, tool_name, arguments) -> Any
+    # 调用工具（集中处理可视化提取）
+    async def call_tool(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        visual_callback: Optional[Callable] = None,  # 可视化事件回调
+    ) -> Any  # 返回清洗后的结果（不含 __render_html__）
+
+    # 从工具结果中提取可视化内容
+    def _extract_visual(self, result) -> tuple[clean_result, html_or_none, summary]
+
+    # 插件管理
+    def get_tool_plugins(self) -> List[Dict]
+    async def install_service_deps(self, service_name) -> Dict
 ```
 
 ### 7.2 工具来源
 
 | 来源 | 说明 | 示例 |
 |------|------|------|
-| `local` | 代码内定义的本地工具 | `read_file`, `write_file`, `web_search` |
+| `local` | 代码内定义的本地工具 | `read_file`, `write_file`, `web_search`, `render_visual` |
 | `mcp` | MCP 远程服务器提供的工具 | `execute_code`, `query_database` |
 | `skill` | 技能系统提供的工具 | `load_skill`, `execute_skill` |
 
@@ -644,8 +681,8 @@ class UnifiedToolManager:
 `allowed_tools` 参数控制工具可见范围：
 
 - `allowed_tools=None`：不过滤，加载已绑定 server 的全部工具
-- `allowed_tools=[]`：加载已绑定 server 的全部工具 + skill 工具
-- `allowed_tools=["web_search"]`：混合逻辑：白名单中的工具放行；对于没有任何工具被选中的 server，其全部工具也放行
+- `allowed_tools=[]`：用户明确不需要工具，返回空（不注入 skill 工具）
+- `allowed_tools=["web_search"]`：混合逻辑：白名单中的工具放行 + skill 工具；对于没有任何工具被选中的 server，其全部工具也放行
 
 ```python
 # 核心过滤逻辑
@@ -665,17 +702,133 @@ if allowed_tools is not None:
              if k in allowed_set or (v.server_id in servers_with_no_tools_selected and v.source == "mcp")}
 ```
 
-### 7.4 工具调用路由
+### 7.4 工具调用路由与可视化提取
+
+`call_tool` 是工具调用的统一入口，同时负责可视化内容的提取与分发：
 
 ```python
-async def call_tool(self, tool_name, arguments):
-    # 1. 先检查本地工具（包括技能工具）
+async def call_tool(self, tool_name, arguments, visual_callback=None):
+    # 1. 先检查本地工具
     if tool_name in self._local_tools:
-        return await self._local_tools[tool_name].handler(**arguments)
+        result = await handler(**arguments)
+        # 统一处理可视化结果
+        result, html, summary = self._extract_visual(result)
+        if html and visual_callback:
+            visual_callback({"type": "html", "content": html})
+        return result  # 返回纯文本摘要，不含原始 HTML
 
     # 2. 否则通过 MCP 客户端池调用远程工具
-    return await mcp_client_pool.call_tool(tool_name, arguments)
+    result = await mcp_client_pool.call_tool(tool_name, arguments)
+    result, html, summary = self._extract_visual(result)
+    if html and visual_callback:
+        visual_callback({"type": "html", "content": html})
+    return result
 ```
+
+**`_extract_visual` 方法**：检测工具返回的 `__render_html__` 字段，提取 HTML 内容并返回清洗后的结果：
+
+```python
+def _extract_visual(self, result) -> tuple:
+    if not isinstance(result, dict) or "__render_html__" not in result:
+        return result, None, ""
+    # 委托给 visual.py 的 extract_visual_from_result
+    from app.tools.visual import extract_visual_from_result
+    return extract_visual_from_result(result)
+```
+
+**关键设计**：LLM 只看到纯文本摘要（如 `[ECharts 图表已渲染]`），不接触原始 HTML，避免 token 浪费和内容篡改。
+
+### 7.5 工具插件注册中心 (PluginRegistry)
+
+`plugin_registry.py` 管理可插拔的工具服务，支持按需安装依赖：
+
+```python
+# 每个工具服务注册自己的工具
+class VisualToolService(BaseToolService):
+    service_name = "visual"
+    service_description = "可视化图表工具（ECharts/Mermaid/表格/图片）"
+    deps = []  # 无外部依赖
+
+    def register_tools(self, tool_manager):
+        tool_manager.register_local_tool(
+            name="render_visual",
+            description="渲染可视化图表...",
+            input_schema={...},
+            handler=self.render_visual,
+            source="local",
+            installed=True,
+            service_name=self.service_name,
+            deps=self.deps
+        )
+```
+
+**依赖安装流程**：工具服务声明 `deps`（pip 包列表），注册时若依赖缺失则标记 `installed=False`，用户可通过 API 触发安装，安装完成后 `_reregister_service()` 重新注册工具。
+
+### 7.6 可视化渲染系统
+
+可视化系统实现了从工具执行到前端展示的完整链路，核心原则：**LLM 不接触 HTML，前端用 iframe 隔离渲染，DB 按事件顺序存储**。
+
+#### 后端链路
+
+```
+工具返回 __render_html__
+  → tool_manager.call_tool() 调用 _extract_visual()
+    → extract_visual_from_result() 提取 HTML，返回纯文本摘要
+    → visual_callback({"type": "html", "content": html}) 通知上层
+  → Executor 收集事件 → yield html 事件
+  → chat.py 收集到 content_parts（有序列表）
+    → 保存时：文本缓冲 + 遇到 html 用 <!--visual--> 标记包裹
+    → split_message_with_visuals() 清理 LLM 回显的标记
+```
+
+**chat.py 的 content_parts**：有序追踪所有事件，保留文本和可视化的相对位置：
+
+```python
+content_parts = []  # list of {"type": "text"|"html", "content": ...}
+
+# 三种模式都会收集
+if event.get("type") == "message":
+    content_parts.append({"type": "text", "content": event.get("content", "")})
+if event.get("type") == "html":
+    content_parts.append({"type": "html", "content": event.get("content", "")})
+
+# 保存时按事件顺序重构
+parts = []
+text_buf = ""
+for part in content_parts:
+    if part["type"] == "text":
+        text_buf += part["content"]
+    elif part["type"] == "html":
+        if text_buf:
+            parts.append(text_buf)
+            text_buf = ""
+        parts.append(f"<!--visual-->{part['content']}<!--/visual-->")
+if text_buf:
+    parts.append(text_buf)
+```
+
+#### 前端渲染
+
+前端使用 **分段渲染 + 稳定 ID** 机制，避免流式更新时 iframe 闪屏：
+
+```javascript
+// 1. _parseSegments(content) — 按 <!--visual--> 标记拆分为分段
+// 返回 [{id: "seg-text-0", type: "text", content: "..."},
+//        {id: "seg-visual-1", type: "visual", content: "..."}]
+
+// 2. _renderContentSafely(contentDiv) — 只更新文本段，复用视觉段 DOM
+// - 文本段：更新 innerHTML（markdown 渲染）
+// - 视觉段：保持 iframe 不变（不重建 DOM）
+
+// 3. _renderVisualIframe(htmlContent) — 构建 sandbox iframe
+// - sandbox="allow-scripts allow-same-origin"
+// - srcdoc 属性中 HTML 内容需要转义 & → &amp; 和 " → &quot;
+// - postMessage 通知父页面调整高度
+```
+
+**关键设计**：
+- 每个 `<div data-seg-id="seg-visual-N">` 包含一个 `<iframe>`，流式文本更新时 iframe 不会被销毁重建
+- `addMessage()` 和 `prependMessages()` 加载历史消息时，也使用相同的 `_renderContentSafely()` 方法，保证渲染一致性
 
 ---
 
@@ -1211,10 +1364,12 @@ def reconfigure(self):
    c. 获取对话历史
    d. 构建 Agent 配置（system_prompt + 技能提示 + 记忆上下文）
    e. 根据执行模式选择执行器
-   f. 流式发送事件
-   g. 保存助手回复
+   f. 流式发送事件，用 content_parts 有序收集文本和可视化事件
+   g. 保存助手回复（用 content_parts 按事件顺序重构，保留可视化位置）
 4. 断开时提取长期记忆
 ```
+
+**content_parts 有序收集**：三种模式（direct/react/plan）都用 `content_parts` 追踪事件顺序，保证可视化块在文本中的位置正确。保存时按事件顺序重构，遇到 html 事件用 `<!--visual-->` 标记包裹，并用 `split_message_with_visuals()` 清理 LLM 回显的标记。
 
 ### 14.2 REST API 列表
 
@@ -1339,6 +1494,7 @@ thinking_start              StrategyRouter/ReAct     思考开始
 thinking                    StrategyRouter/ReAct     思考内容（流式）
 thinking_end                StrategyRouter/ReAct     思考结束
 message                     所有执行器               最终回复（流式）
+html                        Executor/tool_manager    可视化 HTML 内容（ECharts/Mermaid/表格/图片）
 phase                       ReActExecutor           当前阶段
 action_start                ReActExecutor           工具调用开始
 observation                 ReActExecutor           工具执行结果
@@ -1555,7 +1711,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 
 1. **新增执行模式**：实现新的 Executor 类，在 chat.py 中注册
 2. **新增协作模式**：继承 `BaseCollaborationMode`，在 `CollaborationEngine` 中注册
-3. **新增本地工具**：实现工具类，在 main.py 中注册到 `UnifiedToolManager`
+3. **新增本地工具**：实现工具类，在 main.py 中注册到 `UnifiedToolManager`；可视化工具返回 `{"__render_html__": html, "summary": "..."}` 即可自动渲染
 4. **新增 MCP 服务器**：通过管理页面或 API 添加，自动连接到 `MCPClientPool`
 5. **新增技能**：在 skills 目录创建 skill.md（可选 main.py 入口脚本）
 6. **切换 LLM 提供商**：替换 `LLMService` 的实现，保持接口不变
@@ -1570,19 +1726,21 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 ### 核心学习要点
 
 1. **ReAct + 思维链**：LLM 深度思考 → 工具调用 → 观察 → 循环
-2. **统一工具管理**：本地/MCP/技能工具通过 UnifiedToolManager 统一调度
+2. **统一工具管理**：本地/MCP/技能工具通过 UnifiedToolManager 统一调度，集中处理可视化提取
 3. **多智能体协作**：4 种协作模式，通过 AgentRegistry 和 A2A 协议通信
 4. **记忆系统**：工作记忆 + Agent 长期记忆，重要性衰减 + 语义搜索
 5. **流式架构**：全链路流式输出，WebSocket + AsyncGenerator
 6. **技能系统**：声明式 skill.md + 可选执行脚本 + GitHub 导入
 7. **异步 + 线程桥接**：asyncio 事件循环 + 后台线程处理同步 SDK
+8. **可视化渲染**：LLM 只看摘要、前端 iframe 隔离、分段渲染防闪屏、有序存储保位置
 
 ### 阅读建议
 
 1. **入门**：从 `app/main.py` 开始，理解服务初始化流程
 2. **聊天流程**：阅读 `app/api/chat.py`，理解 WebSocket 事件流
 3. **执行引擎**：阅读 `app/core/react_cot_executor.py`，理解 ReAct 循环
-4. **工具管理**：阅读 `app/core/tool_manager.py`，理解工具统一调度
+4. **工具管理**：阅读 `app/core/tool_manager.py`，理解工具统一调度与可视化提取
 5. **协作系统**：阅读 `app/services/collaboration/supervisor.py`，理解多 Agent 协作
 6. **记忆系统**：阅读 `app/services/agent_memory_service.py`，理解长期记忆
 7. **技能系统**：阅读 `app/skills/registry.py` 和 `app/skills/executor.py`
+8. **可视化系统**：阅读 `app/tools/visual.py`（后端）和 `static/modules/chat/ChatView.js`（前端渲染）

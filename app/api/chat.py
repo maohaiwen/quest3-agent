@@ -333,25 +333,8 @@ async def _add_assistant_message(
     await memory_service.maybe_summarize(session_id, agent_model=agent_model)
 
 
-# Dependency functions
-def get_session_repo():
-    from app.main import session_repo
-    return session_repo
-
-
-def get_message_repo():
-    from app.main import message_repo
-    return message_repo
-
-
-def get_llm_service():
-    from app.main import llm_service
-    return llm_service
-
-
-def get_memory_service():
-    from app.main import memory_service
-    return memory_service
+# Dependency functions — use central deps module
+from app.api.deps import get_session_repo, get_message_repo, get_llm_service, get_memory_service
 
 
 async def get_dependencies(
@@ -433,23 +416,42 @@ async def chat_stream(
     """WebSocket endpoint for streaming chat"""
     await websocket.accept()
 
+    # --- Authenticate via token in initial message ---
+    from app.core.security import decode_token
+    from jose import JWTError
+
+    ws_user = None  # will hold {"username", "role"} if authenticated
+
     session_id = None
     agent_id = None
 
     try:
-        # Wait for initial message with session_id
+        # Wait for initial message with session_id and optional token
         data = await websocket.receive_json()
         session_id = data.get("session_id")
         agent_id = data.get("agent_id")  # Optional: specific agent to use
         enable_planning = data.get("enable_planning", True)  # Enable planning by default
         deep_thinking = data.get("deep_thinking", False)  # Enable deep thinking mode
 
+        # Verify JWT token if provided
+        token = data.get("token")
+        if token:
+            try:
+                payload = decode_token(token)
+                if payload.get("type") == "access" and payload.get("sub"):
+                    ws_user = {"username": payload["sub"], "role": payload.get("role", "user")}
+                    logger.info(f"WebSocket authenticated user: {ws_user['username']}")
+            except JWTError:
+                logger.warning("WebSocket auth failed: invalid token")
+        else:
+            logger.warning("WebSocket connected without token")
+
         if not session_id:
             await websocket.send_json({
                 "type": "error",
                 "content": "session_id is required"
             })
-            await websocket.close()
+            await websocket.close(code=4001)
             return
 
         # Check if session exists
