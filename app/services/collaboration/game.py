@@ -21,6 +21,22 @@ def _make_sandbox_handler(sandbox, agent_id: str, role: str):
     return _handler
 
 
+def _anonymize_event(sandbox, event: dict, indexed_role: str) -> dict:
+    """If sandbox requests identity anonymization, replace agent_id/role with
+    seat-based anonymous names so the chat UI doesn't reveal which AI agent
+    is behind which seat (critical for games like Werewolf)."""
+    if not sandbox or not getattr(sandbox, 'anonymize_identities', False):
+        return event
+    identity = sandbox.get_anonymous_identity(indexed_role)
+    event = dict(event)  # shallow copy
+    if "agent_id" in event:
+        event["agent_id"] = identity["agent_id"]
+    if "role" in event:
+        event["role"] = identity["role"]
+    event["display_name"] = identity["display_name"]
+    return event
+
+
 class GameCollaboration(BaseCollaborationMode):
     """Game mode: supports simultaneous and sequential strategies with referee judgment.
 
@@ -49,6 +65,13 @@ class GameCollaboration(BaseCollaborationMode):
                 idx += 1
         return participants
 
+    def _find_agent_by_role(self, participants, indexed_role):
+        """Find the agent config for a given indexed_role."""
+        for agent, ir, idx in participants:
+            if ir == indexed_role:
+                return agent, ir, idx
+        return None
+
     def _get_referee(self, collab: CollaborationResponse):
         """Get referee agent if configured"""
         return next((a for a in collab.agents if a.role == "referee"), None)
@@ -64,7 +87,7 @@ class GameCollaboration(BaseCollaborationMode):
             logger.warning(f"Sandbox '{sandbox_name}' not found, proceeding without sandbox")
             return None
         # Map participants to sandbox roles
-        agents_info = [{"agent_id": a.agent_id, "role": ir} for a, ir, _ in participants]
+        agents_info = [{"agent_id": a.agent_id, "role": ir, "is_human": getattr(a, 'is_human', False)} for a, ir, _ in participants]
         sandbox.on_task_start(agents_info)
         logger.info(f"Sandbox '{sandbox_name}' initialized with {len(agents_info)} participants")
         return sandbox
@@ -74,54 +97,80 @@ class GameCollaboration(BaseCollaborationMode):
                                    round_num: int, turn_strategy: str,
                                    round_actions_so_far: list = None,
                                    sandbox = None, agent_id: str = None) -> str:
-        """Build prompt for a participant agent."""
+        """Build prompt for a participant agent.
+
+        Prompt visibility is controlled by config_json.prompt_visibility:
+          - "all"         → inject normally (default, backward-compatible)
+          - "none"        → do not inject at all
+          - "sandbox_only"→ do not inject; sandbox.get_state_view() provides the info
+        """
         config = collab.config_json
         game_rules = config.get("game_rules", "")
         custom_instruction = config.get("round_input_template")
 
-        effective_rules = game_rules if game_rules.strip() else input_text
+        # Read prompt visibility configuration (defaults to "all" for backward compat)
+        visibility = config.get("prompt_visibility", {})
+        show_input = visibility.get("用户输入", "all")
+        show_rules = visibility.get("游戏规则", "all")
+        show_custom = visibility.get("上下文指令", "all")
+        show_history = visibility.get("历史行动", "all")
 
-        # If sandbox is available, use its state view instead of raw shared_state
+        # Component is visible only when set to "all"
+        def _vis(setting):
+            return setting == "all"
+
+        # State view
         if sandbox and agent_id:
             state_view = sandbox.get_state_view(agent_id, role)
         else:
             state_view = f"当前共享状态：{json.dumps(shared_state, ensure_ascii=False)}"
 
-        prefix = f"{custom_instruction}\n\n" if custom_instruction else ""
+        # Custom instruction prefix (respects visibility)
+        prefix = f"{custom_instruction}\n\n" if (custom_instruction and _vis(show_custom)) else ""
+
         is_sequential = turn_strategy == "sequential"
 
-        # Get sandbox action hint if available
+        # Sandbox action hint
         action_hint = ""
         if sandbox and agent_id:
             hint = sandbox.get_action_hint(agent_id, role)
             if hint:
                 action_hint = f"\n{hint}"
 
+        # Identity line (skip when sandbox provides identity info)
+        identity_line = ""
+        if not (sandbox and agent_id):
+            identity_line = f"\n你是：{role}（第{player_index}位参与者）"
+
+        # Build visibility-controlled sections
+        effective_rules = game_rules if game_rules.strip() else input_text
+
+        input_section = f"\n原始任务：{input_text}" if (_vis(show_input) and input_text) else ""
+        rules_section = f"\n游戏规则：{effective_rules}" if (_vis(show_rules) and effective_rules) else ""
+
+        earlier_actions = ""
+        if is_sequential and _vis(show_history) and round_actions_so_far:
+            earlier_actions = f"\n本轮之前参与者的行动：\n" + "\n".join(round_actions_so_far) + "\n"
+
+        game_type = "顺序行动的博弈游戏" if is_sequential else "博弈游戏"
+        # When rules are not visible, don't reference them in the closing instruction
+        closing = "请严格根据上述游戏规则做出你的行动。" if _vis(show_rules) else "请根据以上信息做出你的行动。"
+
         if is_sequential:
-            earlier_actions = ""
-            if round_actions_so_far:
-                earlier_actions = f"\n本轮之前参与者的行动：\n" + "\n".join(round_actions_so_far) + "\n"
-
-            return f"""{prefix}你正在参与一个顺序行动的博弈游戏。
-
-游戏规则：{effective_rules}
-原始任务：{input_text}
-{state_view}
-你是：{role}（第{player_index}位参与者）
+            return f"""{prefix}你正在参与一个{game_type}。
+{rules_section}{input_section}
+{state_view}{identity_line}
 当前轮次：第{round_num}轮{earlier_actions}
 轮到你行动了。
 
-请严格根据上述游戏规则做出你的行动。{action_hint}"""
+{closing}{action_hint}"""
 
-        return f"""{prefix}你正在参与一个博弈游戏。
-
-游戏规则：{effective_rules}
-原始任务：{input_text}
-{state_view}
-你是：{role}（第{player_index}位参与者）
+        return f"""{prefix}你正在参与一个{game_type}。
+{rules_section}{input_section}
+{state_view}{identity_line}
 当前轮次：第{round_num}轮
 
-请严格根据上述游戏规则做出你的行动。{action_hint}"""
+{closing}{action_hint}"""
 
     def _build_referee_prompt(self, collab: CollaborationResponse, input_text: str,
                                shared_state: dict, round_actions: str,
@@ -509,10 +558,18 @@ class GameCollaboration(BaseCollaborationMode):
                 order_map, participant_order = self._build_order_map(
                     participants, participant_order, config)
 
+            # Build participants list — anonymize if sandbox requests it
+            participants_list = [p[1] for p in participants]
+            if sandbox and getattr(sandbox, 'anonymize_identities', False):
+                participants_list = [
+                    sandbox.get_anonymous_identity(ir)["agent_id"]
+                    for ir in participants_list
+                ]
+
             yield {
                 "type": "game_start",
                 "shared_state": shared_state,
-                "participants": [p[1] for p in participants],
+                "participants": participants_list,
                 "turn_strategy": turn_strategy,
                 "referee_enabled": referee_enabled,
                 "sandbox": sandbox_name,
@@ -535,7 +592,203 @@ class GameCollaboration(BaseCollaborationMode):
 
                 round_actions = []
 
-                if turn_strategy == "simultaneous":
+                # ---- Sandbox-driven sub-phase flow ----
+                if sandbox and getattr(sandbox, 'supports_sub_phases', False):
+                    sandbox_round_start = getattr(sandbox, 'round_num', round_num)
+                    sub_phase_done = False
+                    while not sub_phase_done:
+                        active = sandbox.get_active_participants()
+                        if not active:
+                            break  # No more active agents — sub-phase flow complete
+
+                        # Emit phase info
+                        phase_desc = sandbox.get_phase_description()
+                        yield {"type": "sandbox_phase", "phase": phase_desc, "round": round_num}
+
+                        # Prompt each active participant sequentially
+                        for item in active:
+                            indexed_role = item[0]
+                            agent_info = self._find_agent_by_role(participants, indexed_role)
+                            if not agent_info:
+                                continue
+                            agent, ir, idx = agent_info
+
+                            # ---- Human participant branch ----
+                            if agent.is_human:
+                                # Capture phase BEFORE action — sandbox action handlers
+                                # (e.g. guard's _resolve_night) may transition the phase,
+                                # which would cause record_speech to record a night action
+                                # as a day speech.
+                                phase_before_action = sandbox.phase if sandbox else None
+                                state_view = sandbox.get_state_view("human", indexed_role) if sandbox else ""
+                                is_private = sandbox and sandbox.is_private_phase()
+                                suppress_human_events = is_private and getattr(sandbox, 'anonymize_identities', False)
+
+                                # Always emit agent_start/agent_done so the
+                                # frontend panel lifecycle stays consistent;
+                                # anonymization hides the identity
+                                yield _anonymize_event(sandbox, {
+                                    "type": "agent_start",
+                                    "agent_id": "human",
+                                    "role": indexed_role,
+                                    "round": round_num
+                                }, indexed_role)
+
+                                # waiting_for_human must always be emitted (so the
+                                # frontend shows the input panel), but in private
+                                # phases mark it as private so the chat stream
+                                # hides the identity (the state_view is still
+                                # shown in the input panel, not the chat stream)
+                                yield _anonymize_event(sandbox, {
+                                    "type": "waiting_for_human",
+                                    "role": indexed_role,
+                                    "round": round_num,
+                                    "state_view": state_view,
+                                    "private": suppress_human_events,
+                                }, indexed_role)
+
+                                yield {
+                                    "type": "sandbox_state",
+                                    "sandbox": sandbox_name,
+                                    "state": sandbox.get_display_state(),
+                                }
+                                result = await self._wait_for_human_input(
+                                    task.id, "human", indexed_role,
+                                    sandbox=sandbox, prompt=state_view,
+                                )
+                                while not result.get("success"):
+                                    if result.get("error") in ("等待人类输入超时", "输入已取消"):
+                                        yield {"type": "task_failed", "error": result["error"]}
+                                        sub_phase_done = True
+                                        break
+                                    yield _anonymize_event(sandbox, {
+                                        "type": "human_move_error",
+                                        "role": indexed_role,
+                                        "error": result.get("error", "无效操作"),
+                                    }, indexed_role)
+                                    state_view = sandbox.get_state_view("human", indexed_role)
+                                    result = await self._wait_for_human_input(
+                                        task.id, "human", indexed_role,
+                                        sandbox=sandbox, prompt=state_view,
+                                    )
+                                if sub_phase_done:
+                                    break
+                                action = result.get("message", "")
+                                # Always emit human_moved so the frontend hides
+                                # the input panel; in private phases, strip
+                                # the result details to avoid leaking info
+                                yield _anonymize_event(sandbox, {
+                                    "type": "human_moved",
+                                    "role": indexed_role,
+                                    "round": round_num,
+                                    "result": {} if suppress_human_events else result,
+                                }, indexed_role)
+                                action_line = f"{indexed_role}: {action}"
+                                round_actions.append(action_line)
+                                # Record speech in sandbox if applicable
+                                # Use phase_before_action (captured before the action was
+                                # processed) to avoid recording night actions as day speeches
+                                # when _resolve_night() transitions the phase to day_speak.
+                                if hasattr(sandbox, 'record_speech') and phase_before_action == "day_speak":
+                                    sandbox.record_speech(indexed_role, action)
+                                # Always emit agent_done so frontend cleans up
+                                yield _anonymize_event(sandbox, {"type": "agent_done", "agent_id": "human", "role": indexed_role, "round": round_num}, indexed_role)
+                                yield {
+                                    "type": "sandbox_state",
+                                    "sandbox": sandbox_name,
+                                    "state": sandbox.get_display_state(),
+                                }
+
+                            # ---- AI participant branch ----
+                            else:
+                                # Capture phase BEFORE action — sandbox action handlers
+                                # (e.g. guard's _resolve_night) may transition the phase,
+                                # which would cause record_speech to record a night action
+                                # as a day speech.
+                                phase_before_action = sandbox.phase if sandbox else None
+
+                                prompt = self._build_participant_prompt(
+                                    collab, input_text, shared_state, indexed_role, idx, round_num, "sequential",
+                                    sandbox=sandbox, agent_id=agent.agent_id)
+
+                                # In private phases of anonymized sandboxes (e.g.
+                                # werewolf night), completely suppress AI events
+                                # so the viewer cannot infer who is acting.
+                                is_private = sandbox and sandbox.is_private_phase()
+                                suppress_ai_events = is_private and getattr(sandbox, 'anonymize_identities', False)
+
+                                if not suppress_ai_events:
+                                    yield _anonymize_event(sandbox, {
+                                        "type": "agent_start",
+                                        "agent_id": agent.agent_id,
+                                        "role": indexed_role,
+                                        "round": round_num
+                                    }, indexed_role)
+
+                                agent_task = A2ATask(id=str(uuid.uuid4()), input=prompt)
+                                agent_task.sandbox_tools = sandbox.get_tools_for_llm(agent.agent_id, indexed_role)
+                                agent_task.sandbox_handler = _make_sandbox_handler(sandbox, agent.agent_id, indexed_role)
+
+                                # When a human participant is present and the
+                                # current phase is private (e.g. werewolf
+                                # night), suppress detailed AI events so the
+                                # human doesn't see other players' actions.
+                                has_human = any(a.is_human for a, _, _ in participants)
+                                hide_ai_detail = has_human and sandbox.is_private_phase()
+
+                                action = ""
+                                async for sub_event in agent_registry.call_agent_stream(agent.agent_id, agent_task):
+                                    etype = sub_event.get("type")
+                                    # Always capture content for action text
+                                    if etype == "content":
+                                        action += sub_event["content"]
+                                    # In private phases, suppress all AI events
+                                    if suppress_ai_events:
+                                        continue
+                                    # When human is present in private phase,
+                                    # suppress detailed events (thinking, content, etc.)
+                                    if hide_ai_detail and etype not in ("done",):
+                                        continue
+                                    yield _anonymize_event(sandbox, {
+                                        "type": f"agent_{etype}",
+                                        "agent_id": agent.agent_id,
+                                        "role": indexed_role,
+                                        "round": round_num,
+                                        **{k: v for k, v in sub_event.items() if k != "type"},
+                                    }, indexed_role)
+
+                                if not action and agent_task.output:
+                                    action = agent_task.output
+
+                                action_line = f"{indexed_role}: {action}"
+                                round_actions.append(action_line)
+                                # Record speech in sandbox if applicable
+                                # Use phase_before_action (captured before the action was
+                                # processed) to avoid recording night actions as day speeches
+                                # when _resolve_night() transitions the phase to day_speak.
+                                if hasattr(sandbox, 'record_speech') and phase_before_action == "day_speak":
+                                    sandbox.record_speech(indexed_role, action)
+
+                                if not suppress_ai_events:
+                                    yield _anonymize_event(sandbox, {"type": "agent_done", "agent_id": agent.agent_id, "role": indexed_role, "round": round_num}, indexed_role)
+                                yield {
+                                    "type": "sandbox_state",
+                                    "sandbox": sandbox_name,
+                                    "state": sandbox.get_display_state(),
+                                }
+
+                            # Check termination after each action
+                            if sandbox.check_termination():
+                                sub_phase_done = True
+                                break
+
+                        # Check if the sandbox round changed (e.g. day vote → new night)
+                        if not sub_phase_done:
+                            current_sandbox_round = getattr(sandbox, 'round_num', round_num)
+                            if current_sandbox_round != sandbox_round_start:
+                                sub_phase_done = True  # Round complete
+
+                elif turn_strategy == "simultaneous":
                     # Parallel streaming using queue
                     game_tasks = []
                     for agent, indexed_role, idx in participants:
@@ -549,13 +802,18 @@ class GameCollaboration(BaseCollaborationMode):
                             t.sandbox_handler = _make_sandbox_handler(sandbox, agent.agent_id, indexed_role)
                         game_tasks.append((agent, indexed_role, idx, t))
 
-                    for agent, indexed_role, idx, _ in game_tasks:
-                        yield {
-                            "type": "agent_start",
-                            "agent_id": agent.agent_id,
-                            "role": indexed_role,
-                            "round": round_num
-                        }
+                    # Suppress agent_start in private phases of anonymized sandboxes
+                    is_sim_private = sandbox and sandbox.is_private_phase()
+                    suppress_sim_events = is_sim_private and getattr(sandbox, 'anonymize_identities', False)
+
+                    if not suppress_sim_events:
+                        for agent, indexed_role, idx, _ in game_tasks:
+                            yield _anonymize_event(sandbox, {
+                                "type": "agent_start",
+                                "agent_id": agent.agent_id,
+                                "role": indexed_role,
+                                "round": round_num
+                            }, indexed_role)
 
                     event_queue: asyncio.Queue = asyncio.Queue()
 
@@ -563,21 +821,27 @@ class GameCollaboration(BaseCollaborationMode):
                         output = ""
                         try:
                             async for sub_event in agent_registry.call_agent_stream(agent.agent_id, g_task):
-                                await event_queue.put({
-                                    "type": f"agent_{sub_event['type']}",
-                                    "agent_id": agent.agent_id,
-                                    "role": indexed_role,
-                                    "round": round_num,
-                                    **{k: v for k, v in sub_event.items() if k != "type"},
-                                })
+                                # In private phases of anonymized sandboxes, suppress
+                                # all AI events to avoid revealing who is acting
+                                if suppress_sim_events:
+                                    pass
+                                else:
+                                    await event_queue.put(_anonymize_event(sandbox, {
+                                        "type": f"agent_{sub_event['type']}",
+                                        "agent_id": agent.agent_id,
+                                        "role": indexed_role,
+                                        "round": round_num,
+                                        **{k: v for k, v in sub_event.items() if k != "type"},
+                                    }, indexed_role))
                                 if sub_event.get("type") == "content":
                                     output += sub_event["content"]
                         except Exception as e:
-                            await event_queue.put({
-                                "type": "agent_error",
-                                "agent_id": agent.agent_id,
-                                "message": str(e),
-                            })
+                            if not suppress_sim_events:
+                                await event_queue.put({
+                                    "type": "agent_error",
+                                    "agent_id": agent.agent_id,
+                                    "message": str(e),
+                                })
                         if not output and g_task.output:
                             output = g_task.output
                         await event_queue.put({"type": "_participant_done", "agent_id": agent.agent_id, "indexed_role": indexed_role, "output": output})
@@ -596,7 +860,8 @@ class GameCollaboration(BaseCollaborationMode):
                             done_count += 1
                             participant_outputs[event["agent_id"]] = (event["indexed_role"], event["output"])
                             round_actions.append(f"{event['indexed_role']}: {event['output']}")
-                            yield {"type": "agent_done", "agent_id": event["agent_id"], "role": event["indexed_role"], "round": round_num}
+                            if not suppress_sim_events:
+                                yield _anonymize_event(sandbox, {"type": "agent_done", "agent_id": event["agent_id"], "role": event["indexed_role"], "round": round_num}, event["indexed_role"])
                             # Emit sandbox state immediately after each participant finishes
                             if sandbox and not sandbox_terminated:
                                 yield {
@@ -625,6 +890,7 @@ class GameCollaboration(BaseCollaborationMode):
 
                         # ---- Human participant branch ----
                         if agent.is_human:
+                            state_view = sandbox.get_state_view("human", role_key) if sandbox else "请输入你的行动"
                             yield {
                                 "type": "agent_start",
                                 "agent_id": "human",
@@ -635,6 +901,7 @@ class GameCollaboration(BaseCollaborationMode):
                                 "type": "waiting_for_human",
                                 "role": role_key,
                                 "round": round_num,
+                                "state_view": state_view,
                             }
 
                             if sandbox:
@@ -643,7 +910,6 @@ class GameCollaboration(BaseCollaborationMode):
                                     "sandbox": sandbox_name,
                                     "state": sandbox.get_display_state(),
                                 }
-                                state_view = sandbox.get_state_view("human", role_key)
                                 result = await self._wait_for_human_input(
                                     task.id, "human", role_key,
                                     sandbox=sandbox, prompt=state_view,
@@ -718,18 +984,26 @@ class GameCollaboration(BaseCollaborationMode):
                                 agent_task.sandbox_tools = sandbox.get_tools_for_llm(agent.agent_id, role_key)
                                 agent_task.sandbox_handler = _make_sandbox_handler(sandbox, agent.agent_id, role_key)
 
+                            # Suppress detailed AI events in private phases when a
+                            # human participant is present
+                            has_human = any(a.is_human for a, _, _ in participants)
+                            hide_ai_detail = sandbox and has_human and sandbox.is_private_phase()
+
                             action = ""
 
                             async for sub_event in agent_registry.call_agent_stream(agent.agent_id, agent_task):
+                                etype = sub_event.get("type")
+                                if etype == "content":
+                                    action += sub_event["content"]
+                                if hide_ai_detail and etype not in ("done",):
+                                    continue
                                 yield {
-                                    "type": f"agent_{sub_event['type']}",
+                                    "type": f"agent_{etype}",
                                     "agent_id": agent.agent_id,
                                     "role": role_key,
                                     "round": round_num,
                                     **{k: v for k, v in sub_event.items() if k != "type"},
                                 }
-                                if sub_event.get("type") == "content":
-                                    action += sub_event["content"]
 
                             if not action and agent_task.output:
                                 action = agent_task.output
@@ -753,10 +1027,15 @@ class GameCollaboration(BaseCollaborationMode):
                 all_round_actions.append((round_num, round_actions))
 
                 # Store actions in shared state
-                for action_line in round_actions:
-                    role_part = action_line.split(":")[0].strip()
-                    content_part = ":".join(action_line.split(":")[1:]).strip()
-                    shared_state[f"round_{round_num}_{role_part}_output"] = content_part
+                # When sandbox is present, we skip storing individual player
+                # action text in shared_state because it contains private info
+                # (e.g. "我是守卫（座位号5）" during night).  The sandbox
+                # handles per-player visibility via get_state_view() instead.
+                if not sandbox:
+                    for action_line in round_actions:
+                        role_part = action_line.split(":")[0].strip()
+                        content_part = ":".join(action_line.split(":")[1:]).strip()
+                        shared_state[f"round_{round_num}_{role_part}_output"] = content_part
 
                 # Check sandbox termination first (before referee)
                 if sandbox:

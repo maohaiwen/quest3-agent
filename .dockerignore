@@ -1,0 +1,77 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Environment & secrets
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+*.db.bak
+chroma_db/
+
+# Logs
+server_log*.txt
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Test artifacts
+test_github_repo/
+
+# Claude Code
+.claude/
+
+# Backup/patch files
+*.backup
+*.utf8
+*_patch.txt
+
+# Cached skills
+cached_skills/
+skills/cached/
+
+# Sandbox workspace
+sandbox_workspace/
+
+# User skills
+user_skills/
+
+# Static (will be copied in build)
+# static/ is needed at runtime, keep it
+
+# Documentation
+doc/
+*.md
+!README.md
+
+# Misc temp files
+calculation.py
+calculator.py
+quick_test.py
+simple_test.py
+verify_final.py
+verify_implementation.py
+run_tests.py

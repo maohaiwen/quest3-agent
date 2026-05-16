@@ -8,12 +8,10 @@ import logging
 from app.config import settings
 from app.container import ServiceContainer
 from app.api.deps import set_container
+from app.core.logging import setup_logging
 
 # Configure logging
-logging.basicConfig(
-    level=getattr(logging, settings.LOG_LEVEL),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+setup_logging(log_level=settings.LOG_LEVEL, log_format=settings.LOG_FORMAT)
 logger = logging.getLogger(__name__)
 
 
@@ -165,10 +163,21 @@ async def lifespan(app: FastAPI):
         logger.error(f"Error during startup: {e}")
         raise
 
+    # Start background data cleanup
+    from app.services.cleanup_service import CleanupService
+    cleanup_svc = CleanupService(
+        db=container.db,
+        retention_days=settings.SESSION_RETENTION_DAYS,
+    )
+    cleanup_svc.start(interval_hours=settings.CLEANUP_INTERVAL_HOURS)
+
     yield
 
     # Shutdown
     logger.info("Shutting down application...")
+
+    # Stop cleanup service
+    cleanup_svc.stop()
 
     # Close MCP client pool
     await container.mcp_client_pool.close_all()
@@ -188,6 +197,10 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan
 )
+
+# Register global exception handlers
+from app.core.exceptions import register_exception_handlers
+register_exception_handlers(app)
 
 # CORS middleware
 from fastapi.middleware.cors import CORSMiddleware

@@ -552,7 +552,27 @@ async def submit_human_input(task_id: str, body: Dict[str, Any] = None):
         role = entry["role"]
         params = body.get("params", {})
         move = params.get("move", params.get("content", ""))
-        result = await sandbox.handle_action("human", role, "make_move", move=move)
+
+        # Resolve the actual sandbox tool name.  The frontend always
+        # sends "make_move" but different sandboxes use different tool
+        # names (e.g. chinese_chess uses "make_move", werewolf uses
+        # "night_action" / "vote" / "hunter_shoot").
+        # If no sandbox tools are available (e.g. werewolf day_speak
+        # phase where players speak freely), treat as free-text.
+        sandbox_tools = entry.get("sandbox_tools", [])
+        if not sandbox_tools:
+            # No tools available — free-text input
+            if not move:
+                raise HTTPException(status_code=400, detail="No input content provided")
+            result = {"success": True, "message": move}
+        else:
+            actual_action = sandbox_tools[0]
+            # Frontend sends "move" but sandbox tools expect specific
+            # param names like "target".  Pass both so any sandbox
+            # can pick up whichever it needs.
+            result = await sandbox.handle_action(
+                "human", role, actual_action,
+                move=move, target=move)
     else:
         # Free-text input (non-sandbox modes)
         content = body.get("content", body.get("params", {}).get("content", ""))
@@ -582,6 +602,7 @@ async def get_pending_human(task_id: str):
         "role": entry.get("role", ""),
         "agent_id": entry.get("agent_id", ""),
         "prompt": entry.get("prompt", ""),
+        "sandbox_tools": entry.get("sandbox_tools", []),
     }
 
 

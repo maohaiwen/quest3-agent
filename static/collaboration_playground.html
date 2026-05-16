@@ -427,6 +427,7 @@
                                 <span id="humanInputRole" class="human-input-role"></span>
                                 <span class="human-input-pulse"></span>
                             </div>
+                            <div id="humanInputState" class="human-input-state" style="display:none;white-space:pre-wrap;font-size:12px;padding:8px;background:rgba(0,0,0,0.05);border-radius:6px;margin-bottom:8px;max-height:200px;overflow-y:auto;"></div>
                             <div id="humanInputError" class="human-input-error" style="display:none;"></div>
                             <div class="human-input-row">
                                 <input type="text" id="humanMoveInput" class="human-move-input"
@@ -553,6 +554,9 @@
 
     function getAgentName(id) {
         if (id === 'human') return '人类';
+        // Anonymized seat-based names (e.g. "seat_1" → "1号玩家")
+        const seatMatch = id.match(/^seat_(\d+)$/);
+        if (seatMatch) return seatMatch[1] + '号玩家';
         const a = agentsCache.find(a => a.id === id);
         return a ? a.name : id;
     }
@@ -564,6 +568,21 @@
         return agentColorMap[id];
     }
     function escapeHtml(t) { if(!t)return''; const d=document.createElement('div'); d.textContent=t; return d.innerHTML; }
+
+    // Werewolf sandbox: reveal/hide all player identities
+    function werewolfReveal(btn) {
+        var cards = btn.closest('div').parentElement.querySelectorAll('[data-role]');
+        var revealed = btn.dataset.revealed === '1';
+        cards.forEach(function(c) {
+            var r = c.querySelector('.role-display');
+            if (r) {
+                if (!revealed) { c.dataset.orig = r.textContent; r.textContent = c.dataset.role; }
+                else { r.textContent = c.dataset.orig; }
+            }
+        });
+        btn.dataset.revealed = revealed ? '0' : '1';
+        btn.textContent = revealed ? '👁 查看所有人身份' : '🙈 隐藏身份';
+    }
 
     // =================== List View ===================
     async function loadCollabList() {
@@ -802,7 +821,7 @@
                     const pendingResp = await fetch(`${API_BASE}/tasks/${taskId}/pending-human`);
                     const pendingData = await pendingResp.json();
                     if (pendingData.waiting) {
-                        showHumanInputPanel(pendingData.role || '', '');
+                        showHumanInputPanel(pendingData.role || '', '', pendingData.prompt || '');
                     }
                 } catch(e) { /* ignore */ }
             }
@@ -1034,7 +1053,7 @@
                 break;
             case 'agent_start': {
                 const color = getAgentColor(data.agent_id);
-                const name = getAgentName(data.agent_id);
+                const name = data.display_name || getAgentName(data.agent_id);
                 const panel = createAgentProgressPanel(data.agent_id, name, data.role, color);
                 currentRoundContainer.appendChild(panel);
                 const pk = _panelKey(data.agent_id, data.role);
@@ -1114,8 +1133,9 @@
                 const ind = thinkingIndicators[data.agent_id];
                 if (ind) { ind.remove(); delete thinkingIndicators[data.agent_id]; }
                 const color = getAgentColor(data.agent_id);
-                const name = getAgentName(data.agent_id);
-                const roleStr = data.role ? `<span class="agent-role ${data.role}">${data.role}</span>` : '';
+                const name = data.display_name || getAgentName(data.agent_id);
+                const isAnonymized = data.agent_id && data.agent_id.startsWith('seat_');
+                const roleStr = (!isAnonymized && data.role) ? `<span class="agent-role ${data.role}">${data.role}</span>` : '';
                 const div = document.createElement('div');
                 div.className = 'msg agent';
                 div.style.borderLeftColor = color;
@@ -1180,9 +1200,22 @@
                 }
                 break;
             }
+            case 'sandbox_phase': {
+                // Show current sandbox phase (e.g. "夜晚·狼人行动")
+                if (data.phase) {
+                    addStreamMsg('system', `${data.phase}`, '');
+                }
+                break;
+            }
             case 'waiting_for_human': {
-                showHumanInputPanel(data.role, data.round);
-                addStreamMsg('system', `⏳ 等待${data.role}操作...`, '');
+                showHumanInputPanel(data.role, data.round, data.state_view);
+                if (data.private) {
+                    // Private phase: don't reveal who is acting, just show generic prompt
+                    addStreamMsg('system', '⏳ 请执行你的操作...', '');
+                } else {
+                    const humanLabel = data.display_name || getAgentName(data.role);
+                    addStreamMsg('system', `⏳ 等待${humanLabel}操作...`, '');
+                }
                 break;
             }
             case 'human_moved': {
@@ -1199,20 +1232,31 @@
     }
 
     // =================== Human Input ===================
-    function showHumanInputPanel(role, round) {
+    function showHumanInputPanel(role, round, stateView) {
         const panel = document.getElementById('humanInputPanel');
         const roleEl = document.getElementById('humanInputRole');
         const errorEl = document.getElementById('humanInputError');
         const inputEl = document.getElementById('humanMoveInput');
+        const stateEl = document.getElementById('humanInputState');
         if (panel) {
             panel.style.display = '';
-            if (roleEl) roleEl.textContent = role || '';
+            if (roleEl) roleEl.textContent = getAgentName(role) || role || '';
             if (errorEl) errorEl.style.display = 'none';
+            if (stateEl) {
+                if (stateView) {
+                    stateEl.textContent = stateView;
+                    stateEl.style.display = '';
+                } else {
+                    stateEl.style.display = 'none';
+                }
+            }
             if (inputEl) {
                 inputEl.value = '';
                 // Adjust placeholder based on sandbox type
                 if (currentSandbox === 'chinese_chess') {
                     inputEl.placeholder = '输入走法，如 炮二平五';
+                } else if (currentSandbox === 'werewolf') {
+                    inputEl.placeholder = '输入座位号，如 3';
                 } else {
                     inputEl.placeholder = '输入你的操作';
                 }
@@ -1275,7 +1319,8 @@
         const panel = document.createElement('div');
         panel.className = 'agent-progress open';
         panel.dataset.panelKey = pk;
-        const roleStr = role ? `<span class="agent-progress-role agent-role ${role}">${role}</span>` : '';
+        const isAnonymized = agentId && agentId.startsWith('seat_');
+        const roleStr = (!isAnonymized && role) ? `<span class="agent-progress-role agent-role ${role}">${role}</span>` : '';
         panel.innerHTML = `
             <div class="agent-progress-header" onclick="this.parentElement.classList.toggle('open')">
                 <span style="color:${color};font-weight:700;">${escapeHtml(name)}</span>
@@ -1519,7 +1564,7 @@
             case 'supervisor': return { parallel_execution: true, split_prompt: '', summary_prompt: '' };
             case 'pipeline': return { pass_context: true, step_prompt_template: '' };
             case 'voting': return { strategy: 'majority', aggregator_prompt: '' };
-            case 'adversarial_game': return { turn_strategy: 'simultaneous', max_rounds: 10, game_rules: '', referee_enabled: true, referee_prompt: '', shared_state: {} };
+            case 'adversarial_game': return { turn_strategy: 'simultaneous', max_rounds: 10, game_rules: '', referee_enabled: true, referee_prompt: '', shared_state: {}, prompt_visibility: { '用户输入': 'all', '游戏规则': 'all', '上下文指令': 'all', '历史行动': 'all' } };
             default: return {};
         }
     }
@@ -1678,6 +1723,35 @@
                         <div class="mode-param-group"><label>裁判提示词</label>
                             <textarea id="param_referee_prompt" onchange="readParamsFromDom()" placeholder="自定义裁判提示词（留空使用默认）">${escapeHtml(cfg.referee_prompt || '')}</textarea></div>
                     </div>
+                </div>
+                <div class="config-section">
+                    <div class="config-section-title" onclick="toggleConfigSection(this)">Prompt 可见性</div>
+                    <div class="config-section-body">
+                        <div class="mode-param-group"><label>用户输入</label>
+                            <select id="param_vis_input" onchange="readParamsFromDom()">
+                                <option value="all" ${(cfg.prompt_visibility || {})['用户输入'] === 'all' ? 'selected' : ''}>所有角色可见</option>
+                                <option value="sandbox_only" ${(cfg.prompt_visibility || {})['用户输入'] === 'sandbox_only' ? 'selected' : ''}>仅沙箱控制</option>
+                                <option value="none" ${(cfg.prompt_visibility || {})['用户输入'] === 'none' ? 'selected' : ''}>不显示</option>
+                            </select></div>
+                        <div class="mode-param-group"><label>游戏规则</label>
+                            <select id="param_vis_rules" onchange="readParamsFromDom()">
+                                <option value="all" ${(cfg.prompt_visibility || {})['游戏规则'] === 'all' ? 'selected' : ''}>所有角色可见</option>
+                                <option value="sandbox_only" ${(cfg.prompt_visibility || {})['游戏规则'] === 'sandbox_only' ? 'selected' : ''}>仅沙箱控制</option>
+                                <option value="none" ${(cfg.prompt_visibility || {})['游戏规则'] === 'none' ? 'selected' : ''}>不显示</option>
+                            </select></div>
+                        <div class="mode-param-group"><label>上下文指令</label>
+                            <select id="param_vis_custom" onchange="readParamsFromDom()">
+                                <option value="all" ${(cfg.prompt_visibility || {})['上下文指令'] === 'all' ? 'selected' : ''}>所有角色可见</option>
+                                <option value="sandbox_only" ${(cfg.prompt_visibility || {})['上下文指令'] === 'sandbox_only' ? 'selected' : ''}>仅沙箱控制</option>
+                                <option value="none" ${(cfg.prompt_visibility || {})['上下文指令'] === 'none' ? 'selected' : ''}>不显示</option>
+                            </select></div>
+                        <div class="mode-param-group"><label>历史行动</label>
+                            <select id="param_vis_history" onchange="readParamsFromDom()">
+                                <option value="all" ${(cfg.prompt_visibility || {})['历史行动'] === 'all' ? 'selected' : ''}>所有角色可见</option>
+                                <option value="sandbox_only" ${(cfg.prompt_visibility || {})['历史行动'] === 'sandbox_only' ? 'selected' : ''}>仅沙箱控制</option>
+                                <option value="none" ${(cfg.prompt_visibility || {})['历史行动'] === 'none' ? 'selected' : ''}>不显示</option>
+                            </select></div>
+                    </div>
                 </div>`;
             // Load sandbox options asynchronously after DOM insert
             setTimeout(() => loadSandboxOptions(cfg.sandbox || ''), 0);
@@ -1770,6 +1844,12 @@
             modalConfigJson.game_rules = document.getElementById('param_game_rules')?.value || '';
             modalConfigJson.referee_enabled = document.getElementById('param_referee_enabled')?.value !== 'false';
             modalConfigJson.referee_prompt = document.getElementById('param_referee_prompt')?.value || null;
+            modalConfigJson.prompt_visibility = {
+                '用户输入': document.getElementById('param_vis_input')?.value || 'all',
+                '游戏规则': document.getElementById('param_vis_rules')?.value || 'all',
+                '上下文指令': document.getElementById('param_vis_custom')?.value || 'all',
+                '历史行动': document.getElementById('param_vis_history')?.value || 'all',
+            };
             const sandboxVal = document.getElementById('param_sandbox')?.value || '';
             if (sandboxVal) {
                 modalConfigJson.sandbox = sandboxVal;

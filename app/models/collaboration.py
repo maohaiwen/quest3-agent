@@ -382,6 +382,12 @@ TEMPLATES = {
             "shared_state": {},
             "sandbox": "chinese_chess",
             "sandbox_config": {},
+            "prompt_visibility": {
+                "用户输入": "sandbox_only",
+                "游戏规则": "sandbox_only",
+                "上下文指令": "sandbox_only",
+                "历史行动": "sandbox_only",
+            },
         }
     ),
     "chinese_chess_human": CollaborationTemplate(
@@ -404,6 +410,74 @@ TEMPLATES = {
             "shared_state": {},
             "sandbox": "chinese_chess",
             "sandbox_config": {},
+            "prompt_visibility": {
+                "用户输入": "sandbox_only",
+                "游戏规则": "sandbox_only",
+                "上下文指令": "sandbox_only",
+                "历史行动": "sandbox_only",
+            },
+        }
+    ),
+    "werewolf": CollaborationTemplate(
+        name="狼人杀",
+        description="6名AI智能体进行经典狼人杀游戏，沙箱自动分配角色、管理流程",
+        mode=CollaborationMode.ADVERSARIAL_GAME,
+        default_agents=[
+            {"role": "participant", "description": "玩家1"},
+            {"role": "participant", "description": "玩家2"},
+            {"role": "participant", "description": "玩家3"},
+            {"role": "participant", "description": "玩家4"},
+            {"role": "participant", "description": "玩家5"},
+            {"role": "participant", "description": "玩家6"},
+            {"role": "referee", "description": "裁判/主持人"},
+        ],
+        default_config={
+            "turn_strategy": "sequential",
+            "referee_timing": "per_round",
+            "max_rounds": 20,
+            "game_rules": "经典狼人杀规则：6人局（2狼人+预言家+女巫+守卫+平民），夜晚狼人杀人、预言家查验、女巫救人/毒人、守卫守护，白天投票放逐",
+            "referee_enabled": True,
+            "referee_prompt": "你是狼人杀游戏的主持人，请根据当前局面做简要点评，不要泄露角色信息。",
+            "shared_state": {},
+            "sandbox": "werewolf",
+            "sandbox_config": {},
+            "prompt_visibility": {
+                "用户输入": "sandbox_only",
+                "游戏规则": "sandbox_only",
+                "上下文指令": "sandbox_only",
+                "历史行动": "sandbox_only",
+            },
+        }
+    ),
+    "werewolf_human": CollaborationTemplate(
+        name="人机狼人杀",
+        description="人类与AI一起玩狼人杀，人类为1号玩家",
+        mode=CollaborationMode.ADVERSARIAL_GAME,
+        default_agents=[
+            {"role": "participant", "description": "1号玩家（人类）", "is_human": True},
+            {"role": "participant", "description": "2号玩家"},
+            {"role": "participant", "description": "3号玩家"},
+            {"role": "participant", "description": "4号玩家"},
+            {"role": "participant", "description": "5号玩家"},
+            {"role": "participant", "description": "6号玩家"},
+            {"role": "referee", "description": "裁判/主持人"},
+        ],
+        default_config={
+            "turn_strategy": "sequential",
+            "referee_timing": "per_round",
+            "max_rounds": 20,
+            "game_rules": "经典狼人杀规则：6人局（2狼人+预言家+女巫+守卫+平民），夜晚狼人杀人、预言家查验、女巫救人/毒人、守卫守护，白天投票放逐",
+            "referee_enabled": True,
+            "referee_prompt": "你是狼人杀游戏的主持人，请根据当前局面做简要点评，不要泄露角色信息。",
+            "shared_state": {},
+            "sandbox": "werewolf",
+            "sandbox_config": {},
+            "prompt_visibility": {
+                "用户输入": "sandbox_only",
+                "游戏规则": "sandbox_only",
+                "上下文指令": "sandbox_only",
+                "历史行动": "sandbox_only",
+            },
         }
     ),
 }

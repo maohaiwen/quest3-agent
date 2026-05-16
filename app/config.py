@@ -44,6 +44,7 @@ class Settings(BaseSettings):
 
     # Log Configuration
     LOG_LEVEL: str = Field(default="INFO", description="Log level")
+    LOG_FORMAT: str = Field(default="text", description="Log format: text or json")
 
     # LLM Configuration (generic — shared across providers)
     LLM_PROVIDER: str = Field(default="volcengine", description="LLM provider: volcengine, deepseek, openai_compatible")
@@ -83,6 +84,10 @@ class Settings(BaseSettings):
 
     # MCP Configuration
     MCP_SERVER_URL: str = Field(default="", description="MCP server URL")
+
+    # Data Cleanup Configuration
+    SESSION_RETENTION_DAYS: int = Field(default=90, description="Days to retain sessions before cleanup")
+    CLEANUP_INTERVAL_HOURS: int = Field(default=24, description="Hours between cleanup runs")
 
     # Skill Directories Configuration
     SKILLS_BASE_DIR: str = Field(default="./skills", description="Base directory for all skills")

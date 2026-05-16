@@ -1162,3 +1162,4 @@ class ChineseChessSandbox(BaseSandbox):
             captured_str = f" 吃{m['captured']}" if m.get("captured") else ""
             lines.append(f"{m['move_num']}. {color_cn} {m['notation']}{captured_str}")
         return "\n".join(lines)
+

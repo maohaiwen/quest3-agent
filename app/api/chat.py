@@ -406,14 +406,14 @@ async def chat(
 
 
 @router.websocket("/stream")
-async def chat_stream(
-    websocket: WebSocket,
-    session_repo: SessionRepository = Depends(get_session_repo),
-    message_repo: MessageRepository = Depends(get_message_repo),
-    llm_service: LLMService = Depends(get_llm_service),
-    memory_service: SessionWorkingMemory = Depends(get_memory_service)
-):
+async def chat_stream(websocket: WebSocket):
     """WebSocket endpoint for streaming chat"""
+    # WebSocket context doesn't support Request-based Depends — get services from container
+    container = websocket.app.state.container
+    session_repo = container.session_repo
+    message_repo = container.message_repo
+    memory_service = container.memory_service
+
     await websocket.accept()
 
     # --- Authenticate via token in initial message ---

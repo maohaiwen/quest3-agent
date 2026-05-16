@@ -90,6 +90,44 @@ class BaseSandbox(ABC):
         """Called when the collaboration task ends.  Use for cleanup."""
         pass
 
+    def is_private_phase(self) -> bool:
+        """Whether the current phase is private — players should NOT see
+        each other's detailed actions (thinking, tool calls, content).
+
+        When True and a human participant exists, the collaboration engine
+        suppresses detailed AI events (agent_content, agent_thinking,
+        agent_action, agent_observation) and only emits agent_start /
+        agent_done so the human player doesn't learn private info.
+
+        Default: False.  Override in games like Werewolf where night
+        phases are private.
+        """
+        return False
+
+    def get_active_participants(self) -> List[tuple]:
+        """Return which agents should act in the current phase.
+
+        Used by the collaboration engine to determine which participants
+        to prompt in the current sub-phase.  Each tuple is
+        ``(agent_id, indexed_role)``.
+
+        Default: return all participants (no filtering).
+        Override in sandboxes with sub-phase flow (e.g. werewolf night
+        phases where only certain roles act).
+
+        Returns:
+            List of (agent_id, indexed_role) tuples.
+        """
+        return []  # empty = engine uses default (all participants)
+
+    def get_phase_description(self) -> str:
+        """Return a short human-readable description of the current phase.
+
+        Used for SSE events so the frontend can display phase info.
+        Default: empty string.
+        """
+        return ""
+
     def get_action_hint(self, agent_id: str, role: str) -> Optional[str]:
         """Return a short hint about how the agent should act in this sandbox.
 

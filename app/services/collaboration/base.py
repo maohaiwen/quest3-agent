@@ -669,12 +669,19 @@ class BaseCollaborationMode:
             Result dict with at least ``success`` key.
         """
         from app.api.collaborations import _pending_human_inputs
+        # Determine available sandbox tool names for this player
+        sandbox_tools = []
+        if sandbox:
+            for t in sandbox.get_tools_for_agent(agent_id, role):
+                if hasattr(t, 'name'):
+                    sandbox_tools.append(t.name)
         move_event = asyncio.Event()
         _pending_human_inputs[task_id] = {
             "event": move_event,
             "role": role,
             "agent_id": agent_id,
             "sandbox": sandbox,
+            "sandbox_tools": sandbox_tools,
             "result": None,
             "prompt": prompt,
         }

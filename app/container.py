@@ -128,7 +128,9 @@ class ServiceContainer:
         # Sandbox types
         from app.sandboxes.registry import SandboxRegistry
         from app.sandboxes.chinese_chess import ChineseChessSandbox
+        from app.sandboxes.werewolf import WerewolfSandbox
         SandboxRegistry.register("chinese_chess", ChineseChessSandbox)
+        SandboxRegistry.register("werewolf", WerewolfSandbox)
         logger.info("Sandbox types registered")
 
         # Unified tool manager + plugin registry
