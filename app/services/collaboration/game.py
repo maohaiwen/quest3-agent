@@ -586,6 +586,9 @@ class GameCollaboration(BaseCollaborationMode):
             task.add_message(A2AMessageRole.USER, f"Game start: {input_text}")
 
             all_round_actions = []
+            # Deferred events: collected during private phases (not shown live)
+            # and emitted as part of game_replay after game ends.
+            _deferred_events: List[Dict] = []
 
             for round_num in range(1, max_rounds + 1):
                 yield {"type": "round_start", "round": round_num, "max_rounds": max_rounds}
@@ -711,30 +714,34 @@ class GameCollaboration(BaseCollaborationMode):
                                     collab, input_text, shared_state, indexed_role, idx, round_num, "sequential",
                                     sandbox=sandbox, agent_id=agent.agent_id)
 
-                                # In private phases of anonymized sandboxes (e.g.
-                                # werewolf night), completely suppress AI events
-                                # so the viewer cannot infer who is acting.
+                                # In private phases, suppress all AI events from
+                                # live SSE but collect them for deferred replay
+                                # after the game ends.  This applies when:
+                                # 1. Anonymized sandbox in private phase (no human)
+                                # 2. Any sandbox in private phase when a human is present
+                                # Both cases defer ALL events (start/content/done) so
+                                # the post-game replay is self-contained and renders
+                                # correctly without depending on live-play panels.
                                 is_private = sandbox and sandbox.is_private_phase()
                                 suppress_ai_events = is_private and getattr(sandbox, 'anonymize_identities', False)
+                                has_human = any(a.is_human for a, _, _ in participants)
+                                hide_ai_detail = is_private and has_human
+                                defer_all = suppress_ai_events or hide_ai_detail
 
-                                if not suppress_ai_events:
-                                    yield _anonymize_event(sandbox, {
-                                        "type": "agent_start",
-                                        "agent_id": agent.agent_id,
-                                        "role": indexed_role,
-                                        "round": round_num
-                                    }, indexed_role)
+                                start_evt = _anonymize_event(sandbox, {
+                                    "type": "agent_start",
+                                    "agent_id": agent.agent_id,
+                                    "role": indexed_role,
+                                    "round": round_num
+                                }, indexed_role)
+                                if defer_all:
+                                    _deferred_events.append(start_evt)
+                                else:
+                                    yield start_evt
 
                                 agent_task = A2ATask(id=str(uuid.uuid4()), input=prompt)
                                 agent_task.sandbox_tools = sandbox.get_tools_for_llm(agent.agent_id, indexed_role)
                                 agent_task.sandbox_handler = _make_sandbox_handler(sandbox, agent.agent_id, indexed_role)
-
-                                # When a human participant is present and the
-                                # current phase is private (e.g. werewolf
-                                # night), suppress detailed AI events so the
-                                # human doesn't see other players' actions.
-                                has_human = any(a.is_human for a, _, _ in participants)
-                                hide_ai_detail = has_human and sandbox.is_private_phase()
 
                                 action = ""
                                 async for sub_event in agent_registry.call_agent_stream(agent.agent_id, agent_task):
@@ -742,20 +749,18 @@ class GameCollaboration(BaseCollaborationMode):
                                     # Always capture content for action text
                                     if etype == "content":
                                         action += sub_event["content"]
-                                    # In private phases, suppress all AI events
-                                    if suppress_ai_events:
-                                        continue
-                                    # When human is present in private phase,
-                                    # suppress detailed events (thinking, content, etc.)
-                                    if hide_ai_detail and etype not in ("done",):
-                                        continue
-                                    yield _anonymize_event(sandbox, {
+                                    evt = _anonymize_event(sandbox, {
                                         "type": f"agent_{etype}",
                                         "agent_id": agent.agent_id,
                                         "role": indexed_role,
                                         "round": round_num,
                                         **{k: v for k, v in sub_event.items() if k != "type"},
                                     }, indexed_role)
+                                    # In private phases, defer ALL events (not just content)
+                                    if defer_all:
+                                        _deferred_events.append(evt)
+                                        continue
+                                    yield evt
 
                                 if not action and agent_task.output:
                                     action = agent_task.output
@@ -769,8 +774,11 @@ class GameCollaboration(BaseCollaborationMode):
                                 if hasattr(sandbox, 'record_speech') and phase_before_action == "day_speak":
                                     sandbox.record_speech(indexed_role, action)
 
-                                if not suppress_ai_events:
-                                    yield _anonymize_event(sandbox, {"type": "agent_done", "agent_id": agent.agent_id, "role": indexed_role, "round": round_num}, indexed_role)
+                                done_evt = _anonymize_event(sandbox, {"type": "agent_done", "agent_id": agent.agent_id, "role": indexed_role, "round": round_num}, indexed_role)
+                                if defer_all:
+                                    _deferred_events.append(done_evt)
+                                else:
+                                    yield done_evt
                                 yield {
                                     "type": "sandbox_state",
                                     "sandbox": sandbox_name,
@@ -802,9 +810,10 @@ class GameCollaboration(BaseCollaborationMode):
                             t.sandbox_handler = _make_sandbox_handler(sandbox, agent.agent_id, indexed_role)
                         game_tasks.append((agent, indexed_role, idx, t))
 
-                    # Suppress agent_start in private phases of anonymized sandboxes
+                    # Suppress agent_start in private phases — defer for post-game replay
                     is_sim_private = sandbox and sandbox.is_private_phase()
-                    suppress_sim_events = is_sim_private and getattr(sandbox, 'anonymize_identities', False)
+                    has_human_sim = any(a.is_human for a, _, _ in participants)
+                    suppress_sim_events = is_sim_private and (getattr(sandbox, 'anonymize_identities', False) or has_human_sim)
 
                     if not suppress_sim_events:
                         for agent, indexed_role, idx, _ in game_tasks:
@@ -814,6 +823,15 @@ class GameCollaboration(BaseCollaborationMode):
                                 "role": indexed_role,
                                 "round": round_num
                             }, indexed_role)
+                    else:
+                        # Collect agent_start events for deferred replay
+                        for agent, indexed_role, idx, _ in game_tasks:
+                            _deferred_events.append(_anonymize_event(sandbox, {
+                                "type": "agent_start",
+                                "agent_id": agent.agent_id,
+                                "role": indexed_role,
+                                "round": round_num
+                            }, indexed_role))
 
                     event_queue: asyncio.Queue = asyncio.Queue()
 
@@ -821,18 +839,18 @@ class GameCollaboration(BaseCollaborationMode):
                         output = ""
                         try:
                             async for sub_event in agent_registry.call_agent_stream(agent.agent_id, g_task):
-                                # In private phases of anonymized sandboxes, suppress
-                                # all AI events to avoid revealing who is acting
+                                evt = _anonymize_event(sandbox, {
+                                    "type": f"agent_{sub_event['type']}",
+                                    "agent_id": agent.agent_id,
+                                    "role": indexed_role,
+                                    "round": round_num,
+                                    **{k: v for k, v in sub_event.items() if k != "type"},
+                                }, indexed_role)
+                                # In private phases, defer events for post-game replay
                                 if suppress_sim_events:
-                                    pass
+                                    _deferred_events.append(evt)
                                 else:
-                                    await event_queue.put(_anonymize_event(sandbox, {
-                                        "type": f"agent_{sub_event['type']}",
-                                        "agent_id": agent.agent_id,
-                                        "role": indexed_role,
-                                        "round": round_num,
-                                        **{k: v for k, v in sub_event.items() if k != "type"},
-                                    }, indexed_role))
+                                    await event_queue.put(evt)
                                 if sub_event.get("type") == "content":
                                     output += sub_event["content"]
                         except Exception as e:
@@ -862,6 +880,8 @@ class GameCollaboration(BaseCollaborationMode):
                             round_actions.append(f"{event['indexed_role']}: {event['output']}")
                             if not suppress_sim_events:
                                 yield _anonymize_event(sandbox, {"type": "agent_done", "agent_id": event["agent_id"], "role": event["indexed_role"], "round": round_num}, event["indexed_role"])
+                            else:
+                                _deferred_events.append(_anonymize_event(sandbox, {"type": "agent_done", "agent_id": event["agent_id"], "role": event["indexed_role"], "round": round_num}, event["indexed_role"]))
                             # Emit sandbox state immediately after each participant finishes
                             if sandbox and not sandbox_terminated:
                                 yield {
@@ -971,12 +991,26 @@ class GameCollaboration(BaseCollaborationMode):
                                 turn_strategy, round_actions_so_far,
                                 sandbox=sandbox, agent_id=agent.agent_id)
 
-                            yield {
+                            # In private phases, defer ALL events for post-game replay
+                            is_private = sandbox and sandbox.is_private_phase()
+                            has_human = any(a.is_human for a, _, _ in participants)
+                            defer_all = is_private and has_human
+
+                            start_evt = _anonymize_event(sandbox, {
+                                "type": "agent_start",
+                                "agent_id": agent.agent_id,
+                                "role": role_key,
+                                "round": round_num
+                            }, role_key) if sandbox else {
                                 "type": "agent_start",
                                 "agent_id": agent.agent_id,
                                 "role": role_key,
                                 "round": round_num
                             }
+                            if defer_all:
+                                _deferred_events.append(start_evt)
+                            else:
+                                yield start_evt
 
                             agent_task = A2ATask(id=str(uuid.uuid4()), input=prompt)
                             # Inject sandbox tools
@@ -984,26 +1018,29 @@ class GameCollaboration(BaseCollaborationMode):
                                 agent_task.sandbox_tools = sandbox.get_tools_for_llm(agent.agent_id, role_key)
                                 agent_task.sandbox_handler = _make_sandbox_handler(sandbox, agent.agent_id, role_key)
 
-                            # Suppress detailed AI events in private phases when a
-                            # human participant is present
-                            has_human = any(a.is_human for a, _, _ in participants)
-                            hide_ai_detail = sandbox and has_human and sandbox.is_private_phase()
-
                             action = ""
 
                             async for sub_event in agent_registry.call_agent_stream(agent.agent_id, agent_task):
                                 etype = sub_event.get("type")
                                 if etype == "content":
                                     action += sub_event["content"]
-                                if hide_ai_detail and etype not in ("done",):
-                                    continue
-                                yield {
+                                evt = _anonymize_event(sandbox, {
+                                    "type": f"agent_{etype}",
+                                    "agent_id": agent.agent_id,
+                                    "role": role_key,
+                                    "round": round_num,
+                                    **{k: v for k, v in sub_event.items() if k != "type"},
+                                }, role_key) if sandbox else {
                                     "type": f"agent_{etype}",
                                     "agent_id": agent.agent_id,
                                     "role": role_key,
                                     "round": round_num,
                                     **{k: v for k, v in sub_event.items() if k != "type"},
                                 }
+                                if defer_all:
+                                    _deferred_events.append(evt)
+                                    continue
+                                yield evt
 
                             if not action and agent_task.output:
                                 action = agent_task.output
@@ -1012,7 +1049,11 @@ class GameCollaboration(BaseCollaborationMode):
                             round_actions.append(action_line)
                             round_actions_so_far.append(action_line)
 
-                            yield {"type": "agent_done", "agent_id": agent.agent_id, "role": role_key, "round": round_num}
+                            done_evt = _anonymize_event(sandbox, {"type": "agent_done", "agent_id": agent.agent_id, "role": role_key, "round": round_num}, role_key) if sandbox else {"type": "agent_done", "agent_id": agent.agent_id, "role": role_key, "round": round_num}
+                            if defer_all:
+                                _deferred_events.append(done_evt)
+                            else:
+                                yield done_evt
 
                             # Emit sandbox state immediately after each participant finishes
                             if sandbox:
@@ -1068,6 +1109,13 @@ class GameCollaboration(BaseCollaborationMode):
                             "message": reason,
                             "winner": winner,
                         }
+                        # Emit final sandbox state (game-over board)
+                        if hasattr(sandbox, 'get_display_state'):
+                            yield {
+                                "type": "sandbox_state",
+                                "sandbox": sandbox_name,
+                                "state": sandbox.get_display_state(),
+                            }
                         break
 
                 # Referee per round (streaming)
@@ -1197,6 +1245,33 @@ class GameCollaboration(BaseCollaborationMode):
                     result_msg = f"达到最大轮次 {max_rounds}，游戏结束"
                     task.set_completed(result_msg)
                     task.add_message(A2AMessageRole.AGENT, result_msg)
+
+            # ---- Post-game: emit deferred events & replay summary ----
+            # After the game ends, yield all deferred (suppressed) events as
+            # individual events so they get stored in the DB for history viewing.
+            # This ensures that when a user returns to a completed game, all
+            # conversations (including night actions) are visible.
+            # Skip agent_thinking events — they clutter the UI and are
+            # excluded by the frontend's events API query anyway.
+            _replay_events = [e for e in _deferred_events if e.get("type") != "agent_thinking"]
+            if _replay_events:
+                yield {
+                    "type": "replay_section",
+                    "label": "🌙 夜间行动回顾（游戏结束后回放）",
+                }
+                for evt in _replay_events:
+                    yield evt
+                yield {
+                    "type": "replay_section_end",
+                }
+
+            # Emit game replay summary (roles, winner, log, etc.)
+            if sandbox and hasattr(sandbox, 'get_game_replay'):
+                replay_data = sandbox.get_game_replay()
+                yield {
+                    "type": "game_replay",
+                    "replay": replay_data,
+                }
 
             if sandbox:
                 sandbox.on_task_end()

@@ -884,6 +884,9 @@
             if (state && state.waitTimer) { clearTimeout(state.waitTimer); }
         }
         main.innerHTML = '';
+        // Reset sandbox display for new task
+        const sandboxEl = document.getElementById('sandboxDisplay');
+        if (sandboxEl) { sandboxEl.style.display = 'none'; sandboxEl.innerHTML = ''; }
         currentRoundContainer = null;
         currentRound = 0;
         agentProgressPanels = {};
@@ -1200,6 +1203,60 @@
                 }
                 break;
             }
+            case 'replay_section': {
+                // Marks the start of a post-game replay section (e.g. night actions)
+                addStreamMsg('system', `--- ${data.label || '回放'} ---`, '');
+                break;
+            }
+            case 'replay_section_end': {
+                // Marks the end of a replay section — nothing to do
+                break;
+            }
+            case 'game_replay': {
+                // Game replay summary — only emitted after game ends.
+                // Deferred events are now emitted as individual events
+                // (via replay_section), so we only render the summary here.
+                if (data.replay) {
+                    const replay = data.replay;
+
+                    // Render summary panel
+                    const main = document.getElementById('mainMessages');
+                    const div = document.createElement('div');
+                    div.className = 'game-replay-panel';
+                    div.style.cssText = 'margin-top:12px;padding:12px;border-radius:8px;border:1px solid rgba(128,128,128,0.2);background:rgba(0,0,0,0.03);';
+
+                    let html = '<div style="font-weight:600;margin-bottom:8px;">🎮 游戏回顾</div>';
+
+                    // Result
+                    const winnerLabel = replay.winner === 'good' ? '好人阵营' : '狼人阵营';
+                    html += `<div style="margin-bottom:8px;">🏆 ${winnerLabel}获胜 — ${escapeHtml(replay.reason || '')}</div>`;
+
+                    // Players & roles
+                    if (replay.players && replay.players.length) {
+                        html += '<div style="margin-bottom:8px;"><b>角色分配：</b></div>';
+                        html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">';
+                        for (const p of replay.players) {
+                            const statusIcon = p.alive ? '✅' : '💀';
+                            html += `<span style="font-size:12px;padding:2px 8px;border-radius:4px;background:rgba(128,128,128,0.1);">${p.seat}号 ${p.role_icon} ${p.role_name} ${statusIcon}</span>`;
+                        }
+                        html += '</div>';
+                    }
+
+                    // Game log
+                    if (replay.log && replay.log.length) {
+                        html += '<div style="margin-bottom:6px;"><b>游戏日志：</b></div>';
+                        html += '<div style="font-size:12px;color:#666;max-height:200px;overflow-y:auto;">';
+                        for (const entry of replay.log) {
+                            html += `<div>R${entry.round} ${entry.phase}: ${escapeHtml(entry.msg)}</div>`;
+                        }
+                        html += '</div>';
+                    }
+
+                    div.innerHTML = html;
+                    main.appendChild(div);
+                }
+                break;
+            }
             case 'sandbox_phase': {
                 // Show current sandbox phase (e.g. "夜晚·狼人行动")
                 if (data.phase) {
@@ -1208,7 +1265,10 @@
                 break;
             }
             case 'waiting_for_human': {
-                showHumanInputPanel(data.role, data.round, data.state_view);
+                // Only show input panel during live play, not during history replay
+                if (isRunning) {
+                    showHumanInputPanel(data.role, data.round, data.state_view);
+                }
                 if (data.private) {
                     // Private phase: don't reveal who is acting, just show generic prompt
                     addStreamMsg('system', '⏳ 请执行你的操作...', '');
@@ -1220,7 +1280,9 @@
             }
             case 'human_moved': {
                 addStreamMsg('system', `✅ 操作成功: ${data.result?.message || ''}`, '');
-                hideHumanInputPanel();
+                if (isRunning) {
+                    hideHumanInputPanel();
+                }
                 break;
             }
             case 'human_move_error': {

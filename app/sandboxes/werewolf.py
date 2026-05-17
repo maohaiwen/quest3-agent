@@ -178,6 +178,11 @@ class WerewolfSandbox(BaseSandbox):
         # Game log
         self._log: List[Dict[str, Any]] = []
 
+        # Detailed action history — records every player action (including
+        # private night actions) for post-game replay.  Not used during
+        # live game; only exposed via get_game_replay() after game ends.
+        self._action_history: List[Dict[str, Any]] = []
+
         # Win state
         self._game_over: bool = False
         self._winner: Optional[str] = None  # "good" or "evil"
@@ -626,7 +631,7 @@ class WerewolfSandbox(BaseSandbox):
         Only includes rules that the player's role would legitimately know.
         Does NOT reveal other players' roles or any private information.
         """
-        hints = ["游戏规则：狼人每晚选择击杀一名玩家；白天所有存活玩家依次发言讨论后投票放逐一人。好人阵营（预言家/女巫/守卫/猎人/平民）需找出并放逐所有狼人；狼人阵营需让狼人数量≥好人数量。"]
+        hints = ["游戏规则：狼人每晚选择击杀一名玩家；白天所有存活玩家依次发言讨论后投票放逐一人。好人阵营（预言家/女巫/守卫/猎人/平民）需找出并放逐所有狼人；狼人阵营需让狼人数量≥好人数量。出局玩家的身份会公开，请在已出局列表中确认其真实角色。"]
 
         if player.game_role == WEREWOLF:
             hints.append("你是狼人，每晚与队友共同选择击杀目标，白天需伪装身份。")
@@ -727,6 +732,7 @@ class WerewolfSandbox(BaseSandbox):
 
         self._night_werewolf_votes[indexed_role] = target_role
         seat = target.seat
+        self._record_action(indexed_role, "击杀", f"选择击杀{seat}号玩家")
 
         # Check if all werewolves have voted
         alive_wolves = [p for p in self.players.values() if p.is_werewolf and p.alive]
@@ -769,6 +775,7 @@ class WerewolfSandbox(BaseSandbox):
             "target_role": target_role,
             "is_werewolf": is_wolf,
         })
+        self._record_action(indexed_role, "查验", f"查验{target.seat}号→{result_cn}")
 
         self.phase = NIGHT_WITCH
         self._log.append({
@@ -795,6 +802,7 @@ class WerewolfSandbox(BaseSandbox):
                 return {"success": False, "error": "今晚没有人被杀"}
             self._witch_antidote_used = True
             self._night_target = None  # Saved!
+            self._record_action(indexed_role, "救人", "使用解药救活了今晚被杀的玩家")
             self.phase = NIGHT_GUARD
             self._log.append({
                 "round": self.round_num, "phase": "night_witch",
@@ -814,6 +822,7 @@ class WerewolfSandbox(BaseSandbox):
                 return {"success": False, "error": "目标玩家已出局"}
             self._witch_poison_used = True
             self._witch_poison_target = target_role
+            self._record_action(indexed_role, "毒杀", f"对{target.seat}号玩家使用毒药")
             self.phase = NIGHT_GUARD
             self._log.append({
                 "round": self.round_num, "phase": "night_witch",
@@ -822,6 +831,7 @@ class WerewolfSandbox(BaseSandbox):
             return {"success": True, "message": f"你对{target.seat}号玩家使用了毒药"}
 
         else:  # skip
+            self._record_action(indexed_role, "跳过", "女巫选择跳过")
             self.phase = NIGHT_GUARD
             return {"success": True, "message": "你选择跳过本回合"}
 
@@ -929,6 +939,7 @@ class WerewolfSandbox(BaseSandbox):
         if is_abstain:
             # Record abstention — value None means abstained
             self._votes[indexed_role] = None
+            self._record_action(indexed_role, "弃票", "选择弃票")
             # Check if all alive players have voted
             alive_count = sum(1 for p in self.players.values() if p.alive)
             if len(self._votes) >= alive_count:
@@ -945,6 +956,7 @@ class WerewolfSandbox(BaseSandbox):
 
         self._votes[indexed_role] = target_role
         seat = target.seat
+        self._record_action(indexed_role, "投票", f"投票放逐{seat}号")
 
         # Check if all alive players have voted
         alive_count = sum(1 for p in self.players.values() if p.alive)
@@ -1026,6 +1038,7 @@ class WerewolfSandbox(BaseSandbox):
         player.hunter_can_shoot = False
         self._kill_player(target_role, "被猎人射杀")
         role_name = ROLE_INFO[target.game_role]["name"]
+        self._record_action(indexed_role, "开枪", f"射杀{target.seat}号({role_name})")
         self._log.append({
             "round": self.round_num, "phase": "hunter",
             "msg": f"猎人射杀了{target.seat}号({role_name})"
@@ -1044,6 +1057,24 @@ class WerewolfSandbox(BaseSandbox):
     # ------------------------------------------------------------------
     # Game logic helpers
     # ------------------------------------------------------------------
+
+    def _record_action(self, indexed_role: str, action_type: str,
+                       result: str, detail: str = "") -> None:
+        """Record a player action for post-game replay."""
+        player = self.players.get(indexed_role)
+        if not player:
+            return
+        self._action_history.append({
+            "round": self.round_num,
+            "phase": self.phase,
+            "phase_cn": self._phase_cn(),
+            "seat": player.seat,
+            "role": player.game_role,
+            "role_name": ROLE_INFO[player.game_role]["name"],
+            "action": action_type,
+            "result": result,
+            "detail": detail,
+        })
 
     @staticmethod
     def _auto_distribute(n: int) -> List[str]:
@@ -1089,6 +1120,38 @@ class WerewolfSandbox(BaseSandbox):
             "reason": self._game_over_reason,
         }
 
+    def get_game_replay(self) -> Dict[str, Any]:
+        """Return full game replay data (only call after game is over).
+
+        Contains all private information: role assignments, night actions,
+        vote details, and the complete game log.  This is safe to expose
+        only because the game has ended.
+        """
+        players = []
+        for p in sorted(self.players.values(), key=lambda x: x.seat):
+            role_info = ROLE_INFO[p.game_role]
+            players.append({
+                "seat": p.seat,
+                "role": p.game_role,
+                "role_name": role_info["name"],
+                "role_icon": role_info["icon"],
+                "team": role_info["team"],
+                "alive": p.alive,
+                "death_reason": p.death_reason,
+                "is_human": p.indexed_role in self.human_roles,
+            })
+
+        return {
+            "winner": self._winner,
+            "reason": self._game_over_reason,
+            "rounds_played": self.round_num,
+            "players": players,
+            "log": self._log,
+            "action_history": self._action_history,
+            "speeches_by_round": self._all_speeches_by_round,
+            "final_state_html": self._render_html(),
+        }
+
     def get_action_hint(self, agent_id: str, role: str) -> Optional[str]:
         """Return a hint about how to act."""
         if role == "referee":
@@ -1106,9 +1169,9 @@ class WerewolfSandbox(BaseSandbox):
         elif self.phase == NIGHT_GUARD and player.game_role == GUARD:
             return "请使用 night_action 工具选择今晚要守护的玩家座位号。"
         elif self.phase == DAY_SPEAK and player.alive:
-            return "请发表你的看法，分析场上局势，注意不要暴露你的身份信息。直接输出文字即可，无需使用工具。"
+            return "请发表你的看法，分析场上局势。注意：已出局列表中标注了该玩家的真实角色，这是公开信息，请据此分析。不要暴露你自己的身份信息。直接输出文字即可，无需使用工具。"
         elif self.phase == DAY_VOTE and player.alive:
-            return "请使用 vote 工具投票放逐一名玩家（弃票填0）。"
+            return "请使用 vote 工具投票放逐一名玩家（弃票填0）。请参考已出局列表中的角色信息进行推理。"
         elif not player.alive and player.game_role == HUNTER and player.hunter_can_shoot:
             return "你已出局！请使用 hunter_shoot 工具选择一名玩家带走。"
         return None
